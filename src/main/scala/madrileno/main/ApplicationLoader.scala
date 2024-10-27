@@ -18,7 +18,11 @@ import sttp.client4.logging.{LogLevel, LoggingBackend}
 
 import java.util.UUID
 
-final case class HttpConfig(host: Ipv4Address, port: Port) derives ConfigReader
+final case class HttpConfig(
+  host: Ipv4Address,
+  port: Port,
+  maxRequestSize: Long)
+    derives ConfigReader
 final case class AppConfig(
   name: String,
   environment: String,
@@ -85,8 +89,8 @@ class ApplicationLoader(
     }
   }
 
-  val apiVersion: String                   = appConfig.apiVersion
-  val pathPrefixMatcher: PathMatcher[Unit] = Slash ~ apiVersion
+  private val apiVersion: String                   = appConfig.apiVersion
+  private val pathPrefixMatcher: PathMatcher[Unit] = Slash ~ apiVersion
 
   val routes: Route =
     withCorrelationId(headerName = "Correlation-Id", correlationIdGenerator = UUID.randomUUID().toString) { correlationId =>

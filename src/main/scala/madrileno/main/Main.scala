@@ -3,6 +3,7 @@ package madrileno.main
 import cats.effect.{Clock, IO, IOApp, Resource}
 import madrileno.utils.db.transactor.{PgConfig, PgTransactor}
 import org.http4s.ember.server.EmberServerBuilder
+import org.http4s.server.middleware.EntityLimiter
 import sttp.client4.httpclient.fs2.HttpClientFs2Backend
 import pureconfig.*
 import pl.iterators.stir.server.ToHttpRoutes
@@ -20,7 +21,7 @@ object Main extends IOApp.Simple {
                   .default[IO]
                   .withHost(application.httpConfig.host)
                   .withPort(application.httpConfig.port)
-                  .withHttpApp(application.routes.toHttpApp)
+                  .withHttpApp(EntityLimiter.httpApp(application.routes.toHttpApp, application.httpConfig.maxRequestSize))
                   .build
     } yield application).use { app =>
       IO.never
