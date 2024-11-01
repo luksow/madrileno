@@ -49,7 +49,6 @@ libraryDependencies ++= {
     "org.http4s"                    %% "http4s-otel4s-middleware"                  % http4sOtelV,
     "io.circe"                      %% "circe-core"                                % circeV,
     "ch.qos.logback"                 % "logback-classic"                           % logbackV,
-    "org.typelevel"                 %% "log4cats-core"                             % log4catsV,
     "org.typelevel"                 %% "log4cats-slf4j"                            % log4catsV,
     "org.typelevel"                 %% "otel4s-oteljava"                           % otel4sV,
     "io.opentelemetry"               % "opentelemetry-exporter-otlp"               % otelV              % Runtime,

@@ -8,6 +8,8 @@ addSbtPlugin("ch.epfl.scala" % "sbt-scalafix" % "0.12.1")
 
 addSbtPlugin("io.spray" % "sbt-revolver" % "0.10.0")
 
+addSbtPlugin("nl.gn0s1s" % "sbt-dotenv" % "3.0.1")
+
 addSbtPlugin("com.timushev.sbt" % "sbt-rewarn" % "0.1.3")
 
 addSbtPlugin("com.timushev.sbt" % "sbt-updates" % "0.6.4")
