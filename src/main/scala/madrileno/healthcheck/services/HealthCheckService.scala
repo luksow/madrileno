@@ -7,7 +7,7 @@ import madrileno.healthcheck.repositories.HealthCheckRepository
 import madrileno.main.AppConfig
 import madrileno.user.domain.UserId
 import madrileno.utils.db.transactor.Transactor
-import madrileno.utils.logging.LoggingSupport
+import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
 
 import scala.concurrent.duration.FiniteDuration
 
@@ -15,7 +15,8 @@ class HealthCheckService(
   appConfig: AppConfig,
   healthCheckRepository: HealthCheckRepository,
   transactor: Transactor,
-  clock: Clock[IO])
+  clock: Clock[IO]
+)(using TelemetryContext)
     extends LoggingSupport {
   def healthCheck(): IO[AppConfig] = IO.pure(appConfig)
 
@@ -28,7 +29,7 @@ class HealthCheckService(
         (appConfig, authContext.id, Some(latency))
       }
       .recoverWith { case t =>
-        Logger[IO].error(t)("Failed to reach database").map { _ =>
+        logger.error(t)("Failed to reach database").map { _ =>
           (appConfig, authContext.id, None)
         }
       }

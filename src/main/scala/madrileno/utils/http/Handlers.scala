@@ -1,11 +1,11 @@
 package madrileno.utils.http
 
 import org.http4s.Status.*
-import cats.effect.IO
 import io.circe.DecodingFailure
-import madrileno.utils.logging.{LoggingSupport, TracingContext, TracingContextSource}
+import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
 import org.http4s.{Headers, Status}
 import org.http4s.headers.{Allow, `WWW-Authenticate`}
+import org.http4s.otel4s.middleware.instances.all.*
 import pl.iterators.stir.server.AuthenticationFailedRejection.{CredentialsMissing, CredentialsRejected}
 import pl.iterators.stir.server.*
 
@@ -18,21 +18,22 @@ trait Handlers extends LoggingSupport with BaseRouter {
     typeTag: String,
     title: String,
     detail: Option[String],
-    tracingContext: Option[TracingContext],
     additionalHeaders: Headers,
     extension: E,
     loggingDirective: Directive0
+  )(using tc: TelemetryContext
   ) = {
-    val error =
-      Error(
-        Some(new URI(typeTag)),
-        Some(status),
-        Some(title),
-        detail,
-        tracingContext.map(_.correlationId).map(cid => new URI(s"cid:$cid")),
-        extension
-      )
-    respondWithHeaders(additionalHeaders.headers) & loggingDirective & complete(status -> error)
+    loggingDirective {
+      onSuccess(tc.tracer.propagate(Headers.empty)) { tracingHeaders =>
+        onSuccess(tc.tracer.currentSpanContext) { spanContext =>
+          mapResponseHeaders(_ ++ additionalHeaders ++ tracingHeaders) {
+            val error =
+              Error(Some(new URI(typeTag)), Some(status), Some(title), detail, spanContext.map(c => new URI(s"trace-id:${c.traceIdHex}")), extension)
+            complete(status -> error)
+          }
+        }
+      }
+    }
   }
 
   private def typeFromRejection[T <: Rejection](implicit cls: ClassTag[T]): String =
@@ -42,36 +43,42 @@ trait Handlers extends LoggingSupport with BaseRouter {
       .replaceAll("([a-z])([A-Z])", "$1-$2")
       .toLowerCase // kebabify
 
-  def exceptionHandler(tracingContext: Option[TracingContext], loggingDirective: Directive0): ExceptionHandler = ExceptionHandler {
-    case e: IllegalArgumentException =>
-      handlerComplete(
-        BadRequest,
-        "rejection:static-validation-failed",
-        "Validation failed",
-        Some(e.getMessage),
-        tracingContext,
-        Headers.empty,
-        (),
-        loggingDirective
-      )
-    case e: Exception =>
-      loggingDirective & complete {
-        for {
-          _ <- Logger[IO].error(e)(s"Internal error: ${tracingContext.map(_.correlationId).getOrElse("")}\n${e.getMessage}")
-        } yield {
-          InternalServerError -> Error(
-            Some(new URI("error:internal-error")),
-            Some(InternalServerError),
-            Some("Internal error"),
-            None,
-            tracingContext.map(_.correlationId).map(cid => new URI(s"cid:$cid")),
-            ()
-          )
+  def exceptionHandler(loggingDirective: Directive0)(using tc: TelemetryContext): ExceptionHandler =
+    ExceptionHandler {
+      case e: IllegalArgumentException =>
+        handlerComplete(
+          BadRequest,
+          "rejection:static-validation-failed",
+          "Validation failed",
+          Some(e.getMessage),
+          Headers.empty,
+          (),
+          loggingDirective
+        )
+      case e: Exception =>
+        loggingDirective & complete {
+          for {
+            spanContext <- tc.tracer.currentSpanContext
+            headers     <- tc.tracer.propagate(Headers.empty)
+            _           <- logger.error(e)(s"Internal error, trace-id: ${spanContext.map(_.traceIdHex).getOrElse("000")}\n${e.getMessage}")
+          } yield {
+            (
+              InternalServerError,
+              headers,
+              Error(
+                Some(new URI("error:internal-error")),
+                Some(InternalServerError),
+                Some("Internal error"),
+                None,
+                spanContext.map(c => new URI(s"trace-id:${c.traceIdHex}")),
+                ()
+              )
+            )
+          }
         }
-      }
-  }
+    }
 
-  def rejectionHandler(tracingContext: Option[TracingContext], loggingDirective: Directive0): RejectionHandler =
+  def rejectionHandler(loggingDirective: Directive0)(using TelemetryContext): RejectionHandler =
     RejectionHandler
       .newBuilder()
       // custom rejections
@@ -82,23 +89,13 @@ trait Handlers extends LoggingSupport with BaseRouter {
           typeFromRejection[SchemeRejection],
           "Uri scheme not allowed",
           Some(s"Supported schemes: ${schemes.mkString(", ")}"),
-          tracingContext,
           Headers.empty,
           Map("supportedSchemes" -> schemes),
           loggingDirective
         )
       }
       .handle { case ValidationRejection(msg, _) =>
-        handlerComplete(
-          BadRequest,
-          "rejection:static-validation-failed",
-          "Validation failed",
-          Some(msg),
-          tracingContext,
-          Headers.empty,
-          (),
-          loggingDirective
-        )
+        handlerComplete(BadRequest, "rejection:static-validation-failed", "Validation failed", Some(msg), Headers.empty, (), loggingDirective)
       }
       .handle { case MalformedRequestContentRejection(msg, throwable) =>
         throwable match {
@@ -108,7 +105,6 @@ trait Handlers extends LoggingSupport with BaseRouter {
               "rejection:static-validation-failed",
               "Validation failed",
               df.pathToRootString.fold(Option(df.message))((p: String) => Some(s"$p: ${df.message}")),
-              tracingContext,
               Headers.empty,
               df.pathToRootString.fold(Map("message" -> df.message))(p => Map("path" -> p, "message" -> df.message)),
               loggingDirective
@@ -119,7 +115,6 @@ trait Handlers extends LoggingSupport with BaseRouter {
               typeFromRejection[MalformedRequestContentRejection],
               "The request content was malformed",
               Some(msg),
-              tracingContext,
               Headers.empty,
               (),
               loggingDirective
@@ -132,7 +127,6 @@ trait Handlers extends LoggingSupport with BaseRouter {
           typeFromRejection[MalformedFormFieldRejection],
           "The form field was malformed",
           Some(s"$name: $msg"),
-          tracingContext,
           Headers.empty,
           Map("fieldName" -> name, "message" -> msg),
           loggingDirective
@@ -144,7 +138,6 @@ trait Handlers extends LoggingSupport with BaseRouter {
           typeFromRejection[MalformedHeaderRejection],
           "The value of HTTP header was malformed",
           Some(s"$headerName: $msg"),
-          tracingContext,
           Headers.empty,
           Map("headerName" -> headerName, "message" -> msg),
           loggingDirective
@@ -156,7 +149,6 @@ trait Handlers extends LoggingSupport with BaseRouter {
           typeFromRejection[MalformedQueryParamRejection],
           "The query parameter was malformed",
           Some(s"$name: $msg"),
-          tracingContext,
           Headers.empty,
           Map("queryParamName" -> name, "message" -> msg),
           loggingDirective
@@ -168,7 +160,6 @@ trait Handlers extends LoggingSupport with BaseRouter {
           typeFromRejection[InvalidRequiredValueForQueryParamRejection],
           "The request is missing a required query parameter",
           Some(s"$paramName: $requiredValue"),
-          tracingContext,
           Headers.empty,
           Map("queryParamName" -> paramName, "requiredValue" -> requiredValue),
           loggingDirective
@@ -180,7 +171,6 @@ trait Handlers extends LoggingSupport with BaseRouter {
           typeFromRejection[EntityRejection],
           "The request entity was invalid: " + e.getMessage,
           None,
-          tracingContext,
           Headers.empty,
           (),
           loggingDirective
@@ -192,7 +182,6 @@ trait Handlers extends LoggingSupport with BaseRouter {
           typeFromRejection[MissingCookieRejection],
           "The request is missing a required cookie",
           Some(cookieName),
-          tracingContext,
           Headers.empty,
           Map("cookieName" -> cookieName),
           loggingDirective
@@ -204,7 +193,6 @@ trait Handlers extends LoggingSupport with BaseRouter {
           typeFromRejection[MissingFormFieldRejection],
           "The request is missing a required form field",
           Some(fieldName),
-          tracingContext,
           Headers.empty,
           Map("fieldName" -> fieldName),
           loggingDirective
@@ -216,7 +204,6 @@ trait Handlers extends LoggingSupport with BaseRouter {
           typeFromRejection[MissingHeaderRejection],
           "The request is missing a required HTTP header",
           Some(headerName),
-          tracingContext,
           Headers.empty,
           Map("headerName" -> headerName),
           loggingDirective
@@ -228,7 +215,6 @@ trait Handlers extends LoggingSupport with BaseRouter {
           typeFromRejection[MissingQueryParamRejection],
           "The request is missing a required query parameter",
           Some(paramName),
-          tracingContext,
           Headers.empty,
           Map("queryParamName" -> paramName),
           loggingDirective
@@ -240,7 +226,6 @@ trait Handlers extends LoggingSupport with BaseRouter {
           typeFromRejection[AuthorizationFailedRejection.type],
           "The supplied authentication is not authorized to access this resource",
           None,
-          tracingContext,
           Headers.empty,
           (),
           loggingDirective
@@ -257,7 +242,6 @@ trait Handlers extends LoggingSupport with BaseRouter {
           typeFromRejection[AuthenticationFailedRejection],
           "Could not authorize",
           Some(rejectionMessage),
-          tracingContext,
           Headers(authenticateHeaders),
           (),
           loggingDirective
@@ -270,14 +254,13 @@ trait Handlers extends LoggingSupport with BaseRouter {
           typeFromRejection[MethodRejection],
           "HTTP method not allowed",
           Some("Supported methods: " + names.mkString(", ")),
-          tracingContext,
           Headers(Allow(methods*)),
           Map("supportedMethods" -> names),
           loggingDirective
         )
       }
       .handleNotFound {
-        handlerComplete(NotFound, "rejection:route-not-found", "Route not found", None, tracingContext, Headers.empty, (), loggingDirective)
+        handlerComplete(NotFound, "rejection:route-not-found", "Route not found", None, Headers.empty, (), loggingDirective)
       }
       .result()
       .seal

@@ -3,13 +3,15 @@ package madrileno.auth.routers
 import cats.effect.IO
 import madrileno.auth.domain.AuthContext
 import madrileno.auth.services.JwtService
-import madrileno.utils.logging.LoggingSupport
+import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
 import org.http4s
 import pl.iterators.stir.server.directives.SecurityDirectives.AuthenticationResult
 import org.http4s.*
 import pl.iterators.stir.server.directives.{AuthenticationResult, SecurityDirectives}
 
-class UserAuthenticator(jwtService: JwtService) extends (Option[Credentials] => IO[AuthenticationResult[AuthContext]]) with LoggingSupport {
+class UserAuthenticator(jwtService: JwtService)(using TelemetryContext)
+    extends (Option[Credentials] => IO[AuthenticationResult[AuthContext]])
+    with LoggingSupport {
   override def apply(credentialsOpt: Option[Credentials]): IO[AuthenticationResult[AuthContext]] = {
     credentialsOpt match {
       case Some(credentials: Credentials.Token) if credentials.authScheme == AuthScheme.Bearer =>
@@ -18,14 +20,14 @@ class UserAuthenticator(jwtService: JwtService) extends (Option[Credentials] => 
             AuthContext(json) match {
               case Right(authContext) => IO.pure(AuthenticationResult.success(authContext))
               case Left(error) =>
-                Logger[IO].warning(s"Malformed credentials: $credentials, error: $error").as(AppChallenge)
+                logger.warn(s"Malformed credentials: $credentials, error: $error").as(AppChallenge)
             }
           case JwtService.DecodingResult.InvalidToken(t) =>
-            Logger[IO].warning(t)(s"Invalid token: $credentials").as(AppChallenge)
+            logger.warn(t)(s"Invalid token: $credentials").as(AppChallenge)
           case JwtService.DecodingResult.ParsingFailure(t) =>
-            Logger[IO].warning(t)(s"Token parsing failure: $credentials").as(AppChallenge)
+            logger.warn(t)(s"Token parsing failure: $credentials").as(AppChallenge)
           case JwtService.DecodingResult.Expired =>
-            Logger[IO].warning(s"Expired token: $credentials").as(AppChallenge)
+            logger.warn(s"Expired token: $credentials").as(AppChallenge)
         }
       case _ => AppChallengeIO
     }

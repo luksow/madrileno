@@ -34,7 +34,6 @@ libraryDependencies ++= {
   val kebsV              = "2.0.0"
   val logbackV           = "1.5.12"
   val log4catsV          = "2.7.0"
-  val otel4sCoreV        = "0.8.0"
   val otel4sV            = "0.8.0"
   val otelV              = "1.43.0"
   val macwireV           = "2.6.4"
@@ -63,7 +62,6 @@ libraryDependencies ++= {
     "com.softwaremill.sttp.client4" %% "circe"                                     % sttpV,
     "com.softwaremill.sttp.client4" %% "slf4j-backend"                             % sttpV,
     "org.tpolecat"                  %% "skunk-core"                                % skunkV,
-    "org.typelevel"                 %% "otel4s-core"                               % otel4sCoreV,
     "io.scalaland"                  %% "chimney"                                   % chimneyV,
     "org.typelevel"                 %% "cats-core"                                 % catsV,
     "org.typelevel"                 %% "cats-effect"                               % catsEffectV,
@@ -79,6 +77,9 @@ libraryDependencies ++= {
     "org.typelevel"                 %% "cats-effect-testing-scalatest"             % catsEffectTestingV % "test"
   )
 }
+javaOptions += "-Dotel.java.global-autoconfigure.enabled=true"
+javaOptions += "-Dotel.service.name=madrileno" // TODO: remove after switching from honeycomb
+javaOptions += "-Dotel.exporter.otlp.endpoint=https://api.eu1.honeycomb.io" // TODO: remove after switching from honeycomb
 
 Compile / run / fork := true
 

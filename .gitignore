@@ -2,7 +2,7 @@
 !.gitignore
 !.scalafmt.conf
 !.scalafix.conf
-!.env.sh
+!.env.sample
 
 *.class
 *.log

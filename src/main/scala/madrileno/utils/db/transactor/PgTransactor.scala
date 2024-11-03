@@ -2,9 +2,9 @@ package madrileno.utils.db.transactor
 
 import cats.effect.{IO, Resource}
 import fs2.io.net.SocketOption
+import org.typelevel.otel4s.trace.Tracer
 import skunk.util.Typer
 import skunk.{RedactionStrategy, SSL, Session, Transaction}
-import org.typelevel.otel4s.trace.Tracer.Implicits.noop
 
 class PgTransactor(sessions: Resource[IO, Session[IO]]) extends Transactor {
   override def inTransaction[A](f: (Session[IO], Transaction[IO]) => IO[A]): IO[A] = {
@@ -21,7 +21,7 @@ class PgTransactor(sessions: Resource[IO, Session[IO]]) extends Transactor {
 }
 
 object PgTransactor {
-  def resource(pgConfig: PgConfig): Resource[IO, PgTransactor] = {
+  def resource(pgConfig: PgConfig)(using Tracer[IO]): Resource[IO, PgTransactor] = {
     val session = Session.pooled[IO](
       host = pgConfig.host,
       port = pgConfig.port,
