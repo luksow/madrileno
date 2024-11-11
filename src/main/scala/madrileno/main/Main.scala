@@ -1,6 +1,7 @@
 package madrileno.main
 
 import cats.effect.{Clock, IO, IOApp, Resource}
+import io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppender
 import madrileno.utils.db.transactor.{PgConfig, PgTransactor}
 import madrileno.utils.observability.TelemetryContext
 import org.http4s.ember.server.EmberServerBuilder
@@ -22,6 +23,7 @@ object Main extends IOApp.Simple {
       given Tracer[IO] <- Resource.eval(otel.tracerProvider.get(appConfig.name))
       given Meter[IO]  <- Resource.eval(otel.meterProvider.get(appConfig.name))
       given TelemetryContext = TelemetryContext(Meter[IO], Tracer[IO], otel.underlying)
+      _                      = OpenTelemetryAppender.install(otel.underlying)
       httpClient <- HttpClientFs2Backend.resource[IO]()
       pgConfig   <- Resource.eval(IO.delay(config.at("pg").loadOrThrow[PgConfig]))
       transactor <- PgTransactor.resource(pgConfig)

@@ -24,10 +24,16 @@
             <maxHistory>28</maxHistory>
         </rollingPolicy>
     </appender>
+    <appender name="OpenTelemetry"
+              class="io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppender">
+        <captureMdcAttributes>*</captureMdcAttributes>
+        <captureExperimentalAttributes>true</captureExperimentalAttributes>
+    </appender>
 
     <root level="${LOG_LEVEL:-DEBUG}">
         <appender-ref ref="FILE"/>
         <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="OpenTelemetry"/>
     </root>
 
 </configuration>
