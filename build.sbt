@@ -80,8 +80,6 @@ libraryDependencies ++= {
   )
 }
 javaOptions += "-Dotel.java.global-autoconfigure.enabled=true"
-javaOptions += "-Dotel.service.name=madrileno" // TODO: remove after switching from honeycomb
-javaOptions += "-Dotel.exporter.otlp.endpoint=https://api.eu1.honeycomb.io" // TODO: remove after switching from honeycomb
 
 Compile / run / fork := true
 
