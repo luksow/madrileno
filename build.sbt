@@ -60,7 +60,7 @@ libraryDependencies ++= {
     "com.github.pureconfig"         %% "pureconfig-generic-scala3"                 % pureconfigV,
     "com.softwaremill.sttp.client4" %% "fs2"                                       % sttpV,
     "com.softwaremill.sttp.client4" %% "circe"                                     % sttpV,
-    "com.softwaremill.sttp.client4" %% "slf4j-backend"                             % sttpV,
+    "com.softwaremill.sttp.client4" %% "opentelemetry-metrics-backend"             % sttpV,
     "org.tpolecat"                  %% "skunk-core"                                % skunkV,
     "io.scalaland"                  %% "chimney"                                   % chimneyV,
     "org.typelevel"                 %% "cats-core"                                 % catsV,

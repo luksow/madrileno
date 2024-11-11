@@ -9,13 +9,16 @@ import scala.concurrent.duration.FiniteDuration
 
 final case class DbStatus(status: String, latency: Option[Long]) derives Encoder.AsObject
 
+final case class ExternalConnectionStatus(status: String, ip: Option[String]) derives Encoder.AsObject
+
 final case class HealthCheck(
   name: String,
   environment: String,
   version: String,
   apiVersion: String,
   userId: Option[UserId],
-  db: Option[DbStatus])
+  db: Option[DbStatus],
+  externalConnection: Option[ExternalConnectionStatus])
     derives Encoder.AsObject
 
 object HealthCheck {
@@ -24,20 +27,24 @@ object HealthCheck {
       .into[HealthCheck]
       .withFieldConst(_.userId, None)
       .withFieldConst(_.db, None)
+      .withFieldConst(_.externalConnection, None)
       .transform
   }
 
   def apply(
     appConfig: AppConfig,
     userId: UserId,
-    rtt: Option[FiniteDuration]
+    rtt: Option[FiniteDuration],
+    ip: Option[String]
   ): HealthCheck = {
-    val dbStatus = rtt.map { latency => DbStatus("Up", Some(latency.toMillis)) }.getOrElse(DbStatus("Down", None))
+    val dbStatus                 = rtt.map { latency => DbStatus("Up", Some(latency.toMillis)) }.getOrElse(DbStatus("Down", None))
+    val externalConnectionStatus = ip.map { ip => ExternalConnectionStatus("Up", Some(ip)) }.getOrElse(ExternalConnectionStatus("Down", None))
 
     appConfig
       .into[HealthCheck]
       .withFieldConst(_.userId, Some(userId))
       .withFieldConst(_.db, Some(dbStatus))
+      .withFieldConst(_.externalConnection, Some(externalConnectionStatus))
       .transform
   }
 }

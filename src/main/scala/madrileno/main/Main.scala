@@ -21,7 +21,7 @@ object Main extends IOApp.Simple {
       otel             <- OtelJava.autoConfigured[IO]()
       given Tracer[IO] <- Resource.eval(otel.tracerProvider.get(appConfig.name))
       given Meter[IO]  <- Resource.eval(otel.meterProvider.get(appConfig.name))
-      given TelemetryContext = TelemetryContext(Meter[IO], Tracer[IO])
+      given TelemetryContext = TelemetryContext(Meter[IO], Tracer[IO], otel.underlying)
       httpClient <- HttpClientFs2Backend.resource[IO]()
       pgConfig   <- Resource.eval(IO.delay(config.at("pg").loadOrThrow[PgConfig]))
       transactor <- PgTransactor.resource(pgConfig)

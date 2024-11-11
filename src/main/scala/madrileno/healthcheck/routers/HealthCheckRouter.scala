@@ -17,8 +17,8 @@ class HealthCheckRouter(healthCheckService: HealthCheckService) extends BaseRout
   def authRoutes(auth: AuthContext): Route = {
     (get & path("health-check") & pathEndOrSingleSlash) {
       complete {
-        healthCheckService.healthCheck(auth).map { case (appConfig, userId, rtt) =>
-          Ok -> HealthCheck(appConfig, userId, rtt)
+        healthCheckService.healthCheck(auth).map { case (appConfig, userId, rtt, externalConnectionResult) =>
+          Ok -> HealthCheck(appConfig, userId, rtt, externalConnectionResult)
         }
       }
     }

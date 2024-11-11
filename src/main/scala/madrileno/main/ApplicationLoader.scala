@@ -16,9 +16,8 @@ import pureconfig.generic.derivation.default.*
 import pureconfig.module.ip4s.*
 import sttp.capabilities.fs2.Fs2Streams
 import sttp.client4.{WebSocketStreamBackend, logging}
-import sttp.client4.logging.{LogLevel, LoggingBackend}
-
-import java.util.UUID
+import sttp.client4.logging.{LogConfig, LogLevel, Logger, LoggingBackend}
+import sttp.client4.opentelemetry.OpenTelemetryMetricsBackend
 
 final case class HttpConfig(
   host: Ipv4Address,
@@ -47,49 +46,53 @@ class ApplicationLoader(
   lazy val appConfig: AppConfig               = config.at("app").loadOrThrow[AppConfig]
   lazy val telemetryContext: TelemetryContext = summon[TelemetryContext]
 
-//  private val httpClientLogger: logging.Logger[IO] = new logging.Logger[IO] {
-//    private def wrap(
-//      level: LogLevel,
-//      message: => String,
-//      throwable: Option[Throwable],
-//      context: Map[String, Any]
-//    ): IO[Unit] = {
-//      TracingContextSource[IO].update(_.withMoreContext(context.view.mapValues(_.toString).toList*)) *>
-//        (level match {
-//          case LogLevel.Trace =>
-//            throwable.fold(Logger[IO].debug(message))(t => Logger[IO].warning(t)(message))
-//          case LogLevel.Debug =>
-//            throwable.fold(Logger[IO].debug(message))(t => Logger[IO].warning(t)(message))
-//          case LogLevel.Info =>
-//            throwable.fold(Logger[IO].info(message))(t => Logger[IO].warning(t)(message))
-//          case LogLevel.Warn =>
-//            throwable.fold(Logger[IO].warning(message))(t => Logger[IO].warning(t)(message))
-//          case LogLevel.Error =>
-//            throwable.fold(Logger[IO].error(message))(t => Logger[IO].error(t)(message))
-//        })
-//    }
-//    override def apply(
-//      level: LogLevel,
-//      message: => String,
-//      context: Map[String, Any]
-//    ): IO[Unit] = wrap(level, message, None, context)
-//
-//    override def apply(
-//      level: LogLevel,
-//      message: => String,
-//      t: Throwable,
-//      context: Map[String, Any]
-//    ): IO[Unit] = wrap(level, message, Some(t), context)
-//  }
-//  val httpClient: WebSocketStreamBackend[IO, Fs2Streams[IO]] =
-//    CorrelationIdBackend(LoggingBackend(httpBackend, httpClientLogger), headerName = "Correlation-Id")
+  private lazy val httpClientLogger: logging.Logger[IO] = new Logger[IO] {
+    override def apply(
+      level: LogLevel,
+      message: => String,
+      context: Map[String, Any]
+    ): IO[Unit] = {
+      val contextMapped = context.view.mapValues(_.toString).toMap
+      level match {
+        case LogLevel.Trace => logger.trace(contextMapped)(message)
+        case LogLevel.Debug => logger.debug(contextMapped)(message)
+        case LogLevel.Info  => logger.info(contextMapped)(message)
+        case LogLevel.Warn  => logger.warn(contextMapped)(message)
+        case LogLevel.Error => logger.error(contextMapped)(message)
+      }
+    }
 
-  private def logAction(initalCtx: Map[String, String]): String => IO[Unit] = {
+    override def apply(
+      level: LogLevel,
+      message: => String,
+      throwable: Throwable,
+      context: Map[String, Any]
+    ): IO[Unit] = {
+      val contextMapped = context.view.mapValues(_.toString).toMap
+      level match {
+        case LogLevel.Trace => logger.trace(contextMapped, throwable)(message)
+        case LogLevel.Debug => logger.debug(contextMapped, throwable)(message)
+        case LogLevel.Info  => logger.info(contextMapped, throwable)(message)
+        case LogLevel.Warn  => logger.warn(contextMapped, throwable)(message)
+        case LogLevel.Error => logger.error(contextMapped, throwable)(message)
+      }
+    }
+  }
+
+  lazy val httpClient: WebSocketStreamBackend[IO, Fs2Streams[IO]] =
+    OpenTelemetryTracingBackend(
+      OpenTelemetryMetricsBackend(
+        LoggingBackend(httpBackend, httpClientLogger, LogConfig.Default.copy(logRequestBody = true, logResponseBody = true)),
+        telemetryContext.underlying
+      )
+    )
+
+  private def logAction(initialCtx: Map[String, String]): String => IO[Unit] = {
     config.at("logging.loglevel-request-response").loadOrThrow[Int] match {
-      case 4 => logger.debug(initalCtx)(_)
-      case 3 => logger.info(initalCtx)(_)
-      case 2 => logger.warn(initalCtx)(_)
-      case 1 => logger.error(initalCtx)(_)
+      case 4 => logger.debug(initialCtx)(_)
+      case 3 => logger.info(initialCtx)(_)
+      case 2 => logger.warn(initialCtx)(_)
+      case 1 => logger.error(initialCtx)(_)
     }
   }
 
