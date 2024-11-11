@@ -14,7 +14,7 @@ private class OpenTelemetryTracingBackend[P](delegate: WebSocketStreamBackend[IO
   override def send[T](request: GenericRequest[T, P & WebSockets & Effect[IO]]): IO[Response[T]] = {
     tc.tracer.propagate(Headers.empty).flatMap { headers =>
       val newRequest        = request.headers(headers.headers.map(h => h.name.toString -> h.value).toMap)
-      val requestAttributes = Seq(Attribute("http.method", request.method.method), Attribute("http.url.full", request.uri.toString))
+      val requestAttributes = Seq(Attribute("http.request.method", request.method.method), Attribute("url.full", request.uri.toString))
       tc.tracer.span(s"HTTP Client ${request.method.method}", requestAttributes).use { span =>
         delegate.send(newRequest).flatMap { response =>
           span.addAttribute(Attribute("http.response.status_code", response.code.code.toLong)).as(response)
