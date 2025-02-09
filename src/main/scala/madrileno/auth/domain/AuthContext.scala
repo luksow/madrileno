@@ -2,6 +2,10 @@ package madrileno.auth.domain
 
 import io.circe.{Decoder, Encoder, Json}
 import madrileno.user.domain.*
+import pl.iterators.kebs.opaque.Opaque
+
+opaque type InternalJwt = String
+object InternalJwt extends Opaque[InternalJwt, String]
 
 final case class AuthContext(id: UserId, emailAddress: EmailAddress)
 

@@ -2,13 +2,13 @@
 <configuration debug="false">
     <statusListener class="ch.qos.logback.core.status.NopStatusListener"/>
 
-    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+    <appender name="Console" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
             <pattern>%d{"yyyy-MM-dd HH:mm:ss.SSS"} %-5level %thread %logger{36} - [traceparent: %X{traceparent}] %msg%n</pattern>
         </encoder>
     </appender>
 
-    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+    <appender name="File" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <file>logs/madrileno.log</file>
         <append>true</append>
         <encoder>
@@ -31,8 +31,8 @@
     </appender>
 
     <root level="${LOG_LEVEL:-DEBUG}">
-        <appender-ref ref="FILE"/>
-        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="File"/>
+        <appender-ref ref="Console"/>
         <appender-ref ref="OpenTelemetry"/>
     </root>
 

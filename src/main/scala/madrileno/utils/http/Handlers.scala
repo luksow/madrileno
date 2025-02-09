@@ -1,6 +1,5 @@
 package madrileno.utils.http
 
-import org.http4s.Status.*
 import io.circe.DecodingFailure
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
 import org.http4s.{Headers, Status}

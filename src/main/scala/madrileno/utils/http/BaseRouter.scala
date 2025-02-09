@@ -11,6 +11,8 @@ import pl.iterators.stir.marshalling.ToResponseMarshallable
 import pl.iterators.stir.server.Directives
 
 trait BaseRouter extends JsonProtocol with Directives {
+  export Status.*
+
   def error[E: Encoder](
     status: Status,
     typeTag: String,

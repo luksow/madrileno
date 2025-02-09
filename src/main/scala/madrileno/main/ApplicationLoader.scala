@@ -12,7 +12,6 @@ import org.http4s.Headers
 import org.http4s.otel4s.middleware.instances.all.*
 import pl.iterators.stir.server.{PathMatcher, Route}
 import pureconfig.*
-import pureconfig.generic.derivation.default.*
 import pureconfig.module.ip4s.*
 import sttp.capabilities.fs2.Fs2Streams
 import sttp.client4.{WebSocketStreamBackend, logging}
@@ -50,31 +49,16 @@ class ApplicationLoader(
     override def apply(
       level: LogLevel,
       message: => String,
+      throwable: Option[Throwable],
       context: Map[String, Any]
     ): IO[Unit] = {
       val contextMapped = context.view.mapValues(_.toString).toMap
       level match {
-        case LogLevel.Trace => logger.trace(contextMapped)(message)
-        case LogLevel.Debug => logger.debug(contextMapped)(message)
-        case LogLevel.Info  => logger.info(contextMapped)(message)
-        case LogLevel.Warn  => logger.warn(contextMapped)(message)
-        case LogLevel.Error => logger.error(contextMapped)(message)
-      }
-    }
-
-    override def apply(
-      level: LogLevel,
-      message: => String,
-      throwable: Throwable,
-      context: Map[String, Any]
-    ): IO[Unit] = {
-      val contextMapped = context.view.mapValues(_.toString).toMap
-      level match {
-        case LogLevel.Trace => logger.trace(contextMapped, throwable)(message)
-        case LogLevel.Debug => logger.debug(contextMapped, throwable)(message)
-        case LogLevel.Info  => logger.info(contextMapped, throwable)(message)
-        case LogLevel.Warn  => logger.warn(contextMapped, throwable)(message)
-        case LogLevel.Error => logger.error(contextMapped, throwable)(message)
+        case LogLevel.Trace => throwable.fold(logger.trace(contextMapped)(message))(logger.trace(contextMapped, _)(message))
+        case LogLevel.Debug => throwable.fold(logger.debug(contextMapped)(message))(logger.debug(contextMapped, _)(message))
+        case LogLevel.Info  => throwable.fold(logger.info(contextMapped)(message))(logger.info(contextMapped, _)(message))
+        case LogLevel.Warn  => throwable.fold(logger.warn(contextMapped)(message))(logger.warn(contextMapped, _)(message))
+        case LogLevel.Error => throwable.fold(logger.error(contextMapped)(message))(logger.error(contextMapped, _)(message))
       }
     }
   }

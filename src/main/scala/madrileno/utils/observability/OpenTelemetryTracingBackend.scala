@@ -15,11 +15,13 @@ private class OpenTelemetryTracingBackend[P](delegate: WebSocketStreamBackend[IO
     tc.tracer.propagate(Headers.empty).flatMap { headers =>
       val newRequest        = request.headers(headers.headers.map(h => h.name.toString -> h.value).toMap)
       val requestAttributes = Seq(Attribute("http.request.method", request.method.method), Attribute("url.full", request.uri.toString))
-      tc.tracer.span(s"HTTP Client ${request.method.method}", requestAttributes).use { span =>
-        delegate.send(newRequest).flatMap { response =>
-          span.addAttribute(Attribute("http.response.status_code", response.code.code.toLong)).as(response)
+      tc.tracer
+        .span(s"HTTP Client ${request.method.method} ${request.uri.withPath(Seq.empty).toString}", requestAttributes)
+        .use { span =>
+          delegate.send(newRequest).flatMap { response =>
+            span.addAttribute(Attribute("http.response.status_code", response.code.code.toLong)).as(response)
+          }
         }
-      }
     }
   }
 }

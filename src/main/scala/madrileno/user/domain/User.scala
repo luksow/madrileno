@@ -1,11 +1,15 @@
 package madrileno.user.domain
 
+import cats.effect.IO
+import cats.effect.std.UUIDGen
 import pl.iterators.kebs.opaque.Opaque
 
 import java.util.UUID
 
 opaque type UserId = UUID
-object UserId extends Opaque[UserId, UUID]
+object UserId extends Opaque[UserId, UUID] {
+  def generate(using UUIDGen[IO]): IO[UserId] = UUIDGen[IO].randomUUID.map(apply)
+}
 
 opaque type EmailAddress = String
 object EmailAddress extends Opaque[EmailAddress, String] {

@@ -11,7 +11,7 @@ final case class DbStatus(status: String, latency: Option[Long]) derives Encoder
 
 final case class ExternalConnectionStatus(status: String, ip: Option[String]) derives Encoder.AsObject
 
-final case class HealthCheck(
+final case class HealthCheckResponse(
   name: String,
   environment: String,
   version: String,
@@ -21,10 +21,10 @@ final case class HealthCheck(
   externalConnection: Option[ExternalConnectionStatus])
     derives Encoder.AsObject
 
-object HealthCheck {
-  def apply(appConfig: AppConfig): HealthCheck = {
+object HealthCheckResponse {
+  def apply(appConfig: AppConfig): HealthCheckResponse = {
     appConfig
-      .into[HealthCheck]
+      .into[HealthCheckResponse]
       .withFieldConst(_.userId, None)
       .withFieldConst(_.db, None)
       .withFieldConst(_.externalConnection, None)
@@ -36,12 +36,12 @@ object HealthCheck {
     userId: UserId,
     rtt: Option[FiniteDuration],
     ip: Option[String]
-  ): HealthCheck = {
+  ): HealthCheckResponse = {
     val dbStatus                 = rtt.map { latency => DbStatus("Up", Some(latency.toMillis)) }.getOrElse(DbStatus("Down", None))
     val externalConnectionStatus = ip.map { ip => ExternalConnectionStatus("Up", Some(ip)) }.getOrElse(ExternalConnectionStatus("Down", None))
 
     appConfig
-      .into[HealthCheck]
+      .into[HealthCheckResponse]
       .withFieldConst(_.userId, Some(userId))
       .withFieldConst(_.db, Some(dbStatus))
       .withFieldConst(_.externalConnection, Some(externalConnectionStatus))

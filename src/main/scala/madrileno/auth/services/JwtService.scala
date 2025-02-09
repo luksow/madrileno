@@ -5,7 +5,6 @@ import pdi.jwt.exceptions.JwtExpirationException
 import pdi.jwt.{Jwt, JwtAlgorithm, JwtClaim}
 import JwtService.*
 import pureconfig.*
-import pureconfig.generic.derivation.default.*
 import java.time.Instant
 import scala.util.{Failure, Success}
 import java.time.Duration
