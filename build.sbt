@@ -5,7 +5,7 @@ version := "1.0.0-SNAPSHOT"
 scalaVersion := "3.5.0"
 
 scalacOptions ++= Seq(
-  "-release:17",
+  "-release:21",
   "-deprecation",
   "-encoding",
   "utf-8",
@@ -95,7 +95,7 @@ dockerCommands += Cmd("ARG", "BUILD_VERSION")
 dockerCommands += Cmd("ENV", "APP_VERSION=$BUILD_VERSION")
 dockerRepository := sys.env.get("DOCKER_REPO")
 packageName := "madrileno"
-dockerBaseImage := "azul/zulu-openjdk:17.0.4.1"
+dockerBaseImage := "azul/zulu-openjdk:21"
 Docker / daemonUser := "noroot"
 dockerUpdateLatest := true
 
