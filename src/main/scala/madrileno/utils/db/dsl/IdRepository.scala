@@ -9,7 +9,7 @@ trait IdTable[A, Id] {
   def id: Column[Id]
 }
 
-trait IdRepository[A, Id](getId: A => Id) {
+trait IdRepository[A, Id](getId: A => Id) extends BaseRepository[A] {
   def create(a: A)(session: Session[IO]): IO[Id] =
     session.unique(sql"INSERT INTO ${table.n} (${table.*}) VALUES (${table.c}) RETURNING ${table.id.n}".query(table.id.c))(a)
 
@@ -26,24 +26,24 @@ trait IdRepository[A, Id](getId: A => Id) {
       .void
 
   def findById(id: Id)(session: Session[IO]): IO[Option[A]] =
-    session.option(sql"SELECT ${table.*} FROM ${table.n} WHERE ${table.id.n} = ${table.id.c}".query(table.c))(id)
+    session.option(sql"SELECT ${table.*} FROM ${table.n} WHERE $baseFilter AND ${table.id.n} = ${table.id.c}".query(table.c))(id)
 
   def existsById(id: Id)(session: Session[IO]): IO[Boolean] =
     session
-      .option(sql"SELECT 1 FROM ${table.n} WHERE ${table.id.n} = ${table.id.c}".query(int4))(id)
+      .option(sql"SELECT 1 FROM ${table.n} WHERE $baseFilter AND ${table.id.n} = ${table.id.c}".query(int4))(id)
       .map(_.isDefined)
 
   def findByIds(ids: List[Id])(session: Session[IO]): IO[List[A]] =
-    session.execute(sql"SELECT ${table.*} FROM ${table.n} WHERE ${table.id.n} IN (${table.id.c.list(ids)})".query(table.c))(ids)
+    session.execute(sql"SELECT ${table.*} FROM ${table.n} WHERE $baseFilter AND ${table.id.n} IN (${table.id.c.list(ids)})".query(table.c))(ids)
 
-  def find(id: Id)(session: Session[IO]): IO[A] =
-    session.unique(sql"SELECT ${table.*} FROM ${table.n} WHERE ${table.id.n} = ${table.id.c}".query(table.c))(id)
+  def getById(id: Id)(session: Session[IO]): IO[A] =
+    session.unique(sql"SELECT ${table.*} FROM ${table.n} WHERE $baseFilter AND ${table.id.n} = ${table.id.c}".query(table.c))(id)
 
   def all(session: Session[IO]): IO[List[A]] =
-    session.execute(sql"SELECT ${table.*} FROM ${table.n}".query(table.c))
+    session.execute(sql"SELECT ${table.*} FROM ${table.n} WHERE $baseFilter".query(table.c))
 
   def count(session: Session[IO]): IO[Long] =
-    session.unique(sql"SELECT COUNT(*) FROM ${table.n}".query(int8))
+    session.unique(sql"SELECT COUNT(*) FROM ${table.n} WHERE $baseFilter".query(int8))
 
   def update(toBeUpdated: A)(session: Session[IO]): IO[Unit] =
     session
