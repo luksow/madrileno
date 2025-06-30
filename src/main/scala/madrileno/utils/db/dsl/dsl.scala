@@ -1,12 +1,13 @@
 package madrileno.utils.db.dsl
 
-import skunk.*
-import skunk.implicits.*
-import skunk.codec.all.*
 import org.typelevel.twiddles.Iso
 import pl.iterators.kebs.core.enums.EnumLike
+import pl.iterators.kebs.core.instances.InstanceConverter
 import pl.iterators.kebs.core.macros.ValueClassLike
 import pl.iterators.kebs.enums.KebsEnum
+import pl.iterators.kebs.instances.KebsInstances
+import skunk.*
+import skunk.implicits.*
 
 import java.time.{Instant, OffsetDateTime, ZoneOffset}
 
@@ -55,9 +56,10 @@ abstract class Table[T](tableName: String) extends MappingHelpers[T] with CodecH
   def n: Fragment[Void] = sql"#${tableName}"
 }
 
-trait CodecHelpers extends KebsEnum {
+trait CodecHelpers extends KebsEnum with KebsInstances {
   extension [A](codec: Codec[A]) {
-    def as[T](using valueClassLike: ValueClassLike[T, A]): Codec[T] = codec.imap(valueClassLike.apply)(valueClassLike.unapply)
+    def as[T](using valueClassLike: ValueClassLike[T, A]): Codec[T]                  = codec.imap(valueClassLike.apply)(valueClassLike.unapply)
+    def asConvertedTo[T](using instanceConverter: InstanceConverter[T, A]): Codec[T] = codec.imap(instanceConverter.decode)(instanceConverter.encode)
   }
 
   extension (codec: Codec[String]) {

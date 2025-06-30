@@ -1,6 +1,6 @@
 package madrileno.auth.routers.dto
 
+import madrileno.auth.domain.{InternalJwt, RefreshTokenId}
 import madrileno.utils.json.JsonProtocol.*
-import madrileno.auth.domain.InternalJwt
 
-case class AuthenticatedResponse(jwt: InternalJwt) derives Encoder.AsObject
+case class AuthenticatedResponse(jwt: InternalJwt, refreshToken: RefreshTokenId) derives Encoder.AsObject

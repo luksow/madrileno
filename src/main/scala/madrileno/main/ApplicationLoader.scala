@@ -4,19 +4,20 @@ import cats.effect.{Clock, IO}
 import com.comcast.ip4s.{Ipv4Address, Port}
 import madrileno.auth.AuthModule
 import madrileno.healthcheck.HealthCheckModule
+import madrileno.user.UserModule
 import madrileno.utils.db.transactor.Transactor
 import madrileno.utils.http.{ApplicationRouteProvider, Handlers}
 import madrileno.utils.observability.*
-import org.typelevel.otel4s.Attribute
 import org.http4s.Headers
 import org.http4s.otel4s.middleware.instances.all.*
+import org.typelevel.otel4s.Attribute
 import pl.iterators.stir.server.{PathMatcher, Route}
 import pureconfig.*
 import pureconfig.module.ip4s.*
 import sttp.capabilities.fs2.Fs2Streams
-import sttp.client4.{WebSocketStreamBackend, logging}
 import sttp.client4.logging.{LogConfig, LogLevel, Logger, LoggingBackend}
 import sttp.client4.opentelemetry.OpenTelemetryMetricsBackend
+import sttp.client4.{WebSocketStreamBackend, logging}
 
 final case class HttpConfig(
   host: Ipv4Address,
@@ -40,6 +41,7 @@ class ApplicationLoader(
     with LoggingSupport
     with Handlers
     with AuthModule
+    with UserModule
     with HealthCheckModule {
   lazy val httpConfig: HttpConfig             = config.at("http").loadOrThrow[HttpConfig]
   lazy val appConfig: AppConfig               = config.at("app").loadOrThrow[AppConfig]

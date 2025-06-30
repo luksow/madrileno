@@ -1,15 +1,13 @@
 package madrileno.user.domain
 
-import cats.effect.IO
-import cats.effect.std.UUIDGen
 import pl.iterators.kebs.opaque.Opaque
 
+import java.net.URI
+import java.time.Instant
 import java.util.UUID
 
 opaque type UserId = UUID
-object UserId extends Opaque[UserId, UUID] {
-  def generate(using UUIDGen[IO]): IO[UserId] = UUIDGen[IO].randomUUID.map(apply)
-}
+object UserId extends Opaque[UserId, UUID]
 
 opaque type EmailAddress = String
 object EmailAddress extends Opaque[EmailAddress, String] {
@@ -19,4 +17,18 @@ object EmailAddress extends Opaque[EmailAddress, String] {
   }
 }
 
-final case class User(id: UserId, emailAddress: EmailAddress)
+opaque type FullName = String
+object FullName extends Opaque[FullName, String] {
+  override def validate(value: String): Either[String, FullName] = {
+    if (value.trim.nonEmpty) Right(value.trim)
+    else Left("Invalid full name")
+  }
+}
+
+final case class User(
+  id: UserId,
+  fullName: Option[FullName],
+  emailAddress: Option[EmailAddress],
+  emailVerified: Boolean,
+  avatarUrl: Option[URI],
+  blockedAt: Option[Instant])

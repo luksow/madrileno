@@ -1,8 +1,7 @@
 package madrileno.healthcheck.services
 
-import cats.effect.IO
-import cats.effect.Clock
-import cats.syntax.parallel._
+import cats.effect.{Clock, IO}
+import cats.syntax.parallel.*
 import madrileno.auth.domain.AuthContext
 import madrileno.healthcheck.gateways.FingerprintingApiGateway
 import madrileno.healthcheck.repositories.HealthCheckRepository

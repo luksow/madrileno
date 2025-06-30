@@ -1,9 +1,9 @@
 package madrileno.healthcheck.routers.dto
 
+import io.scalaland.chimney.dsl.*
 import madrileno.main.AppConfig
 import madrileno.user.domain.UserId
 import madrileno.utils.json.JsonProtocol.*
-import io.scalaland.chimney.dsl.*
 
 import scala.concurrent.duration.FiniteDuration
 
@@ -11,7 +11,7 @@ final case class DbStatus(status: String, latency: Option[Long]) derives Encoder
 
 final case class ExternalConnectionStatus(status: String, ip: Option[String]) derives Encoder.AsObject
 
-final case class HealthCheckResponse(
+final case class HealthCheckDto(
   name: String,
   environment: String,
   version: String,
@@ -21,10 +21,10 @@ final case class HealthCheckResponse(
   externalConnection: Option[ExternalConnectionStatus])
     derives Encoder.AsObject
 
-object HealthCheckResponse {
-  def apply(appConfig: AppConfig): HealthCheckResponse = {
+object HealthCheckDto {
+  def apply(appConfig: AppConfig): HealthCheckDto = {
     appConfig
-      .into[HealthCheckResponse]
+      .into[HealthCheckDto]
       .withFieldConst(_.userId, None)
       .withFieldConst(_.db, None)
       .withFieldConst(_.externalConnection, None)
@@ -36,12 +36,12 @@ object HealthCheckResponse {
     userId: UserId,
     rtt: Option[FiniteDuration],
     ip: Option[String]
-  ): HealthCheckResponse = {
+  ): HealthCheckDto = {
     val dbStatus                 = rtt.map { latency => DbStatus("Up", Some(latency.toMillis)) }.getOrElse(DbStatus("Down", None))
     val externalConnectionStatus = ip.map { ip => ExternalConnectionStatus("Up", Some(ip)) }.getOrElse(ExternalConnectionStatus("Down", None))
 
     appConfig
-      .into[HealthCheckResponse]
+      .into[HealthCheckDto]
       .withFieldConst(_.userId, Some(userId))
       .withFieldConst(_.db, Some(dbStatus))
       .withFieldConst(_.externalConnection, Some(externalConnectionStatus))

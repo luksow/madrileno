@@ -1,11 +1,14 @@
 package madrileno.auth
 
 import com.google.auth.oauth2.GoogleCredentials
-import com.google.firebase.{FirebaseApp, FirebaseOptions}
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.{FirebaseApp, FirebaseOptions}
 import com.softwaremill.macwire.*
+import madrileno.auth.repositories.{RefreshTokenRowRepository, UserAuthRowRepository}
 import madrileno.auth.routers.{AuthRouter, UserAuthenticator}
 import madrileno.auth.services.*
+import madrileno.user.repositories.UserRowRepository
+import madrileno.utils.db.transactor.Transactor
 import madrileno.utils.http.RouteProvider
 import madrileno.utils.observability.TelemetryContext
 import pl.iterators.stir.server.Route
@@ -19,6 +22,9 @@ trait AuthModule extends RouteProvider {
   val jwtConfig: JwtService.Config = config.at("jwt").loadOrThrow[JwtService.Config]
   private val jwtService           = wire[JwtService]
   given telemetryContext: TelemetryContext
+  val transactor: Transactor
+  lazy val userRowRepository: UserRowRepository
+
   val userAuthenticator: UserAuthenticator = wire[UserAuthenticator]
 
   private val firebaseKey = config.at("firebase.key").loadOrThrow[String]
@@ -34,8 +40,10 @@ trait AuthModule extends RouteProvider {
   private val firebaseAuth    = FirebaseAuth.getInstance(firebaseApp)
   private val firebaseService = wire[FirebaseService]
 
-  private val authenticationService  = wire[AuthenticationService]
-  private val authRouter: AuthRouter = wire[AuthRouter]
+  private val userAuthRowRepository     = wire[UserAuthRowRepository]
+  private val refreshTokenRowRepository = wire[RefreshTokenRowRepository]
+  private val authenticationService     = wire[AuthenticationService]
+  private val authRouter                = wire[AuthRouter]
 
   override abstract def route: Route = super.route ~ authRouter.routes
 }

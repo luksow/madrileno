@@ -51,17 +51,15 @@ trait IdRepository[A, Id](getId: A => Id) extends BaseRepository[A] {
       .void
 
   def updateById(id: Id, transform: A => A)(session: Session[IO]): IO[Unit] = {
-    session.transaction.use { tx =>
-      session.option(sql"SELECT ${table.*} FROM ${table.n} WHERE ${table.id.n} = ${table.id.c} FOR UPDATE".query(table.c))(id).flatMap {
-        case Some(obj) =>
-          val toBeUpdated = transform(obj)
-          session
-            .execute(sql"UPDATE ${table.n} SET (${table.*}) = (${table.c}) WHERE ${table.id.n} = ${table.id.c}".command)(
-              (toBeUpdated, getId(toBeUpdated))
-            )
-            .void
-        case None => IO.unit
-      }
+    session.option(sql"SELECT ${table.*} FROM ${table.n} WHERE ${table.id.n} = ${table.id.c} FOR UPDATE".query(table.c))(id).flatMap {
+      case Some(obj) =>
+        val toBeUpdated = transform(obj)
+        session
+          .execute(sql"UPDATE ${table.n} SET (${table.*}) = (${table.c}) WHERE ${table.id.n} = ${table.id.c}".command)(
+            (toBeUpdated, getId(toBeUpdated))
+          )
+          .void
+      case None => IO.unit
     }
   }
 

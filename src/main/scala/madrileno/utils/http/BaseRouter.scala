@@ -1,14 +1,14 @@
 package madrileno.utils.http
 
 import cats.effect.IO
-
-import java.net.URI
-import org.http4s.Status
 import madrileno.utils.json.JsonProtocol
 import madrileno.utils.json.JsonProtocol.*
 import madrileno.utils.observability.TelemetryContext
+import org.http4s.Status
 import pl.iterators.stir.marshalling.ToResponseMarshallable
 import pl.iterators.stir.server.Directives
+
+import java.net.URI
 
 trait BaseRouter extends JsonProtocol with Directives {
   export Status.*

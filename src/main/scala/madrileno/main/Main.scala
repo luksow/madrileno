@@ -11,9 +11,9 @@ import org.http4s.server.middleware.{EntityLimiter, Metrics}
 import org.typelevel.otel4s.metrics.Meter
 import org.typelevel.otel4s.oteljava.OtelJava
 import org.typelevel.otel4s.trace.Tracer
-import sttp.client4.httpclient.fs2.HttpClientFs2Backend
-import pureconfig.*
 import pl.iterators.stir.server.ToHttpRoutes
+import pureconfig.*
+import sttp.client4.httpclient.fs2.HttpClientFs2Backend
 
 object Main extends IOApp.Simple {
   override def run: IO[Unit] =
@@ -38,13 +38,13 @@ object Main extends IOApp.Simple {
           .buildHttpApp {
             EntityLimiter.httpApp(Metrics(metricsOps)(application.routes.toHttpRoutes).orNotFound, application.httpConfig.maxRequestSize)
           }
-      server <- EmberServerBuilder
-                  .default[IO]
-                  .withHost(application.httpConfig.host)
-                  .withPort(application.httpConfig.port)
-                  .withHttpApp(httpApp)
-                  .build
-    } yield application).use { app =>
+      _ <- EmberServerBuilder
+             .default[IO]
+             .withHost(application.httpConfig.host)
+             .withPort(application.httpConfig.port)
+             .withHttpApp(httpApp)
+             .build
+    } yield application).use { _ =>
       IO.never
     }
 }

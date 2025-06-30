@@ -5,8 +5,8 @@ import madrileno.auth.domain.AuthContext
 import madrileno.auth.services.JwtService
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
 import org.http4s
-import pl.iterators.stir.server.directives.SecurityDirectives.AuthenticationResult
 import org.http4s.*
+import pl.iterators.stir.server.directives.SecurityDirectives.AuthenticationResult
 import pl.iterators.stir.server.directives.{AuthenticationResult, SecurityDirectives}
 
 class UserAuthenticator(jwtService: JwtService)(using TelemetryContext)
@@ -17,7 +17,7 @@ class UserAuthenticator(jwtService: JwtService)(using TelemetryContext)
       case Some(credentials: Credentials.Token) if credentials.authScheme == AuthScheme.Bearer =>
         jwtService.decode(credentials.token) match {
           case JwtService.DecodingResult.Decoded(json) =>
-            AuthContext(json) match {
+            AuthContext.from(json) match {
               case Right(authContext) => IO.pure(AuthenticationResult.success(authContext))
               case Left(error) =>
                 logger.warn(s"Malformed credentials: $credentials, error: $error").as(AppChallenge)

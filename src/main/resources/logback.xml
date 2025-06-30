@@ -36,4 +36,6 @@
         <appender-ref ref="OpenTelemetry"/>
     </root>
 
+    <logger name="org.apache.hc" level="WARN"/>
+
 </configuration>

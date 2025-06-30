@@ -2,11 +2,11 @@ package madrileno.utils.http
 
 import io.circe.DecodingFailure
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
-import org.http4s.{Headers, Status}
 import org.http4s.headers.{Allow, `WWW-Authenticate`}
 import org.http4s.otel4s.middleware.instances.all.*
-import pl.iterators.stir.server.AuthenticationFailedRejection.{CredentialsMissing, CredentialsRejected}
+import org.http4s.{Headers, Status}
 import pl.iterators.stir.server.*
+import pl.iterators.stir.server.AuthenticationFailedRejection.{CredentialsMissing, CredentialsRejected}
 
 import java.net.URI
 import scala.reflect.ClassTag

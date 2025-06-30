@@ -6,7 +6,11 @@ import skunk.codec.all.*
 import skunk.implicits.*
 
 trait SqlFilter {
-  protected given [A]: Conversion[(SqlPredicate[A], Column[A]), AppliedFragment] = (pair: (SqlPredicate[A], Column[A])) => {
+  protected given conv[A]: Conversion[(SqlPredicate[A], Column[A]), AppliedFragment] = (pair: (SqlPredicate[A], Column[A])) => {
+    pair._1.toAppliedFragment(pair._2.copy(codec = pair._2.codec.opt))
+  }
+
+  protected given convOpt[A]: Conversion[(SqlPredicate[A], Column[Option[A]]), AppliedFragment] = (pair: (SqlPredicate[A], Column[Option[A]])) => {
     pair._1.toAppliedFragment(pair._2)
   }
 
@@ -55,7 +59,7 @@ trait SqlFilter {
 }
 
 trait SqlPredicate[A] {
-  def toAppliedFragment(column: Column[A]): AppliedFragment
+  def toAppliedFragment(column: Column[Option[A]]): AppliedFragment
 }
 
 trait SqlOrderBy {
@@ -82,27 +86,29 @@ trait SqlOrderByColumn extends SqlOrderBy {
 }
 
 object p {
-  def any[A]: SqlPredicate[A] = (column: Column[A]) => {
+  def any[A]: SqlPredicate[A] = (_: Column[Option[A]]) => {
     sql"True" (Void)
   }
 
-  def in[A](values: List[A]): SqlPredicate[A] = (column: Column[A]) => {
+  def in[A](values: List[A]): SqlPredicate[A] = (column: Column[Option[A]]) => {
     if (values.isEmpty) {
       sql"False" (Void)
     } else {
-      sql"(${column.n} IN (${column.c.list(values)}))" (values)
+      val mappedValues = values.map(Option(_))
+      sql"(${column.n} IN (${column.c.list(mappedValues)}))" (mappedValues)
     }
   }
 
-  def notIn[A](values: List[A]): SqlPredicate[A] = (column: Column[A]) => {
+  def notIn[A](values: List[A]): SqlPredicate[A] = (column: Column[Option[A]]) => {
     if (values.isEmpty) {
       sql"True" (Void)
     } else {
-      sql"(${column.n} NOT IN (${column.c.list(values)}))" (values)
+      val mappedValues = values.map(Option(_))
+      sql"(${column.n} NOT IN (${column.c.list(mappedValues)}))" (mappedValues)
     }
   }
 
-  def like[A](value: String, caseSensitive: Boolean = true): SqlPredicate[A] = (column: Column[A]) => {
+  def like[A](value: String, caseSensitive: Boolean = true): SqlPredicate[A] = (column: Column[Option[A]]) => {
     if (caseSensitive) {
       sql"(${column.n} LIKE $text)" (value)
     } else {
@@ -110,7 +116,7 @@ object p {
     }
   }
 
-  def notLike[A](value: String, caseSensitive: Boolean = true): SqlPredicate[A] = (column: Column[A]) => {
+  def notLike[A](value: String, caseSensitive: Boolean = true): SqlPredicate[A] = (column: Column[Option[A]]) => {
     if (caseSensitive) {
       sql"(${column.n} NOT LIKE $text)" (value)
     } else {
@@ -118,68 +124,68 @@ object p {
     }
   }
 
-  def similarTo[A](value: String): SqlPredicate[A] = (column: Column[A]) => {
+  def similarTo[A](value: String): SqlPredicate[A] = (column: Column[Option[A]]) => {
     sql"(${column.n} SIMILAR TO $text)" (value)
   }
 
-  def notSimilarTo[A](value: String): SqlPredicate[A] = (column: Column[A]) => {
+  def notSimilarTo[A](value: String): SqlPredicate[A] = (column: Column[Option[A]]) => {
     sql"(${column.n} NOT SIMILAR TO $text)" (value)
   }
 
-  def between[A](min: A, max: A): SqlPredicate[A] = (column: Column[A]) => {
-    sql"(${column.n} BETWEEN ${column.c} AND ${column.c})" (min, max)
+  def between[A](min: A, max: A): SqlPredicate[A] = (column: Column[Option[A]]) => {
+    sql"(${column.n} BETWEEN ${column.c} AND ${column.c})" (Option(min), Option(max))
   }
 
-  def notBetween[A](min: A, max: A): SqlPredicate[A] = (column: Column[A]) => {
-    sql"(${column.n} NOT BETWEEN ${column.c} AND ${column.c})" (min, max)
+  def notBetween[A](min: A, max: A): SqlPredicate[A] = (column: Column[Option[A]]) => {
+    sql"(${column.n} NOT BETWEEN ${column.c} AND ${column.c})" (Option(min), Option(max))
   }
 
-  def greaterThan[A](value: A): SqlPredicate[A] = (column: Column[A]) => {
-    sql"(${column.n} > ${column.c})" (value)
+  def greaterThan[A](value: A): SqlPredicate[A] = (column: Column[Option[A]]) => {
+    sql"(${column.n} > ${column.c})" (Option(value))
   }
 
-  def greaterThanOrEqual[A](value: A): SqlPredicate[A] = (column: Column[A]) => {
-    sql"(${column.n} >= ${column.c})" (value)
+  def greaterThanOrEqual[A](value: A): SqlPredicate[A] = (column: Column[Option[A]]) => {
+    sql"(${column.n} >= ${column.c})" (Option(value))
   }
 
-  def lessThan[A](value: A): SqlPredicate[A] = (column: Column[A]) => {
-    sql"(${column.n} < ${column.c})" (value)
+  def lessThan[A](value: A): SqlPredicate[A] = (column: Column[Option[A]]) => {
+    sql"(${column.n} < ${column.c})" (Option(value))
   }
 
-  def lessThanOrEqual[A](value: A): SqlPredicate[A] = (column: Column[A]) => {
-    sql"(${column.n} <= ${column.c})" (value)
+  def lessThanOrEqual[A](value: A): SqlPredicate[A] = (column: Column[Option[A]]) => {
+    sql"(${column.n} <= ${column.c})" (Option(value))
   }
 
-  def isNull[A]: SqlPredicate[A] = (column: Column[A]) => {
+  def isNull[A]: SqlPredicate[A] = (column: Column[Option[A]]) => {
     sql"(${column.n} IS NULL)" (Void)
   }
 
-  def isNotNull[A]: SqlPredicate[A] = (column: Column[A]) => {
+  def isNotNull[A]: SqlPredicate[A] = (column: Column[Option[A]]) => {
     sql"(${column.n} IS NOT NULL)" (Void)
   }
 
-  def isTrue[A]: SqlPredicate[A] = (column: Column[A]) => {
+  def isTrue[A]: SqlPredicate[A] = (column: Column[Option[A]]) => {
     sql"(${column.n} IS TRUE)" (Void)
   }
 
-  def isFalse[A]: SqlPredicate[A] = (column: Column[A]) => {
+  def isFalse[A]: SqlPredicate[A] = (column: Column[Option[A]]) => {
     sql"(${column.n} IS FALSE)" (Void)
   }
 
-  def isDistinctFrom[A](value: A): SqlPredicate[A] = (column: Column[A]) => {
-    sql"(${column.n} IS DISTINCT FROM ${column.c})" (value)
+  def isDistinctFrom[A](value: A): SqlPredicate[A] = (column: Column[Option[A]]) => {
+    sql"(${column.n} IS DISTINCT FROM ${column.c})" (Option(value))
   }
 
-  def isNotDistinctFrom[A](value: A): SqlPredicate[A] = (column: Column[A]) => {
-    sql"(${column.n} IS NOT DISTINCT FROM ${column.c})" (value)
+  def isNotDistinctFrom[A](value: A): SqlPredicate[A] = (column: Column[Option[A]]) => {
+    sql"(${column.n} IS NOT DISTINCT FROM ${column.c})" (Option(value))
   }
 
-  def equal[A](value: A): SqlPredicate[A] = (column: Column[A]) => {
-    sql"(${column.n} = ${column.c})" (value)
+  def equal[A](value: A): SqlPredicate[A] = (column: Column[Option[A]]) => {
+    sql"(${column.n} = ${column.c})" (Option(value))
   }
 
-  def notEqual[A](value: A): SqlPredicate[A] = (column: Column[A]) => {
-    sql"(${column.n} != ${column.c})" (value)
+  def notEqual[A](value: A): SqlPredicate[A] = (column: Column[Option[A]]) => {
+    sql"(${column.n} != ${column.c})" (Option(value))
   }
 }
 

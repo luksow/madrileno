@@ -6,9 +6,31 @@ import skunk.implicits.*
 
 import java.time.Instant
 
-trait TimestampedTable {
+trait CreatedTimestampedTable {
   def createdAt: Column[Instant]
+}
+
+trait TimestampedTable extends CreatedTimestampedTable {
   def updatedAt: Column[Instant]
+}
+
+trait CreatedTimestampedRepository[A, Id](setCreatedAt: (A, Instant) => A) extends IdRepository[A, Id] {
+  private def now = Clock[IO].realTimeInstant
+
+  override def create(a: A)(session: Session[IO]): IO[Id] = {
+    now.flatMap { instant =>
+      val withCreatedAt = setCreatedAt(a, instant)
+      super.create(withCreatedAt)(session)
+    }
+  }
+
+  override def createAll(s: List[A])(session: Session[IO]): IO[List[Id]] =
+    now.flatMap { instant =>
+      val stamped = s.map(a => setCreatedAt(a, instant))
+      super.createAll(stamped)(session)
+    }
+
+  protected val table: CreatedTimestampedTable & IdTable[A, Id] & Table[A]
 }
 
 trait TimestampedRepository[A, Id](setCreatedAt: (A, Instant) => A, setUpdatedAt: (A, Instant) => A)(using Clock[IO]) extends IdRepository[A, Id] {
@@ -38,6 +60,7 @@ trait TimestampedRepository[A, Id](setCreatedAt: (A, Instant) => A, setUpdatedAt
         case Nil          => sql""
         case head :: tail => tail.foldLeft(sql"${head}") { (acc, c) => sql"$acc, ${c}" }
       }
+      println(sql"INSERT INTO ${table.n} (${table.*}) VALUES (${table.c}) ON CONFLICT (${table.id.n}) DO UPDATE SET $updateFrag")
       session
         .execute(sql"INSERT INTO ${table.n} (${table.*}) VALUES (${table.c}) ON CONFLICT (${table.id.n}) DO UPDATE SET $updateFrag".command)(
           withCreatedAtAndUpdatedAt
@@ -46,13 +69,7 @@ trait TimestampedRepository[A, Id](setCreatedAt: (A, Instant) => A, setUpdatedAt
     }
   }
 
-  // this can overwrite createdAt - it's callers responsibility to ensure that this is not the case
-  override def update(toBeUpdated: A)(session: Session[IO]): IO[Unit] = {
-    now.flatMap { instant =>
-      val withUpdatedAt = setUpdatedAt(toBeUpdated, instant)
-      super.update(withUpdatedAt)(session)
-    }
-  }
+  override def update(toBeUpdated: A)(session: Session[IO]): IO[Unit] = upsert(toBeUpdated)(session)
 
   // this can overwrite createdAt - it's callers responsibility to ensure that this is not the case
   override def updateById(id: Id, transform: A => A)(session: Session[IO]): IO[Unit] = {

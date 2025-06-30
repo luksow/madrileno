@@ -1,7 +1,6 @@
 package madrileno.utils.db.transactor
 
 import cats.effect.{IO, Resource}
-import fs2.io.net.SocketOption
 import org.typelevel.otel4s.trace.Tracer
 import skunk.util.Typer
 import skunk.{RedactionStrategy, SSL, Session, Transaction}
