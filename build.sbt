@@ -4,21 +4,6 @@ version := "1.0.0-SNAPSHOT"
 
 scalaVersion := "3.7.1"
 
-scalacOptions ++= Seq(
-  "-release:21",
-  "-deprecation",
-  "-encoding",
-  "utf-8",
-  "-unchecked",
-  "-no-indent",
-  "-Wunused:all",
-  "-Wvalue-discard",
-  "-Wnonunit-statement",
-  "-feature",
-  "-language:implicitConversions",
-  if (insideCI.value || !sys.env.get("NO_FATAL_WARNING").contains("true")) "-Wconf:any:error" else "-Wconf:any:warning"
-)
-
 resolvers += "Sonatype OSS Snapshots" at "https://oss.sonatype.org/content/repositories/snapshots"
 
 libraryDependencies ++= {
