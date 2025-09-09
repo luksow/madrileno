@@ -190,23 +190,27 @@ object p {
 }
 
 trait FilteringRepository[A, F <: SqlFilter] extends BaseRepository[A] {
-  def findByFilter(filter: F)(session: Session[IO]): IO[List[A]] = {
+  def findByFilter(filter: F, lock: Lock = Lock.NoLock)(session: Session[IO]): IO[List[A]] = {
     val appliedFragment          = filter.filterFragment
     val pageLimitAppliedFragment = filter.offsetLimitFragment
     session.execute(
-      sql"SELECT ${table.*} FROM ${table.n} WHERE ${appliedFragment.fragment} ${filter.orderByFragment} ${pageLimitAppliedFragment.fragment}"
+      sql"SELECT ${table.*} FROM ${table.n} WHERE ${appliedFragment.fragment} ${filter.orderByFragment} ${pageLimitAppliedFragment.fragment} ${lock.fragment}"
         .query(table.c)
     )(appliedFragment.argument, pageLimitAppliedFragment.argument)
   }
 
-  def findOneByFilter(filter: F)(session: Session[IO]): IO[Option[A]] = {
+  def findOneByFilter(filter: F, lock: Lock = Lock.NoLock)(session: Session[IO]): IO[Option[A]] = {
     val appliedFragment = filter.filterFragment
-    session.option(sql"SELECT ${table.*} FROM ${table.n} WHERE ${appliedFragment.fragment} LIMIT 1".query(table.c))(appliedFragment.argument)
+    session.option(sql"SELECT ${table.*} FROM ${table.n} WHERE ${appliedFragment.fragment} LIMIT 1 ${lock.fragment}".query(table.c))(
+      appliedFragment.argument
+    )
   }
 
-  def getByFilter(filter: F)(session: Session[IO]): IO[A] = {
+  def getByFilter(filter: F, lock: Lock = Lock.NoLock)(session: Session[IO]): IO[A] = {
     val appliedFragment = filter.filterFragment
-    session.unique(sql"SELECT ${table.*} FROM ${table.n} WHERE ${appliedFragment.fragment} LIMIT 1".query(table.c))(appliedFragment.argument)
+    session.unique(sql"SELECT ${table.*} FROM ${table.n} WHERE ${appliedFragment.fragment} LIMIT 1 ${lock.fragment}".query(table.c))(
+      appliedFragment.argument
+    )
   }
 
   def existsByFilter(filter: F)(session: Session[IO]): IO[Boolean] = {
@@ -226,5 +230,5 @@ trait FilteringRepository[A, F <: SqlFilter] extends BaseRepository[A] {
     session.execute(sql"DELETE FROM ${table.n} WHERE ${appliedFragment.fragment}".command)(appliedFragment.argument).void
   }
 
-  protected val table: Table[A]
+  override val table: Table[A]
 }

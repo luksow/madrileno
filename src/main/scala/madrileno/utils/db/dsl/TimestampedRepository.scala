@@ -17,26 +17,26 @@ trait TimestampedTable extends CreatedTimestampedTable {
 trait CreatedTimestampedRepository[A, Id](setCreatedAt: (A, Instant) => A) extends IdRepository[A, Id] {
   private def now = Clock[IO].realTimeInstant
 
-  override def create(a: A)(session: Session[IO]): IO[Id] = {
+  override def create(a: A)(session: Session[IO]): IO[A] = {
     now.flatMap { instant =>
       val withCreatedAt = setCreatedAt(a, instant)
       super.create(withCreatedAt)(session)
     }
   }
 
-  override def createAll(s: List[A])(session: Session[IO]): IO[List[Id]] =
+  override def createAll(s: List[A])(session: Session[IO]): IO[List[A]] =
     now.flatMap { instant =>
       val stamped = s.map(a => setCreatedAt(a, instant))
       super.createAll(stamped)(session)
     }
 
-  protected val table: CreatedTimestampedTable & IdTable[A, Id] & Table[A]
+  override val table: CreatedTimestampedTable & IdTable[A, Id] & Table[A]
 }
 
 trait TimestampedRepository[A, Id](setCreatedAt: (A, Instant) => A, setUpdatedAt: (A, Instant) => A)(using Clock[IO]) extends IdRepository[A, Id] {
   private def now = Clock[IO].realTimeInstant
 
-  override def create(a: A)(session: Session[IO]): IO[Id] = {
+  override def create(a: A)(session: Session[IO]): IO[A] = {
     now.flatMap { instant =>
       val withCreatedAt = setCreatedAt(a, instant)
       val withUpdatedAt = setUpdatedAt(withCreatedAt, instant)
@@ -44,7 +44,7 @@ trait TimestampedRepository[A, Id](setCreatedAt: (A, Instant) => A, setUpdatedAt
     }
   }
 
-  override def createAll(s: List[A])(session: Session[IO]): IO[List[Id]] =
+  override def createAll(s: List[A])(session: Session[IO]): IO[List[A]] =
     now.flatMap { instant =>
       val stamped = s.map(a => setUpdatedAt(setCreatedAt(a, instant), instant))
       super.createAll(stamped)(session)
@@ -78,5 +78,5 @@ trait TimestampedRepository[A, Id](setCreatedAt: (A, Instant) => A, setUpdatedAt
     }
   }
 
-  protected val table: TimestampedTable & IdTable[A, Id] & Table[A]
+  override val table: TimestampedTable & IdTable[A, Id] & Table[A]
 }

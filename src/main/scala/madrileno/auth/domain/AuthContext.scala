@@ -10,7 +10,7 @@ opaque type InternalJwt = String
 object InternalJwt extends Opaque[InternalJwt, String]
 
 final case class AuthContext(
-  id: UserId,
+  userId: UserId,
   fullName: Option[FullName],
   avatarUrl: Option[URI]) {}
 

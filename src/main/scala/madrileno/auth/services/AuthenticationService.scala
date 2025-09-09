@@ -1,6 +1,6 @@
 package madrileno.auth.services
 
-import cats.effect.IO
+import cats.effect.{Clock, IO}
 import cats.effect.std.UUIDGen
 import com.comcast.ip4s.IpAddress
 import com.google.firebase.auth.FirebaseToken
@@ -27,7 +27,8 @@ class AuthenticationService(
   transactor: Transactor
 )(using
   TelemetryContext,
-  UUIDGen[IO])
+  UUIDGen[IO],
+  Clock[IO])
     extends LoggingSupport {
   def authenticateWithFirebase(
     firebaseJwt: FirebaseJwt,
@@ -37,14 +38,15 @@ class AuthenticationService(
     firebaseService
       .verifyToken(firebaseJwt)
       .flatMap { firebaseToken =>
-        transactor.inSession { case session =>
+        transactor.inTransaction { case (session, _) =>
           userAuthRowRepository
             .findOneByFilter(
               UserAuthRowFilter(
                 provider = p.equal(Provider.Firebase),
                 providerUserId = p.equal(ProviderUserId(firebaseToken.getUid)),
                 deletedAt = p.isNull
-              )
+              ),
+              lock = Lock.ForUpdate
             )(session)
             .map(_.map(_.toUserAuth))
             .flatMap {
@@ -63,6 +65,76 @@ class AuthenticationService(
           .error(s"Failed to authenticate with Firebase: ${t.getMessage} ${t.getStackTrace.toList.mkString("\n")}")
           .as(AuthenticationResult.InvalidToken)
       }
+  }
+
+  def authenticateWithRefreshToken(
+    refreshToken: RefreshTokenId,
+    userAgent: UserAgent,
+    ipAddress: IpAddress
+  ): IO[AuthenticationResult] = {
+    transactor.inTransaction { case (session, _) =>
+      Clock[IO].realTimeInstant.flatMap { now =>
+        refreshTokenRowRepository
+          .findOneByFilter(RefreshTokenRowFilter(id = p.equal(refreshToken)), Lock.ForUpdate)(session)
+          .map(_.map(_.toRefreshToken))
+          .flatMap {
+            case Some(refreshToken) if refreshToken.isValid =>
+              refreshTokenRowRepository.update(RefreshTokenRow(refreshToken.usedAt(now)))(session) *>
+                generateTokens(refreshToken.userId, userAgent, ipAddress, AuthenticationResult.Authenticated.apply)(session)
+            case Some(refreshToken) =>
+              logger.warn(s"Refresh token $refreshToken is already used or deleted").as(AuthenticationResult.InvalidToken)
+            case None =>
+              logger.warn(s"Refresh token $refreshToken not found").as(AuthenticationResult.InvalidToken)
+          }
+      }
+    }
+  }
+
+  def listRefreshTokens(userId: UserId): IO[List[RefreshToken]] = {
+    transactor.inSession { session =>
+      refreshTokenRowRepository.findByFilter(RefreshTokenRowFilter(userId = p.equal(userId)))(session).map(_.map(_.toRefreshToken).filter(_.isValid))
+    }
+  }
+
+  def revokeRefreshToken(userId: UserId, refreshTokenId: RefreshTokenId): IO[Option[RefreshToken]] = {
+    Clock[IO].realTimeInstant.flatMap { now =>
+      transactor.inTransaction { case (session, _) =>
+        refreshTokenRowRepository
+          .findOneByFilter(RefreshTokenRowFilter(id = p.equal(refreshTokenId), userId = p.equal(userId)), lock = Lock.ForUpdate)(session)
+          .map(_.map(_.toRefreshToken))
+          .flatMap {
+            case Some(refreshToken) if refreshToken.isValid =>
+              val updatedToken = refreshToken.deletedAt(now)
+              refreshTokenRowRepository.update(RefreshTokenRow(updatedToken))(session) *>
+                logger.info(s"Revoked refresh token $refreshTokenId for user $userId").as(Some(updatedToken))
+            case Some(refreshToken) =>
+              logger.warn(s"Refresh token $refreshTokenId for user $userId is already deleted or used").as(None)
+            case _ =>
+              logger.warn(s"Refresh token $refreshTokenId for user $userId not found").as(None)
+          }
+      }
+    }
+  }
+
+  def revokeRefreshTokens(userId: UserId, userAgent: UserAgent): IO[List[RefreshToken]] = {
+    Clock[IO].realTimeInstant.flatMap { now =>
+      transactor.inTransaction { case (session, _) =>
+        refreshTokenRowRepository
+          .findByFilter(RefreshTokenRowFilter(userId = p.equal(userId), userAgent = p.equal(userAgent), deletedAt = p.isNull), lock = Lock.ForUpdate)(
+            session
+          )
+          .map(_.map(_.toRefreshToken))
+          .flatMap { tokens =>
+            val updatedTokens = tokens.filter(_.isValid).map(_.deletedAt(now))
+            updatedTokens.map(RefreshTokenRow(_)).map(refreshTokenRowRepository.update(_)(session)).sequence.flatMap { updateResults =>
+              if (updateResults.isEmpty)
+                logger.warn(s"Refresh token for $userId and $userAgent were not found").as(updatedTokens)
+              else
+                logger.info(s"Revoked ${updatedTokens.size} refresh tokens for user $userId and user agent $userAgent").as(updatedTokens)
+            }
+          }
+      }
+    }
   }
 
   private def generateTokens(

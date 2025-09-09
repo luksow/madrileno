@@ -94,7 +94,7 @@ class ApplicationLoader(
               authenticateOrRejectWithChallenge(userAuthenticator) { auth =>
                 handleExceptions(exceptionHandler(logResult(logAction = Some(logAction(initialCtx))))) {
                   handleRejections(rejectionHandler(logResult(logAction = Some(logAction(initialCtx))))) {
-                    onSuccess(telemetryContext.tracer.currentSpanOrNoop.flatMap(_.addAttribute(Attribute("app.user.id", auth.id.toString)))) {
+                    onSuccess(telemetryContext.tracer.currentSpanOrNoop.flatMap(_.addAttribute(Attribute("app.user.id", auth.userId.toString)))) {
                       logResult(logAction = Some(logAction(initialCtx))) {
                         onSuccess(telemetryContext.tracer.propagate(Headers.empty)) { newHeaders =>
                           mapResponseHeaders(_ ++ newHeaders) {

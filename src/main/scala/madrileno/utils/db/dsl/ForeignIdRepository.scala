@@ -10,14 +10,17 @@ trait ForeignIdTable[Id] {
 }
 
 trait ForeignIdRepository[A, Id] extends BaseRepository[A] {
-  def findByForeignId(foreignId: Id)(session: Session[IO]): IO[List[A]] = {
+  def findByForeignId(foreignId: Id, lock: Lock = Lock.NoLock)(session: Session[IO]): IO[List[A]] = {
     session
-      .execute(sql"SELECT ${table.*} FROM ${table.n} WHERE $baseFilter AND ${table.foreignId.n} = ${table.foreignId.c}".query(table.c))(foreignId)
+      .execute(
+        sql"SELECT ${table.*} FROM ${table.n} WHERE $baseFilter AND ${table.foreignId.n} = ${table.foreignId.c} ${lock.fragment}".query(table.c)
+      )(foreignId)
   }
 
-  def findByForeignIds(foreignIds: List[Id])(session: Session[IO]): IO[List[A]] = {
+  def findByForeignIds(foreignIds: List[Id], lock: Lock = Lock.NoLock)(session: Session[IO]): IO[List[A]] = {
     session.execute(
-      sql"SELECT ${table.*} FROM ${table.n} WHERE $baseFilter AND ${table.foreignId.n} IN (${table.foreignId.c.list(foreignIds)})".query(table.c)
+      sql"SELECT ${table.*} FROM ${table.n} WHERE $baseFilter AND ${table.foreignId.n} IN (${table.foreignId.c.list(foreignIds)}) ${lock.fragment}"
+        .query(table.c)
     )(foreignIds)
   }
 
@@ -40,5 +43,5 @@ trait ForeignIdRepository[A, Id] extends BaseRepository[A] {
       .execute(sql"DELETE FROM ${table.n} WHERE ${table.foreignId.n} IN (${table.foreignId.c.list(foreignIds)})".command)(foreignIds)
       .void
 
-  protected val table: Table[A] & ForeignIdTable[Id]
+  override val table: Table[A] & ForeignIdTable[Id]
 }

@@ -12,7 +12,7 @@ trait SoftDeleteTable {
 }
 
 trait SoftDeleteRepository[A, Id](using Clock[IO]) extends IdRepository[A, Id] {
-  private def now = Clock[IO].realTimeInstant
+  def now: IO[Instant] = Clock[IO].realTimeInstant
 
   override def baseFilter: Fragment[Void] = sql"${super.baseFilter} AND ${table.deletedAt.n} IS NULL"
 
@@ -56,8 +56,10 @@ trait SoftDeleteRepository[A, Id](using Clock[IO]) extends IdRepository[A, Id] {
       .void
   }
 
-  def findByIdWithDeleted(id: Id)(session: Session[IO]): IO[Option[A]] = {
-    session.option(sql"SELECT ${table.*} FROM ${table.n} WHERE ${table.id.n} = ${table.id.c} AND ${super.baseFilter}".query(table.c))(id)
+  def findByIdWithDeleted(id: Id, lock: Lock = Lock.NoLock)(session: Session[IO]): IO[Option[A]] = {
+    session.option(
+      sql"SELECT ${table.*} FROM ${table.n} WHERE ${table.id.n} = ${table.id.c} AND ${super.baseFilter} ${lock.fragment}".query(table.c)
+    )(id)
   }
 
   def existsByIdWithDeleted(id: Id)(session: Session[IO]): IO[Boolean] = {
@@ -66,13 +68,18 @@ trait SoftDeleteRepository[A, Id](using Clock[IO]) extends IdRepository[A, Id] {
       .map(_.isDefined)
   }
 
-  def findByIdsWithDeleted(ids: List[Id])(session: Session[IO]): IO[List[A]] = {
+  def findByIdsWithDeleted(ids: List[Id], lock: Lock = Lock.NoLock)(session: Session[IO]): IO[List[A]] = {
     session
-      .execute(sql"SELECT ${table.*} FROM ${table.n} WHERE ${table.id.n} IN (${table.id.c.list(ids)}) AND ${super.baseFilter}".query(table.c))(ids)
+      .execute(
+        sql"SELECT ${table.*} FROM ${table.n} WHERE ${table.id.n} IN (${table.id.c.list(ids)}) AND ${super.baseFilter} ${lock.fragment}"
+          .query(table.c)
+      )(ids)
   }
 
-  def findWithDeleted(id: Id)(session: Session[IO]): IO[A] = {
-    session.unique(sql"SELECT ${table.*} FROM ${table.n} WHERE ${table.id.n} = ${table.id.c} AND ${super.baseFilter}".query(table.c))(id)
+  def findWithDeleted(id: Id, lock: Lock = Lock.NoLock)(session: Session[IO]): IO[A] = {
+    session.unique(
+      sql"SELECT ${table.*} FROM ${table.n} WHERE ${table.id.n} = ${table.id.c} AND ${super.baseFilter} ${lock.fragment}".query(table.c)
+    )(id)
   }
 
   def allWithDeleted(session: Session[IO]): IO[List[A]] = {
@@ -89,5 +96,5 @@ trait SoftDeleteRepository[A, Id](using Clock[IO]) extends IdRepository[A, Id] {
       .void
   }
 
-  protected val table: SoftDeleteTable & IdTable[A, Id] & Table[A]
+  override val table: SoftDeleteTable & IdTable[A, Id] & Table[A]
 }

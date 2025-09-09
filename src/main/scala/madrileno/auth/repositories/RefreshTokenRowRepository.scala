@@ -16,14 +16,19 @@ case class RefreshTokenRow(
   ipAddress: IpAddress,
   createdAt: Instant,
   usedAt: Option[Instant],
-  deletedAt: Option[Instant])
+  deletedAt: Option[Instant]) {
+  def toRefreshToken: RefreshToken = {
+    import io.scalaland.chimney.dsl.*
+    this.into[RefreshToken].transform
+  }
+}
 
 object RefreshTokenRow {
   def apply(refreshToken: RefreshToken): RefreshTokenRow = {
     import io.scalaland.chimney.dsl.*
     refreshToken
       .into[RefreshTokenRow]
-      .withFieldConst(_.createdAt, InstantPlaceholder)
+      .withFieldComputed(_.createdAt, _.createdAt.getOrElse(InstantPlaceholder))
       .withFieldConst(_.usedAt, None)
       .withFieldConst(_.deletedAt, None)
       .transform
@@ -53,11 +58,13 @@ object RefreshTokenRowTable
   override def mapping: (List[Column[?]], Codec[RefreshTokenRow]) = (id, userId, userAgent, ipAddress, createdAt, usedAt, deletedAt)
 }
 
-trait RefreshTokenRowFilter extends SqlFilter {
-  def id: SqlPredicate[RefreshTokenId]
-  def userId: SqlPredicate[UserId]
-  def usedAt: SqlPredicate[Instant]
-  def deletedAt: SqlPredicate[Instant]
+case class RefreshTokenRowFilter(
+  id: SqlPredicate[RefreshTokenId] = p.any,
+  userId: SqlPredicate[UserId] = p.any,
+  userAgent: SqlPredicate[UserAgent] = p.any,
+  usedAt: SqlPredicate[Instant] = p.any,
+  deletedAt: SqlPredicate[Instant] = p.any)
+    extends SqlFilter {
 
   override def filterFragment: AppliedFragment = fromPredicatesAndSeparator(
     (

@@ -39,7 +39,7 @@ class HealthCheckService(
       }
     }
     (dbTest, externalQueryTest).parTupled.map { (dbTestResult, externalQueryResult) =>
-      (appConfig, authContext.id, dbTestResult, externalQueryResult)
+      (appConfig, authContext.userId, dbTestResult, externalQueryResult)
     }
   }
 }

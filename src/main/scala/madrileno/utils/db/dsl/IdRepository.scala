@@ -5,17 +5,25 @@ import skunk.*
 import skunk.codec.all.*
 import skunk.implicits.*
 
+enum Lock(val fragment: Fragment[Void]) {
+  case NoLock         extends Lock(sql"")
+  case ForUpdate      extends Lock(sql"FOR UPDATE")
+  case ForNoKeyUpdate extends Lock(sql"FOR NO KEY UPDATE")
+  case ForShare       extends Lock(sql"FOR SHARE")
+  case ForKeyShare    extends Lock(sql"FOR KEY SHARE")
+}
+
 trait IdTable[A, Id] {
   def id: Column[Id]
 }
 
-trait IdRepository[A, Id](getId: A => Id) extends BaseRepository[A] {
-  def create(a: A)(session: Session[IO]): IO[Id] =
-    session.unique(sql"INSERT INTO ${table.n} (${table.*}) VALUES (${table.c}) RETURNING ${table.id.n}".query(table.id.c))(a)
+trait IdRepository[A, Id](val getId: A => Id) extends BaseRepository[A] {
+  def create(a: A)(session: Session[IO]): IO[A] =
+    session.unique(sql"INSERT INTO ${table.n} (${table.*}) VALUES (${table.c}) RETURNING ${table.*}".query(table.c))(a)
 
-  def createAll(s: List[A])(session: Session[IO]): IO[List[Id]] = {
+  def createAll(s: List[A])(session: Session[IO]): IO[List[A]] = {
     val enc = table.c.values.list(s)
-    session.execute(sql"INSERT INTO ${table.n} (${table.*}) VALUES $enc RETURNING ${table.id.n}".query(table.id.c))(s)
+    session.execute(sql"INSERT INTO ${table.n} (${table.*}) VALUES $enc RETURNING ${table.*}".query(table.c))(s)
   }
 
   def upsert(a: A)(session: Session[IO]): IO[Unit] =
@@ -25,19 +33,21 @@ trait IdRepository[A, Id](getId: A => Id) extends BaseRepository[A] {
       )((a, a))
       .void
 
-  def findById(id: Id)(session: Session[IO]): IO[Option[A]] =
-    session.option(sql"SELECT ${table.*} FROM ${table.n} WHERE $baseFilter AND ${table.id.n} = ${table.id.c}".query(table.c))(id)
+  def findById(id: Id, lock: Lock = Lock.NoLock)(session: Session[IO]): IO[Option[A]] =
+    session.option(sql"SELECT ${table.*} FROM ${table.n} WHERE $baseFilter AND ${table.id.n} = ${table.id.c} ${lock.fragment}".query(table.c))(id)
 
   def existsById(id: Id)(session: Session[IO]): IO[Boolean] =
     session
       .option(sql"SELECT 1 FROM ${table.n} WHERE $baseFilter AND ${table.id.n} = ${table.id.c}".query(int4))(id)
       .map(_.isDefined)
 
-  def findByIds(ids: List[Id])(session: Session[IO]): IO[List[A]] =
-    session.execute(sql"SELECT ${table.*} FROM ${table.n} WHERE $baseFilter AND ${table.id.n} IN (${table.id.c.list(ids)})".query(table.c))(ids)
+  def findByIds(ids: List[Id], lock: Lock = Lock.NoLock)(session: Session[IO]): IO[List[A]] =
+    session.execute(
+      sql"SELECT ${table.*} FROM ${table.n} WHERE $baseFilter AND ${table.id.n} IN (${table.id.c.list(ids)}) ${lock.fragment}".query(table.c)
+    )(ids)
 
-  def getById(id: Id)(session: Session[IO]): IO[A] =
-    session.unique(sql"SELECT ${table.*} FROM ${table.n} WHERE $baseFilter AND ${table.id.n} = ${table.id.c}".query(table.c))(id)
+  def getById(id: Id, lock: Lock = Lock.NoLock)(session: Session[IO]): IO[A] =
+    session.unique(sql"SELECT ${table.*} FROM ${table.n} WHERE $baseFilter AND ${table.id.n} = ${table.id.c} ${lock.fragment}".query(table.c))(id)
 
   def all(session: Session[IO]): IO[List[A]] =
     session.execute(sql"SELECT ${table.*} FROM ${table.n} WHERE $baseFilter".query(table.c))
@@ -78,5 +88,5 @@ trait IdRepository[A, Id](getId: A => Id) extends BaseRepository[A] {
   def deleteAll(session: Session[IO]): IO[Unit] =
     session.execute(sql"DELETE FROM ${table.n}".command).void
 
-  protected val table: IdTable[A, Id] & Table[A]
+  override val table: IdTable[A, Id] & Table[A]
 }
