@@ -1,9 +1,11 @@
 package madrileno.auth.repositories
 
+import cats.effect.IO
 import com.comcast.ip4s.IpAddress
-import madrileno.auth.domain.{RefreshTokenId, *}
+import madrileno.auth.domain.*
 import madrileno.user.domain.UserId
 import madrileno.utils.db.dsl.*
+import madrileno.utils.db.transactor.{DB, DBInTransaction}
 import skunk.*
 import skunk.codec.all.*
 
@@ -28,9 +30,6 @@ object RefreshTokenRow {
     import io.scalaland.chimney.dsl.*
     refreshToken
       .into[RefreshTokenRow]
-      .withFieldComputed(_.createdAt, _.createdAt.getOrElse(InstantPlaceholder))
-      .withFieldConst(_.usedAt, None)
-      .withFieldConst(_.deletedAt, None)
       .transform
   }
 }
@@ -38,7 +37,6 @@ object RefreshTokenRow {
 object RefreshTokenRowTable
     extends Table[RefreshTokenRow]("refresh_token")
     with IdTable[RefreshTokenRow, RefreshTokenId]
-    with TimestampedTable
     with SoftDeleteTable
     with ForeignIdTable[UserId] {
   override val id: Column[RefreshTokenId] = column("id", uuid.as[RefreshTokenId])
@@ -48,12 +46,11 @@ object RefreshTokenRowTable
     "ip_address",
     text.imap(IpAddress.fromString.andThen(_.getOrElse(throw new IllegalStateException("Invalid IP address format"))))(_.toString)
   )
-  override val createdAt: Column[Instant]         = column("created_at", timestamptz.asInstant)
+  val createdAt: Column[Instant]                  = column("created_at", timestamptz.asInstant)
   val usedAt: Column[Option[Instant]]             = column("used_at", timestamptz.asInstant.opt)
   override val deletedAt: Column[Option[Instant]] = column("deleted_at", timestamptz.asInstant.opt)
 
-  override val foreignId: Column[UserId]  = userId
-  override val updatedAt: Column[Instant] = createdAt
+  override val foreignId: Column[UserId] = userId
 
   override def mapping: (List[Column[?]], Codec[RefreshTokenRow]) = (id, userId, userAgent, ipAddress, createdAt, usedAt, deletedAt)
 }
@@ -77,12 +74,42 @@ case class RefreshTokenRowFilter(
   )
 }
 
-class RefreshTokenRowRepository
-    extends IdRepository[RefreshTokenRow, RefreshTokenId](_.id)
-    with CreatedTimestampedRepository[RefreshTokenRow, RefreshTokenId]((refreshTokenRow, instant) => refreshTokenRow.copy(createdAt = instant))
-    with SoftDeleteRepository[RefreshTokenRow, RefreshTokenId]
-    with ForeignIdRepository[RefreshTokenRow, UserId]
-    with FilteringRepository[RefreshTokenRow, RefreshTokenRowFilter] {
+class RefreshTokenRepository {
+  def save(refreshToken: RefreshToken): DB[RefreshToken] = {
+    repository.create(RefreshTokenRow(refreshToken)).map(_.toRefreshToken)
+  }
 
-  override val table: RefreshTokenRowTable.type = RefreshTokenRowTable
+  def listActive(userId: UserId): DB[List[RefreshToken]] = {
+    repository.findByFilter(RefreshTokenRowFilter(userId = p.equal(userId))).map(_.map(_.toRefreshToken).filter(_.isValid))
+  }
+
+  def listActiveForUpdate(userId: UserId, userAgent: UserAgent): DBInTransaction[List[RefreshToken]] = {
+    repository
+      .findByFilter(RefreshTokenRowFilter(userId = p.equal(userId), userAgent = p.equal(userAgent)), Lock.ForUpdate)
+      .map(_.map(_.toRefreshToken).filter(_.isValid))
+  }
+
+  def findForUpdate(id: RefreshTokenId): DBInTransaction[Option[RefreshToken]] = {
+    repository.findOneByFilter(RefreshTokenRowFilter(id = p.equal(id)), Lock.ForUpdate).map(_.map(_.toRefreshToken))
+  }
+
+  def update(id: RefreshTokenId, f: RefreshToken => RefreshToken): DB[Unit] = {
+    repository.updateById(id, row => RefreshTokenRow(f(row.toRefreshToken)))
+  }
+
+  def update(refreshToken: RefreshToken): DB[Unit] = {
+    repository.update(RefreshTokenRow(refreshToken))
+  }
+
+  private val repository: IdRepository[RefreshTokenRow, RefreshTokenId] & SoftDeleteRepository[RefreshTokenRow, RefreshTokenId] & ForeignIdRepository[
+    RefreshTokenRow,
+    UserId
+  ] & FilteringRepository[RefreshTokenRow, RefreshTokenRowFilter] =
+    new IdRepository[RefreshTokenRow, RefreshTokenId](_.id)
+      with SoftDeleteRepository[RefreshTokenRow, RefreshTokenId]
+      with ForeignIdRepository[RefreshTokenRow, UserId]
+      with FilteringRepository[RefreshTokenRow, RefreshTokenRowFilter] {
+
+      override val table: RefreshTokenRowTable.type = RefreshTokenRowTable
+    }
 }

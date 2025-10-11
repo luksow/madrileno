@@ -2,7 +2,7 @@ package madrileno.auth.routers
 
 import madrileno.auth.domain.{AuthContext, RefreshTokenId, UserAgent}
 import madrileno.auth.routers.dto.*
-import madrileno.auth.services.{AuthenticationResult, AuthenticationService}
+import madrileno.auth.services.*
 import madrileno.utils.http.BaseRouter
 import madrileno.utils.observability.TelemetryContext
 import pl.iterators.stir.marshalling.ToResponseMarshallable
@@ -19,12 +19,13 @@ class AuthRouter(authenticationService: AuthenticationService)(using TelemetryCo
         ipAddress
       ) =>
         complete {
+          val command = AuthenticateWithFirebaseCommand(
+            request.firebaseJwtToken,
+            UserAgent(userAgent.getOrElse("Unknown")),
+            ipAddress.getOrElse(throw new IllegalArgumentException("Could not establish request's IP address"))
+          )
           authenticationService
-            .authenticateWithFirebase(
-              request.firebaseJwtToken,
-              UserAgent(userAgent.getOrElse("Unknown")),
-              ipAddress.getOrElse(throw new IllegalArgumentException("Could not establish request's IP address"))
-            )
+            .authenticateWithFirebase(command)
             .map[ToResponseMarshallable] {
               case AuthenticationResult.Authenticated(jwt, rt) => Ok      -> AuthenticatedResponse(jwt, rt.id)
               case AuthenticationResult.UserCreated(jwt, rt)   => Created -> AuthenticatedResponse(jwt, rt.id)
@@ -42,12 +43,13 @@ class AuthRouter(authenticationService: AuthenticationService)(using TelemetryCo
           ipAddress
         ) =>
           complete {
+            val command = AuthenticateWithRefreshTokenCommand(
+              request.refreshToken,
+              UserAgent(userAgent.getOrElse("Unknown")),
+              ipAddress.getOrElse(throw new IllegalArgumentException("Could not establish request's IP address"))
+            )
             authenticationService
-              .authenticateWithRefreshToken(
-                request.refreshToken,
-                UserAgent(userAgent.getOrElse("Unknown")),
-                ipAddress.getOrElse(throw new IllegalArgumentException("Could not establish request's IP address"))
-              )
+              .authenticateWithRefreshToken(command)
               .map[ToResponseMarshallable] {
                 case AuthenticationResult.Authenticated(jwt, rt) => Ok      -> AuthenticatedResponse(jwt, rt.id)
                 case AuthenticationResult.UserCreated(jwt, rt)   => Created -> AuthenticatedResponse(jwt, rt.id)
@@ -61,21 +63,24 @@ class AuthRouter(authenticationService: AuthenticationService)(using TelemetryCo
   def authedRoutes(authContext: AuthContext): Route = {
     (get & path("auth" / "sessions") & pathEndOrSingleSlash) {
       complete {
+        val command = ListRefreshTokensCommand(authContext.userId)
         authenticationService
-          .listRefreshTokens(authContext.userId)
+          .listRefreshTokens(command)
           .map[ToResponseMarshallable] { rts => Ok -> rts.map(RefreshTokenDto(_)) }
       }
     } ~
       (delete & path("auth" / "sessions" / JavaUUID.as[RefreshTokenId]) & pathEndOrSingleSlash) { refreshTokenId =>
         complete {
+          val command = RevokeRefreshTokenCommand(authContext.userId, refreshTokenId)
           authenticationService
-            .revokeRefreshToken(authContext.userId, refreshTokenId)
+            .revokeRefreshToken(command)
             .map[ToResponseMarshallable] { _ => NoContent }
         }
       } ~ (delete & path("auth" / "sessions") & parameters("user-agent".as[UserAgent]) & pathEndOrSingleSlash) { userAgent =>
         complete {
+          val command = RevokeRefreshTokensCommand(authContext.userId, userAgent)
           authenticationService
-            .revokeRefreshTokens(authContext.userId, userAgent)
+            .revokeRefreshTokens(command)
             .map[ToResponseMarshallable] { _ => NoContent }
         }
       }

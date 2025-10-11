@@ -1,9 +1,10 @@
 package madrileno.auth.domain
 
 import io.circe.Json
-import madrileno.user.domain.UserId
+import madrileno.user.domain.*
 import pl.iterators.kebs.opaque.Opaque
 
+import java.net.URI
 import java.util.UUID
 
 opaque type UserAuthId = UUID
@@ -24,6 +25,19 @@ object Metadata extends Opaque[Metadata, Json] {
   def empty: Metadata = Json.obj()
 }
 
+case class ExternalProfile(
+  fullName: Option[FullName],
+  emailAddress: Option[EmailAddress],
+  emailVerified: Boolean,
+  avatarUrl: Option[URI])
+
+case class VerifiedExternalToken(
+  provider: Provider,
+  providerUserId: ProviderUserId,
+  credential: Credential,
+  profile: ExternalProfile,
+  metadata: Metadata)
+
 final case class UserAuth(
   id: UserAuthId,
   userId: UserId,
@@ -31,3 +45,12 @@ final case class UserAuth(
   providerUserId: ProviderUserId,
   credential: Credential,
   metadata: Metadata)
+
+object UserAuth {
+  def apply(
+    id: UserAuthId,
+    userId: UserId,
+    externalToken: VerifiedExternalToken
+  ): UserAuth =
+    UserAuth(id, userId, externalToken.provider, externalToken.providerUserId, externalToken.credential, externalToken.metadata)
+}

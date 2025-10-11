@@ -2,7 +2,6 @@ package madrileno.healthcheck.services
 
 import cats.effect.{Clock, IO}
 import cats.syntax.parallel.*
-import madrileno.auth.domain.AuthContext
 import madrileno.healthcheck.gateways.FingerprintingApiGateway
 import madrileno.healthcheck.repositories.HealthCheckRepository
 import madrileno.main.AppConfig
@@ -22,10 +21,10 @@ class HealthCheckService(
     extends LoggingSupport {
   def healthCheck(): IO[AppConfig] = IO.pure(appConfig)
 
-  def healthCheck(authContext: AuthContext): IO[(AppConfig, UserId, Option[FiniteDuration], Option[String])] = {
+  def healthCheck(command: GetHealthCheckCommand): IO[(AppConfig, UserId, Option[FiniteDuration], Option[String])] = {
     val dbTest = clock
-      .timed(transactor.inSession { s =>
-        healthCheckRepository.version(s)
+      .timed(transactor.inSession {
+        healthCheckRepository.version()
       })
       .map(r => Some(r._1))
       .recoverWith { case t =>
@@ -39,7 +38,9 @@ class HealthCheckService(
       }
     }
     (dbTest, externalQueryTest).parTupled.map { (dbTestResult, externalQueryResult) =>
-      (appConfig, authContext.userId, dbTestResult, externalQueryResult)
+      (appConfig, command.userId, dbTestResult, externalQueryResult)
     }
   }
 }
+
+case class GetHealthCheckCommand(userId: UserId)

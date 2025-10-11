@@ -15,14 +15,16 @@ final case class AuthContext(
   avatarUrl: Option[URI]) {}
 
 object AuthContext {
-  def from(json: Json): Either[String, AuthContext] = authContextDecoder.decodeJson(json).left.map(_.toString)
-  def toJson(authContext: AuthContext): Json        = authContextEncoder(authContext)
-
   def apply(user: User): AuthContext = {
     AuthContext(user.id, user.fullName, user.avatarUrl)
   }
 
   import pl.iterators.kebs.circe.*
-  private val authContextDecoder = Decoder.derived[AuthContext]
-  private val authContextEncoder = Encoder.AsObject[AuthContext]
+  given Decoder[AuthContext] = Decoder.derived[AuthContext]
+  given Encoder[AuthContext] = Encoder.AsObject[AuthContext]
+
+  def from(json: Json): Either[String, AuthContext] = summon[Decoder[AuthContext]].decodeJson(json).left.map(_.toString)
+
+  def toJson(authContext: AuthContext): Json = summon[Encoder[AuthContext]](authContext)
+
 }

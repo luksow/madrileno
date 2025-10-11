@@ -16,7 +16,7 @@ trait SoftDeleteRepository[A, Id](using Clock[IO]) extends IdRepository[A, Id] {
 
   override def baseFilter: Fragment[Void] = sql"${super.baseFilter} AND ${table.deletedAt.n} IS NULL"
 
-  def softDeleteById(id: Id)(session: Session[IO]): IO[Unit] = {
+  def softDeleteById(id: Id)(using session: Session[IO]): IO[Unit] = {
     now.flatMap { instant =>
       session
         .execute(sql"UPDATE ${table.n} SET ${table.deletedAt.n} = ${table.deletedAt.c} WHERE ${table.id.n} = ${table.id.c}".command)(
@@ -26,13 +26,13 @@ trait SoftDeleteRepository[A, Id](using Clock[IO]) extends IdRepository[A, Id] {
     }
   }
 
-  def restoreById(id: Id)(session: Session[IO]): IO[Unit] = {
+  def restoreById(id: Id)(using session: Session[IO]): IO[Unit] = {
     session
       .execute(sql"UPDATE ${table.n} SET ${table.deletedAt.n} = NULL WHERE ${table.id.n} = ${table.id.c}".command)(id)
       .void
   }
 
-  def softDeleteByIds(ids: List[Id])(session: Session[IO]): IO[Unit] = {
+  def softDeleteByIds(ids: List[Id])(using session: Session[IO]): IO[Unit] = {
     now.flatMap { instant =>
       session
         .execute(sql"UPDATE ${table.n} SET ${table.deletedAt.n} = ${table.deletedAt.c} WHERE ${table.id.n} IN (${table.id.c.list(ids)})".command)(
@@ -42,7 +42,7 @@ trait SoftDeleteRepository[A, Id](using Clock[IO]) extends IdRepository[A, Id] {
     }
   }
 
-  def softDeleteAll(session: Session[IO]): IO[Unit] = {
+  def softDeleteAll(using session: Session[IO]): IO[Unit] = {
     now.flatMap { instant =>
       session
         .execute(sql"UPDATE ${table.n} SET ${table.deletedAt.n} = ${table.deletedAt.c}".command)(Some(instant))
@@ -50,25 +50,25 @@ trait SoftDeleteRepository[A, Id](using Clock[IO]) extends IdRepository[A, Id] {
     }
   }
 
-  def restoreByIds(ids: List[Id])(session: Session[IO]): IO[Unit] = {
+  def restoreByIds(ids: List[Id])(using session: Session[IO]): IO[Unit] = {
     session
       .execute(sql"UPDATE ${table.n} SET ${table.deletedAt.n} = NULL WHERE ${table.id.n} IN (${table.id.c.list(ids)})".command)(ids)
       .void
   }
 
-  def findByIdWithDeleted(id: Id, lock: Lock = Lock.NoLock)(session: Session[IO]): IO[Option[A]] = {
+  def findByIdWithDeleted(id: Id, lock: Lock = Lock.NoLock)(using session: Session[IO]): IO[Option[A]] = {
     session.option(
       sql"SELECT ${table.*} FROM ${table.n} WHERE ${table.id.n} = ${table.id.c} AND ${super.baseFilter} ${lock.fragment}".query(table.c)
     )(id)
   }
 
-  def existsByIdWithDeleted(id: Id)(session: Session[IO]): IO[Boolean] = {
+  def existsByIdWithDeleted(id: Id)(using session: Session[IO]): IO[Boolean] = {
     session
       .option(sql"SELECT 1 FROM ${table.n} WHERE ${table.id.n} = ${table.id.c} AND ${super.baseFilter}".query(int4))(id)
       .map(_.isDefined)
   }
 
-  def findByIdsWithDeleted(ids: List[Id], lock: Lock = Lock.NoLock)(session: Session[IO]): IO[List[A]] = {
+  def findByIdsWithDeleted(ids: List[Id], lock: Lock = Lock.NoLock)(using session: Session[IO]): IO[List[A]] = {
     session
       .execute(
         sql"SELECT ${table.*} FROM ${table.n} WHERE ${table.id.n} IN (${table.id.c.list(ids)}) AND ${super.baseFilter} ${lock.fragment}"
@@ -76,21 +76,21 @@ trait SoftDeleteRepository[A, Id](using Clock[IO]) extends IdRepository[A, Id] {
       )(ids)
   }
 
-  def findWithDeleted(id: Id, lock: Lock = Lock.NoLock)(session: Session[IO]): IO[A] = {
+  def findWithDeleted(id: Id, lock: Lock = Lock.NoLock)(using session: Session[IO]): IO[A] = {
     session.unique(
       sql"SELECT ${table.*} FROM ${table.n} WHERE ${table.id.n} = ${table.id.c} AND ${super.baseFilter} ${lock.fragment}".query(table.c)
     )(id)
   }
 
-  def allWithDeleted(session: Session[IO]): IO[List[A]] = {
+  def allWithDeleted(using session: Session[IO]): IO[List[A]] = {
     session.execute(sql"SELECT ${table.*} FROM ${table.n} WHERE ${super.baseFilter}".query(table.c))
   }
 
-  def countWithDeleted(session: Session[IO]): IO[Long] = {
+  def countWithDeleted(using session: Session[IO]): IO[Long] = {
     session.unique(sql"SELECT COUNT(*) FROM ${table.n} WHERE ${super.baseFilter}".query(int8))
   }
 
-  def purgeDeletedBefore(instant: Instant)(session: Session[IO]): IO[Unit] = {
+  def purgeDeletedBefore(instant: Instant)(using session: Session[IO]): IO[Unit] = {
     session
       .execute(sql"DELETE FROM ${table.n} WHERE ${table.deletedAt.n} < ${table.deletedAt.c}".command)(Some(instant))
       .void

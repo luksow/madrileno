@@ -190,7 +190,7 @@ object p {
 }
 
 trait FilteringRepository[A, F <: SqlFilter] extends BaseRepository[A] {
-  def findByFilter(filter: F, lock: Lock = Lock.NoLock)(session: Session[IO]): IO[List[A]] = {
+  def findByFilter(filter: F, lock: Lock = Lock.NoLock)(using session: Session[IO]): IO[List[A]] = {
     val appliedFragment          = filter.filterFragment
     val pageLimitAppliedFragment = filter.offsetLimitFragment
     session.execute(
@@ -199,33 +199,33 @@ trait FilteringRepository[A, F <: SqlFilter] extends BaseRepository[A] {
     )(appliedFragment.argument, pageLimitAppliedFragment.argument)
   }
 
-  def findOneByFilter(filter: F, lock: Lock = Lock.NoLock)(session: Session[IO]): IO[Option[A]] = {
+  def findOneByFilter(filter: F, lock: Lock = Lock.NoLock)(using session: Session[IO]): IO[Option[A]] = {
     val appliedFragment = filter.filterFragment
     session.option(sql"SELECT ${table.*} FROM ${table.n} WHERE ${appliedFragment.fragment} LIMIT 1 ${lock.fragment}".query(table.c))(
       appliedFragment.argument
     )
   }
 
-  def getByFilter(filter: F, lock: Lock = Lock.NoLock)(session: Session[IO]): IO[A] = {
+  def getByFilter(filter: F, lock: Lock = Lock.NoLock)(using session: Session[IO]): IO[A] = {
     val appliedFragment = filter.filterFragment
     session.unique(sql"SELECT ${table.*} FROM ${table.n} WHERE ${appliedFragment.fragment} LIMIT 1 ${lock.fragment}".query(table.c))(
       appliedFragment.argument
     )
   }
 
-  def existsByFilter(filter: F)(session: Session[IO]): IO[Boolean] = {
+  def existsByFilter(filter: F)(using session: Session[IO]): IO[Boolean] = {
     val appliedFragment = filter.filterFragment
     session
       .option(sql"SELECT 1 FROM ${table.n} WHERE ${appliedFragment.fragment} LIMIT 1".query(int4))(appliedFragment.argument)
       .map(_.isDefined)
   }
 
-  def countByFilter(filter: F)(session: Session[IO]): IO[Long] = {
+  def countByFilter(filter: F)(using session: Session[IO]): IO[Long] = {
     val appliedFragment = filter.filterFragment
     session.unique(sql"SELECT COUNT(*) FROM ${table.n} WHERE ${appliedFragment.fragment}".query(int8))(appliedFragment.argument)
   }
 
-  def deleteByFilter(filter: F)(session: Session[IO]): IO[Unit] = {
+  def deleteByFilter(filter: F)(using session: Session[IO]): IO[Unit] = {
     val appliedFragment = filter.filterFragment
     session.execute(sql"DELETE FROM ${table.n} WHERE ${appliedFragment.fragment}".command)(appliedFragment.argument).void
   }

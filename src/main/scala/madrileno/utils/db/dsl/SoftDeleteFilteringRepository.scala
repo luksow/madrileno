@@ -5,7 +5,7 @@ import skunk.Session
 import skunk.implicits.sql
 
 extension [A, Id, F <: SqlFilter](repo: SoftDeleteRepository[A, Id] & FilteringRepository[A, F]) {
-  def softDeleteByFilter(filter: F)(session: Session[IO]): IO[Unit] = {
+  def softDeleteByFilter(filter: F)(using session: Session[IO]): IO[Unit] = {
     val appliedFragment = filter.filterFragment
 
     repo.now.flatMap { instant =>

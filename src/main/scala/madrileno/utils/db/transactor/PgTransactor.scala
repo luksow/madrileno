@@ -3,19 +3,21 @@ package madrileno.utils.db.transactor
 import cats.effect.{IO, Resource}
 import org.typelevel.otel4s.trace.Tracer
 import skunk.util.Typer
-import skunk.{RedactionStrategy, SSL, Session, Transaction}
+import skunk.*
 
 class PgTransactor(sessions: Resource[IO, Session[IO]]) extends Transactor {
-  override def inTransaction[A](f: (Session[IO], Transaction[IO]) => IO[A]): IO[A] = {
+  override def inTransaction[A](f: DBInTransaction[A]): IO[A] = {
     sessions.use { session =>
       session.transaction.use { transaction =>
-        f(session, transaction)
+        f(using session)(using transaction)
       }
     }
   }
 
-  override def inSession[A](f: Session[IO] => IO[A]): IO[A] = {
-    sessions.use(f)
+  override def inSession[A](f: DB[A]): IO[A] = {
+    sessions.use { session =>
+      f(using session)
+    }
   }
 }
 

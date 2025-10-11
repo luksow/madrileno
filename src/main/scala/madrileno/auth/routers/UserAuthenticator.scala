@@ -15,18 +15,13 @@ class UserAuthenticator(jwtService: JwtService)(using TelemetryContext)
   override def apply(credentialsOpt: Option[Credentials]): IO[AuthenticationResult[AuthContext]] = {
     credentialsOpt match {
       case Some(credentials: Credentials.Token) if credentials.authScheme == AuthScheme.Bearer =>
-        jwtService.decode(credentials.token) match {
-          case JwtService.DecodingResult.Decoded(json) =>
-            AuthContext.from(json) match {
-              case Right(authContext) => IO.pure(AuthenticationResult.success(authContext))
-              case Left(error) =>
-                logger.warn(s"Malformed credentials: $credentials, error: $error").as(AppChallenge)
-            }
+        jwtService.decode[AuthContext](credentials.token) match {
+          case JwtService.DecodingResult.Decoded(authContext) => IO.pure(Right(authContext))
           case JwtService.DecodingResult.InvalidToken(t) =>
             logger.warn(t)(s"Invalid token: $credentials").as(AppChallenge)
           case JwtService.DecodingResult.ParsingFailure(t) =>
             logger.warn(t)(s"Token parsing failure: $credentials").as(AppChallenge)
-          case JwtService.DecodingResult.Expired =>
+          case JwtService.DecodingResult.Expired(_) =>
             logger.warn(s"Expired token: $credentials").as(AppChallenge)
         }
       case _ => AppChallengeIO

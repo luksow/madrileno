@@ -23,9 +23,9 @@ case class RefreshToken(
   userId: UserId,
   userAgent: UserAgent,
   ipAddress: IpAddress,
-  usedAt: Option[Instant] = None,
-  createdAt: Option[Instant] = None,
-  deletedAt: Option[Instant] = None) {
+  createdAt: Instant,
+  usedAt: Option[Instant],
+  deletedAt: Option[Instant]) {
   def isValid: Boolean = {
     deletedAt.isEmpty && usedAt.isEmpty
   }
@@ -37,4 +37,15 @@ case class RefreshToken(
   def deletedAt(instant: Instant): RefreshToken = {
     this.copy(deletedAt = Some(instant))
   }
+}
+
+object RefreshToken {
+  def mint(
+    id: RefreshTokenId,
+    now: Instant,
+    userId: UserId,
+    userAgent: UserAgent,
+    ipAddress: IpAddress
+  ): RefreshToken =
+    RefreshToken(id, userId, userAgent, ipAddress, createdAt = now, usedAt = None, deletedAt = None)
 }
