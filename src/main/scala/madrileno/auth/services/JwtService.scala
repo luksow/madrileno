@@ -1,14 +1,15 @@
 package madrileno.auth.services
 
 import io.circe.*
+import madrileno.auth.domain.InternalJwt
 import pdi.jwt.exceptions.JwtExpirationException
 import pdi.jwt.{Jwt, JwtAlgorithm, JwtClaim}
 import pureconfig.*
 
 import java.time.{Duration, Instant}
 import scala.util.{Failure, Success}
+
 import JwtService.*
-import madrileno.auth.domain.InternalJwt
 
 class JwtService(config: JwtService.Config) {
   private val algorithm = JwtAlgorithm.HS256

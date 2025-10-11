@@ -2,8 +2,8 @@ package madrileno.utils.db.transactor
 
 import cats.effect.{IO, Resource}
 import org.typelevel.otel4s.trace.Tracer
-import skunk.util.Typer
 import skunk.*
+import skunk.util.Typer
 
 class PgTransactor(sessions: Resource[IO, Session[IO]]) extends Transactor {
   override def inTransaction[A](f: DBInTransaction[A]): IO[A] = {

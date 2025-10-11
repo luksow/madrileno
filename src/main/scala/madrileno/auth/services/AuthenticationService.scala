@@ -1,7 +1,7 @@
 package madrileno.auth.services
 
-import cats.effect.{Clock, IO}
 import cats.effect.std.UUIDGen
+import cats.effect.{Clock, IO}
 import com.comcast.ip4s.IpAddress
 import madrileno.auth.domain.*
 import madrileno.auth.repositories.*

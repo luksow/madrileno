@@ -3,13 +3,13 @@ package madrileno.auth.services
 import cats.effect.IO
 import com.google.api.core.ApiFuture
 import com.google.firebase.auth.FirebaseAuth
-import madrileno.auth.domain.*
 import io.circe.parser
+import madrileno.auth.domain.*
 import madrileno.user.domain.*
-import scala.util.*
 
 import java.net.URI
 import java.util.concurrent.Executors
+import scala.util.*
 
 class FirebaseService(firebase: FirebaseAuth) {
   def verifyToken(token: String): IO[Either[Throwable, VerifiedExternalToken]] = {
