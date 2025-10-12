@@ -4,13 +4,16 @@ import cats.effect.{Clock, IO, IOApp, Resource}
 import io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppender
 import madrileno.utils.db.transactor.{PgConfig, PgTransactor}
 import madrileno.utils.observability.TelemetryContext
+import org.http4s.RequestPrelude
 import org.http4s.ember.server.EmberServerBuilder
 import org.http4s.otel4s.middleware.metrics.OtelMetrics
-import org.http4s.otel4s.middleware.trace.server.ServerMiddleware
+import org.http4s.otel4s.middleware.server.RouteClassifier
+import org.http4s.otel4s.middleware.trace.redact.{HeaderRedactor, PathRedactor, QueryRedactor}
+import org.http4s.otel4s.middleware.trace.server.{ServerMiddleware, ServerSpanDataProvider}
 import org.http4s.server.middleware.{EntityLimiter, Metrics}
-import org.typelevel.otel4s.metrics.Meter
+import org.typelevel.otel4s.metrics.{Meter, MeterProvider}
 import org.typelevel.otel4s.oteljava.OtelJava
-import org.typelevel.otel4s.trace.Tracer
+import org.typelevel.otel4s.trace.{Tracer, TracerProvider}
 import pl.iterators.stir.server.ToHttpRoutes
 import pureconfig.*
 import sttp.client4.httpclient.fs2.HttpClientFs2Backend
@@ -18,11 +21,13 @@ import sttp.client4.httpclient.fs2.HttpClientFs2Backend
 object Main extends IOApp.Simple {
   override def run: IO[Unit] =
     (for {
-      config           <- Resource.eval(IO.delay(ConfigSource.default))
-      appConfig        <- Resource.eval(IO.delay(config.at("app").loadOrThrow[AppConfig]))
-      otel             <- OtelJava.autoConfigured[IO]()
-      given Tracer[IO] <- Resource.eval(otel.tracerProvider.get(appConfig.name))
-      given Meter[IO]  <- Resource.eval(otel.meterProvider.get(appConfig.name))
+      config    <- Resource.eval(IO.delay(ConfigSource.default))
+      appConfig <- Resource.eval(IO.delay(config.at("app").loadOrThrow[AppConfig]))
+      otel      <- OtelJava.autoConfigured[IO]()
+      given TracerProvider[IO] = otel.tracerProvider
+      given Tracer[IO] <- Resource.eval(summon[TracerProvider[IO]].get(appConfig.name))
+      given MeterProvider[IO] = otel.meterProvider
+      given Meter[IO] <- Resource.eval(summon[MeterProvider[IO]].get(appConfig.name))
       given TelemetryContext = TelemetryContext(Meter[IO], Tracer[IO], otel.underlying)
       _                      = OpenTelemetryAppender.install(otel.underlying)
       httpClient <- HttpClientFs2Backend.resource[IO]()
@@ -31,13 +36,33 @@ object Main extends IOApp.Simple {
       clock       = Clock[IO]
       application = ApplicationLoader(config, httpClient, transactor, clock)
       metricsOps <- OtelMetrics.serverMetricsOps[IO]().toResource
+      redactor = new QueryRedactor.NeverRedact with PathRedactor.NeverRedact
+      routeClassifier = new RouteClassifier {
+                          override def classify(request: RequestPrelude): Option[String] = {
+                            val classified = request.uri.path.segments.foldLeft("") { (acc, seg) =>
+                              if (seg.encoded.matches("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"))
+                                acc + "/{uuid}"
+                              else if (seg.encoded.forall(_.isDigit)) acc + "/{id}"
+                              else acc + s"/${seg.encoded}"
+                            }
+                            Some(classified)
+                          }
+                        }
+      serverMiddleware <- ServerMiddleware
+                            .builder[IO](
+                              ServerSpanDataProvider
+                                .openTelemetry(redactor)
+                                .withRouteClassifier(routeClassifier)
+                                .optIntoClientPort
+                                .optIntoHttpRequestHeaders(HeaderRedactor.default)
+                                .optIntoHttpResponseHeaders(HeaderRedactor.default)
+                            )
+                            .build
+                            .toResource
       httpApp =
-        ServerMiddleware
-          .default[IO]
-          .withServerSpanName(p => s"Http Server - ${p.method} /${p.uri.path.segments.take(2).mkString("/")}")
-          .buildHttpApp {
-            EntityLimiter.httpApp(Metrics(metricsOps)(application.routes.toHttpRoutes).orNotFound, application.httpConfig.maxRequestSize)
-          }
+        serverMiddleware.wrapHttpApp(
+          EntityLimiter.httpApp(Metrics(metricsOps)(application.routes.toHttpRoutes).orNotFound, application.httpConfig.maxRequestSize)
+        )
       _ <- EmberServerBuilder
              .default[IO]
              .withHost(application.httpConfig.host)
