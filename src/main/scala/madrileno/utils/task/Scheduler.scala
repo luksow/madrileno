@@ -30,14 +30,18 @@ object Schedule {
   case class NextAt[A](at: Instant, payload: A)                                           extends Custom
 }
 
-final case class Task[A](
+final case class Task[A] private[task] (
   taskInstance: String,
   descriptor: TaskDescriptor[A],
   payload: A,
   execution: Task[A] => IO[Unit | A | Schedule.NextAt[A]],
   version: Long,
   priority: Short,
-  schedule: Schedule) {}
+  schedule: Schedule,
+  consecutiveFailures: Option[Int] = None,
+  scheduledAt: Option[Instant] = None) {
+  def taskId: String = s"${descriptor.taskName}/$taskInstance"
+}
 
 final case class OneTimeTask[A](descriptor: TaskDescriptor[A], execution: Task[A] => IO[Unit]) {
   def instance(
@@ -222,6 +226,76 @@ class SchedulerRepository(
     }
   }
 
+  def reschedule[A](
+    task: Task[A],
+    nextExecution: Instant,
+    newPayload: Option[A] = None
+  ): DB[Unit] = {
+    val session = summon[Session[IO]]
+
+    clock.realTimeInstant.flatMap { now =>
+      val taskData = newPayload.fold(task.descriptor.encoder(task.payload))(task.descriptor.encoder(_))
+      val command =
+        sql"""UPDATE ${table.n} SET
+          ${table.picked.n} = false,
+          ${table.pickedBy.n} = NULL,
+          ${table.lastHeartbeat.n} = NULL,
+          ${table.lastSuccess.n} = ${table.lastSuccess.c},
+          ${table.consecutiveFailures.n} = ${table.consecutiveFailures.c},
+          ${table.taskData.n} = ${table.taskData.c},
+          ${table.nextExecution.n} = ${table.nextExecution.c},
+          ${table.version.n} = ${table.version.n} + 1
+        WHERE ${table.taskName.n} = ${table.taskName.c}
+          AND ${table.taskInstance.n} = ${table.taskInstance.c}
+          AND ${table.version.n} = ${table.version.c}
+       """.command
+      session
+        .execute(command)((Some(now), Some(0), taskData, nextExecution, task.descriptor.taskName, task.taskInstance, task.version))
+        .void
+    }
+  }
+
+  def markFailure[A](
+    task: Task[A],
+    nextExecution: Instant,
+    consecutiveFailures: Int
+  ): DB[Unit] = {
+    val session = summon[Session[IO]]
+
+    clock.realTimeInstant.flatMap { now =>
+      val command =
+        sql"""UPDATE ${table.n} SET
+          ${table.picked.n} = false,
+          ${table.pickedBy.n} = NULL,
+          ${table.lastHeartbeat.n} = NULL,
+          ${table.lastFailure.n} = ${table.lastFailure.c},
+          ${table.consecutiveFailures.n} = ${table.consecutiveFailures.c},
+          ${table.nextExecution.n} = ${table.nextExecution.c},
+          ${table.version.n} = ${table.version.n} + 1
+        WHERE ${table.taskName.n} = ${table.taskName.c}
+          AND ${table.taskInstance.n} = ${table.taskInstance.c}
+          AND ${table.version.n} = ${table.version.c}
+       """.command
+      session
+        .execute(command)((Some(now), Some(consecutiveFailures), nextExecution, task.descriptor.taskName, task.taskInstance, task.version))
+        .void
+    }
+  }
+
+  def remove(task: Task[?]): DB[Unit] = {
+    val session = summon[Session[IO]]
+
+    val command =
+      sql"""DELETE FROM ${table.n}
+        WHERE ${table.taskName.n} = ${table.taskName.c}
+          AND ${table.taskInstance.n} = ${table.taskInstance.c}
+          AND ${table.version.n} = ${table.version.c}
+       """.command
+    session
+      .execute(command)((task.descriptor.taskName, task.taskInstance, task.version))
+      .void
+  }
+
   def pickAndMark(limit: Int): DB[List[Task[?]]] = {
     val session = summon[Session[IO]]
 
@@ -260,7 +334,9 @@ class SchedulerRepository(
                       IO.raiseError(new Exception(s"Failed to decode one-time task payload for task ${row.taskName}/${row.taskInstance}: $error")),
                     version = row.version,
                     priority = row.priority,
-                    schedule = Schedule.Once
+                    schedule = Schedule.Once,
+                    consecutiveFailures = row.consecutiveFails,
+                    scheduledAt = Some(row.nextExecution)
                   )
                 case Right(value) =>
                   Task(
@@ -270,7 +346,9 @@ class SchedulerRepository(
                     execution = oneTimeTask.execution,
                     version = row.version,
                     priority = row.priority,
-                    schedule = Schedule.Once
+                    schedule = Schedule.Once,
+                    consecutiveFailures = row.consecutiveFails,
+                    scheduledAt = Some(row.nextExecution)
                   )
               }
             }
@@ -287,7 +365,8 @@ class SchedulerRepository(
                         IO.raiseError(new Exception(s"Failed to decode recurring task payload for task ${row.taskName}/${row.taskInstance}: $error")),
                       version = row.version,
                       priority = row.priority,
-                      schedule = recurringTask.schedule
+                      schedule = recurringTask.schedule,
+                      consecutiveFailures = row.consecutiveFails
                     )
                   case Right(value) =>
                     Task(
@@ -297,7 +376,8 @@ class SchedulerRepository(
                       execution = recurringTask.execution,
                       version = row.version,
                       priority = row.priority,
-                      schedule = recurringTask.schedule
+                      schedule = recurringTask.schedule,
+                      consecutiveFailures = row.consecutiveFails
                     )
                 }
               }
@@ -310,7 +390,9 @@ class SchedulerRepository(
                 execution = _ => IO.raiseError(new Exception(s"Unknown task picked: ${row.taskName}/${row.taskInstance}")),
                 version = row.version,
                 priority = row.priority,
-                schedule = Schedule.Once
+                schedule = Schedule.Once,
+                consecutiveFailures = row.consecutiveFails,
+                scheduledAt = Some(row.nextExecution)
               )
             }
         }
@@ -332,6 +414,9 @@ class Scheduler(
   pollingInterval: Duration = 10.seconds,
   heartbeatInterval: Duration = 5.minutes,
   missedHeartbeatLimit: Int = 6,
+  retryBaseDelay: Duration = 30.seconds,
+  retryBackoffRate: Double = 1.5,
+  maxRetries: Option[Int] = None,
   schedulerName: SchedulerName = SchedulerName.Hostname
 )(using
   Clock[IO],
@@ -394,10 +479,93 @@ class Scheduler(
           repository.updateHeartbeat(task)
         }
         .handleErrorWith { e =>
-          logger.error(e)(s"Heartbeat failed for ${task.descriptor.taskName}/${task.taskInstance}")
+          logger.error(e)(s"Heartbeat failed for ${task.taskId}")
         } *> IO.sleep(heartbeatInterval)
 
     oneBeat.foreverM
+  }
+
+  private def onSuccess[A](
+    repository: SchedulerRepository,
+    task: Task[A],
+    result: Unit | A | Schedule.NextAt[A]
+  ): IO[Unit] = {
+    val taskId = task.taskId
+
+    Clock[IO].realTimeInstant.flatMap { now =>
+      task.schedule match {
+        case _: Once =>
+          logger.info(s"$taskId completed, removing") *>
+            transactor.inSession(repository.remove(task))
+        case Schedule.RecurringWithFixedRate(every, _) =>
+          val anchor    = task.scheduledAt.getOrElse(now)
+          val candidate = anchor.plusMillis(every.toMillis)
+          val next      = if (candidate.isBefore(now)) now.plusMillis(every.toMillis) else candidate
+          val newPayload = result match {
+            case ()      => None
+            case payload => Some(payload.asInstanceOf[A])
+          }
+          logger.info(s"$taskId completed, next at $next") *>
+            transactor.inSession(repository.reschedule(task, next, newPayload))
+        case Schedule.RecurringWithFixedDelay(after, _) =>
+          val next = now.plusMillis(after.toMillis)
+          val newPayload = result match {
+            case ()      => None
+            case payload => Some(payload.asInstanceOf[A])
+          }
+          logger.info(s"$taskId completed, next at $next") *>
+            transactor.inSession(repository.reschedule(task, next, newPayload))
+        case Schedule.NextAt(_, _) =>
+          result match {
+            case nextAt: Schedule.NextAt[A @unchecked] =>
+              logger.info(s"$taskId completed, next at ${nextAt.at}") *>
+                transactor.inSession(repository.reschedule(task, nextAt.at, Some(nextAt.payload)))
+            case _ =>
+              logger.info(s"$taskId completed (custom, no continuation), removing") *>
+                transactor.inSession(repository.remove(task))
+          }
+      }
+    }
+  }
+
+  private def onFailure[A](
+    repository: SchedulerRepository,
+    task: Task[A],
+    error: Throwable
+  ): IO[Unit] = {
+    val taskId     = task.taskId
+    val previous   = task.consecutiveFailures.getOrElse(0)
+    val failures   = previous + 1
+    val shouldDrop = maxRetries.exists(failures > _)
+
+    if (shouldDrop) {
+      logger.error(error)(s"$taskId exceeded max retries ($failures), removing") *>
+        transactor.inSession(repository.remove(task))
+    } else {
+      Clock[IO].realTimeInstant.flatMap { now =>
+        val backoffMs = (retryBaseDelay.toMillis * math.pow(retryBackoffRate, previous.toDouble)).toLong
+        val retryAt   = now.plusMillis(backoffMs)
+        logger.error(error)(s"$taskId failed (attempt $failures), retrying at $retryAt") *>
+          transactor.inSession(repository.markFailure(task, retryAt, failures))
+      }
+    }
+  }
+
+  private def executeAndComplete[A](repository: SchedulerRepository, task: Task[A]): IO[Unit] = {
+    val taskId = task.taskId
+
+    task.execution(task).attempt.flatMap {
+      case Right(result) =>
+        onSuccess(repository, task, result)
+          .handleErrorWith { e =>
+            logger.error(e)(s"Failed to complete $taskId after success")
+          }
+      case Left(e) =>
+        onFailure(repository, task, e)
+          .handleErrorWith { completionError =>
+            logger.error(completionError)(s"Failed to record failure for $taskId")
+          }
+    }
   }
 
   private def runTaskUsingReservedPermit(
@@ -405,9 +573,7 @@ class Scheduler(
     task: Task[?],
     sem: Semaphore[IO]
   ): IO[Unit] = {
-    val run = task.execution(task)
-
-    val withHeartbeat: IO[Unit] =
+    val work: IO[Unit] =
       Resource
         .make {
           heartbeatLoop(repository, task).start
@@ -415,15 +581,10 @@ class Scheduler(
           fiber.cancel
         }
         .use { _ =>
-          run.attempt.flatMap {
-            case Right(_) =>
-              IO.unit
-            case Left(e) =>
-              logger.error(e)(s"Task ${task.descriptor.taskName}/${task.taskInstance} failed")
-          }
+          executeAndComplete(repository, task)
         }
 
-    withHeartbeat.guarantee(sem.release)
+    work.guarantee(sem.release)
   }
 
   private def mainLoop(repository: SchedulerRepository): Resource[IO, Unit] =
