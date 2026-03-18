@@ -191,7 +191,8 @@ object TaskRowTable extends Table[TaskRow]("scheduled_task") {
 class SchedulerRepository(
   schedulerName: String,
   startTasks: List[Task[?]],
-  oneTimeTasks: List[OneTimeTask[?]]
+  oneTimeTasks: List[OneTimeTask[?]],
+  customTasks: List[CustomTask[?]]
 )(using clock: Clock[IO]) {
   def save[A](task: Task[A]): DB[Task[A]] = {
     val session = summon[Session[IO]]
@@ -353,6 +354,38 @@ class SchedulerRepository(
               }
             }
             .orElse {
+              customTasks.find(t => t.descriptor.taskName == row.taskName).map { customTask =>
+                val payload = customTask.descriptor.decoder.decodeJson(row.taskData)
+                payload match {
+                  case Left(error) =>
+                    Task(
+                      taskInstance = row.taskInstance,
+                      descriptor = TaskDescriptor[Unit](customTask.descriptor.taskName),
+                      payload = (),
+                      execution = _ =>
+                        IO.raiseError(new Exception(s"Failed to decode custom task payload for task ${row.taskName}/${row.taskInstance}: $error")),
+                      version = row.version,
+                      priority = row.priority,
+                      schedule = Schedule.NextAt(row.nextExecution, ()),
+                      consecutiveFailures = row.consecutiveFails,
+                      scheduledAt = Some(row.nextExecution)
+                    )
+                  case Right(value) =>
+                    Task(
+                      taskInstance = row.taskInstance,
+                      descriptor = customTask.descriptor,
+                      payload = value,
+                      execution = customTask.execution,
+                      version = row.version,
+                      priority = row.priority,
+                      schedule = Schedule.NextAt(row.nextExecution, value),
+                      consecutiveFailures = row.consecutiveFails,
+                      scheduledAt = Some(row.nextExecution)
+                    )
+                }
+              }
+            }
+            .orElse {
               startTasks.find(t => t.descriptor.taskName == row.taskName).map { recurringTask =>
                 val payload = recurringTask.descriptor.decoder.decodeJson(row.taskData)
                 payload match {
@@ -457,26 +490,42 @@ class Scheduler(
       IO.pure(name)
   }
 
-  def run(recurringTasks: List[Task[?]], oneTimeTasks: List[OneTimeTask[?]]): Resource[IO, Unit] = {
+  private val repositoryRef: cats.effect.Ref[IO, Option[SchedulerRepository]] =
+    cats.effect.Ref.unsafe[IO, Option[SchedulerRepository]](None)
+
+  def schedule[A](task: Task[A]): IO[Task[A]] =
+    repositoryRef.get.flatMap {
+      case Some(repository) => transactor.inSession(repository.save(task))
+      case None             => IO.raiseError(new IllegalStateException("Scheduler not started"))
+    }
+
+  def run(
+    recurringTasks: List[Task[?]] = Nil,
+    oneTimeTasks: List[OneTimeTask[?]] = Nil,
+    customTasks: List[CustomTask[?]] = Nil
+  ): Resource[IO, Unit] = {
     (for {
       schedulerName <- Resource.eval(schedulerNameToUse)
-      repository    <- Resource.eval(setup(schedulerName, recurringTasks, oneTimeTasks))
+      repository    <- Resource.eval(setup(schedulerName, recurringTasks, oneTimeTasks, customTasks))
+      _             <- Resource.eval(repositoryRef.set(Some(repository)))
       _             <- mainLoop(repository)
     } yield ()).onFinalize {
-      logger.info("Shutting down scheduler...")
+      repositoryRef.set(None) *> logger.info("Shutting down scheduler...")
     }
   }
 
   private def setup(
     schedulerName: String,
     startTasks: List[Task[?]],
-    oneTimeTasks: List[OneTimeTask[?]]
+    oneTimeTasks: List[OneTimeTask[?]],
+    customTasks: List[CustomTask[?]]
   ): IO[SchedulerRepository] = {
-    val repository = new SchedulerRepository(schedulerName, startTasks, oneTimeTasks)
+    val repository = new SchedulerRepository(schedulerName, startTasks, oneTimeTasks, customTasks)
     logger.info(
       s"Starting scheduler with concurrency=$concurrency, pollingInterval=$pollingInterval, heartbeatInterval=$heartbeatInterval, missedHeartbeatLimit=$missedHeartbeatLimit, " +
         s"retryBaseDelay=$retryBaseDelay, retryBackoffRate=$retryBackoffRate, maxRetries=$maxRetries, " +
-        s"initial tasks=${startTasks.map(t => s"${t.descriptor.taskName}/${t.taskInstance}")}, registered one time tasks=${oneTimeTasks.map(_.descriptor.taskName)}"
+        s"initial tasks=${startTasks.map(_.taskId)}, " +
+        s"registered one time tasks=${oneTimeTasks.map(_.descriptor.taskName)}, registered custom tasks=${customTasks.map(_.descriptor.taskName)}"
     ) *>
       transactor
         .inSession {
