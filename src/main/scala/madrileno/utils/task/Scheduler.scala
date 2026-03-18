@@ -47,7 +47,7 @@ final case class OneTimeTask[A](descriptor: TaskDescriptor[A], execution: Task[A
   def instance(
     taskInstance: String,
     payload: A,
-    at: Instant = Task.AtMarker,
+    at: Option[Instant] = None,
     priority: Short = Task.DefaultPriority
   ): Task[A] = {
     Task(
@@ -57,7 +57,7 @@ final case class OneTimeTask[A](descriptor: TaskDescriptor[A], execution: Task[A
       execution = execution,
       version = 0L,
       priority = priority,
-      schedule = if (at == Task.AtMarker) Schedule.Once else Schedule.OnceAt(at)
+      schedule = at.fold[Schedule](Schedule.Once)(Schedule.OnceAt(_))
     )
   }
 }
@@ -113,7 +113,6 @@ object Task {
   }
 
   val DefaultPriority: Short = 0
-  val AtMarker: Instant      = Instant.MIN
 }
 
 private[task] case class TaskRow(
