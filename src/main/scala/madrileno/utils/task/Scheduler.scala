@@ -387,7 +387,7 @@ class SchedulerRepository(
                 taskInstance = row.taskInstance,
                 descriptor = TaskDescriptor[Unit](row.taskName),
                 payload = (),
-                execution = _ => IO.raiseError(new Exception(s"Unknown task picked: ${row.taskName}/${row.taskInstance}")),
+                execution = _ => IO.raiseError(new IllegalStateException(s"Unknown task picked: ${row.taskName}/${row.taskInstance}")),
                 version = row.version,
                 priority = row.priority,
                 schedule = Schedule.Once,
@@ -397,6 +397,30 @@ class SchedulerRepository(
             }
         }
       }
+    }
+  }
+
+  def reviveStaleExecutions(staleThreshold: Instant): DB[Long] = {
+    val session = summon[Session[IO]]
+
+    clock.realTimeInstant.flatMap { now =>
+      val query =
+        sql"""WITH revived AS (
+          UPDATE ${table.n} SET
+            ${table.picked.n} = false,
+            ${table.pickedBy.n} = NULL,
+            ${table.lastHeartbeat.n} = NULL,
+            ${table.lastFailure.n} = ${table.lastFailure.c},
+            ${table.consecutiveFailures.n} = COALESCE(${table.consecutiveFailures.n}, 0) + 1,
+            ${table.nextExecution.n} = ${table.nextExecution.c},
+            ${table.version.n} = ${table.version.n} + 1
+          WHERE ${table.picked.n} = true
+            AND ${table.lastHeartbeat.n} <= ${table.lastHeartbeat.c}
+          RETURNING 1
+        ) SELECT count(*) FROM revived
+       """.query(int8)
+      session
+        .unique(query)((Some(now), now, Some(staleThreshold)))
     }
   }
 
@@ -451,7 +475,8 @@ class Scheduler(
     val repository = new SchedulerRepository(schedulerName, startTasks, oneTimeTasks)
     logger.info(
       s"Starting scheduler with concurrency=$concurrency, pollingInterval=$pollingInterval, heartbeatInterval=$heartbeatInterval, missedHeartbeatLimit=$missedHeartbeatLimit, " +
-        s"initial tasks=${startTasks.map(t => s"${t.descriptor.taskName}/${t.taskInstance}, registered one time tasks=${oneTimeTasks.map(_.descriptor.taskName)}")}}"
+        s"retryBaseDelay=$retryBaseDelay, retryBackoffRate=$retryBackoffRate, maxRetries=$maxRetries, " +
+        s"initial tasks=${startTasks.map(t => s"${t.descriptor.taskName}/${t.taskInstance}")}, registered one time tasks=${oneTimeTasks.map(_.descriptor.taskName)}"
     ) *>
       transactor
         .inSession {
@@ -587,10 +612,36 @@ class Scheduler(
     work.guarantee(sem.release)
   }
 
+  private def deadExecutionDetectionLoop(repository: SchedulerRepository) = {
+    val deadThresholdMillis = heartbeatInterval.toMillis * missedHeartbeatLimit
+    val detectionInterval   = heartbeatInterval * 2
+
+    val oneCheck: IO[Unit] =
+      Clock[IO].realTimeInstant.flatMap { now =>
+        val staleThreshold = now.minusMillis(deadThresholdMillis)
+        transactor
+          .inSession {
+            repository.reviveStaleExecutions(staleThreshold)
+          }
+          .flatMap { revived =>
+            if (revived > 0)
+              logger.warn(s"Revived $revived dead execution(s) with heartbeat older than $staleThreshold")
+            else
+              IO.unit
+          }
+          .handleErrorWith { e =>
+            logger.error(e)("Error during dead execution detection")
+          }
+      } *> IO.sleep(detectionInterval)
+
+    oneCheck.foreverM.background
+  }
+
   private def mainLoop(repository: SchedulerRepository): Resource[IO, Unit] =
     for {
       sem <- Resource.eval(Semaphore[IO](concurrency.toLong))
       sup <- Supervisor[IO]
+      _   <- deadExecutionDetectionLoop(repository)
       _   <- pollLoop(repository, sem, sup)
     } yield ()
 
