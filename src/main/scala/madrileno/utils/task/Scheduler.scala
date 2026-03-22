@@ -196,19 +196,20 @@ private[task] class SchedulerRepository(
   oneTimeTasks: List[OneTimeTask[?]],
   customTasks: List[CustomTask[?]]
 )(using clock: Clock[IO]) {
-  def save[A](task: Task[A]): DB[Task[A]] = {
+  def save[A](task: Task[A]): DB[Boolean] = {
     val session = summon[Session[IO]]
 
     clock.realTimeInstant.flatMap { now =>
       val row = TaskRow.fromTask(task, now)
       session
-        .unique(sql"""INSERT INTO ${table.n} VALUES (${table.c})
+        .option(sql"""INSERT INTO ${table.n} VALUES (${table.c})
            ON CONFLICT (${table.taskName.n}, ${table.taskInstance.n}) DO UPDATE SET
            ${table.taskData.n} = ${table.taskData.n("EXCLUDED")},
            ${table.nextExecution.n} = ${table.nextExecution.n("EXCLUDED")},
            ${table.priority.n} = ${table.priority.n("EXCLUDED")}
+           WHERE ${table.n}.${table.picked.n} = false
            RETURNING ${table.*}""".query(table.c))(row)
-        .map(_ => task)
+        .map(_.isDefined)
     }
   }
 
@@ -707,6 +708,6 @@ class RunningScheduler private[task] (
   repository: SchedulerRepository,
   transactor: Transactor
 ) {
-  def schedule[A](task: Task[A]): IO[Task[A]] =
+  def schedule[A](task: Task[A]): IO[Boolean] =
     transactor.inSession(repository.save(task))
 }
