@@ -66,7 +66,7 @@ class Scheduler(
     ) *>
       transactor
         .inSession {
-          startTasks.traverse(repository.save)
+          startTasks.traverse(repository.registerOnStartup)
         }
         .as(repository)
   }
@@ -272,7 +272,7 @@ class Scheduler(
                .flatMap { case (tasks, unreconstructable) =>
                  val logUnreconstructable =
                    if (unreconstructable.nonEmpty)
-                     logger.error(s"Failed to reconstruct tasks (decode error or unknown), released: ${unreconstructable.mkString(", ")}")
+                     logger.error(s"Failed to reconstruct tasks (decode error or unknown), deleted: ${unreconstructable.mkString(", ")}")
                    else IO.unit
                  val used   = tasks.size
                  val unused = reserved - used
@@ -285,7 +285,10 @@ class Scheduler(
                  val releaseSurplus =
                    if (unused > 0) sem.releaseN(unused.toLong) else IO.unit
 
-                 logUnreconstructable *> startWorkers *> releaseSurplus *> IO.sleep(pollingInterval)
+                 val sleepIfIdle =
+                   if (used >= reserved) IO.unit else IO.sleep(pollingInterval)
+
+                 logUnreconstructable *> startWorkers *> releaseSurplus *> sleepIfIdle
                }
            }
     } yield ()).foreverM.background

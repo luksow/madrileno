@@ -91,6 +91,21 @@ private[task] class SchedulerRepository(
   oneTimeTasks: List[OneTimeTask[?]],
   customTasks: List[CustomTask[?]]
 )(using clock: Clock[IO]) {
+  def registerOnStartup[A](task: Task[A]): DB[Boolean] = {
+    val session = summon[Session[IO]]
+
+    clock.realTimeInstant.flatMap { now =>
+      val row = TaskRow.fromTask(task, now)
+      session
+        .option(sql"""INSERT INTO ${table.n} VALUES (${table.c})
+           ON CONFLICT (${table.taskName.n}, ${table.taskInstance.n}) DO UPDATE SET
+           ${table.priority.n} = ${table.priority.n("EXCLUDED")}
+           WHERE ${table.n}.${table.picked.n} = false
+           RETURNING ${table.*}""".query(table.c))(row)
+        .map(_.isDefined)
+    }
+  }
+
   def save[A](task: Task[A]): DB[Boolean] = {
     val session = summon[Session[IO]]
 
@@ -200,7 +215,7 @@ private[task] class SchedulerRepository(
     descriptor: TaskDescriptor[A],
     execution: Task[A] => IO[Unit | A | Schedule.NextAt[A]],
     schedule: A => Schedule,
-    scheduledAt: Option[Instant] = None
+    scheduledAt: Option[Instant]
   ): Option[Task[?]] = {
     descriptor.decoder.decodeJson(row.taskData) match {
       case Right(value) =>
@@ -220,14 +235,10 @@ private[task] class SchedulerRepository(
     }
   }
 
-  private def removePickedRow(row: TaskRow): DB[Unit] = {
+  private def deletePoisonRow(row: TaskRow): DB[Unit] = {
     val session = summon[Session[IO]]
     val command =
-      sql"""UPDATE ${table.n} SET
-        ${table.picked.n} = false,
-        ${table.pickedBy.n} = NULL,
-        ${table.lastHeartbeat.n} = NULL,
-        ${table.version.n} = ${table.version.n} + 1
+      sql"""DELETE FROM ${table.n}
       WHERE ${table.taskName.n} = ${table.taskName.c}
         AND ${table.taskInstance.n} = ${table.taskInstance.c}
         AND ${table.version.n} = ${table.version.c}
@@ -277,14 +288,14 @@ private[task] class SchedulerRepository(
               startTasks
                 .find(_.descriptor.taskName == row.taskName)
                 .flatMap { t =>
-                  reconstructTask(row, t.descriptor, t.execution, _ => t.schedule)
+                  reconstructTask(row, t.descriptor, t.execution, _ => t.schedule, Some(row.nextExecution))
                 }
             }
 
           found.toRight(row)
         }
 
-        failures.traverse(removePickedRow).as((successes, failures.map(r => s"${r.taskName}/${r.taskInstance}")))
+        failures.traverse(deletePoisonRow).as((successes, failures.map(r => s"${r.taskName}/${r.taskInstance}")))
       }
     }
   }
