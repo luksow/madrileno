@@ -14,6 +14,5 @@ create table scheduled_task (
   PRIMARY KEY (task_name, task_instance)
 );
 
-CREATE INDEX next_execution_idx ON scheduled_task (next_execution);
-CREATE INDEX last_heartbeat_idx ON scheduled_task (last_heartbeat);
 CREATE INDEX priority_next_execution_idx ON scheduled_task (priority DESC, next_execution ASC);
+CREATE INDEX picked_last_heartbeat_idx ON scheduled_task (last_heartbeat) WHERE picked = true;
