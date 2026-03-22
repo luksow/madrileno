@@ -296,6 +296,42 @@ class SchedulerRepository(
       .void
   }
 
+  private def reconstructTask[A](
+    row: TaskRow,
+    descriptor: TaskDescriptor[A],
+    execution: Task[A] => IO[Unit | A | Schedule.NextAt[A]],
+    schedule: A => Schedule,
+    scheduledAt: Option[Instant] = None
+  ): Task[?] = {
+    descriptor.decoder.decodeJson(row.taskData) match {
+      case Right(value) =>
+        Task(
+          taskInstance = row.taskInstance,
+          descriptor = descriptor,
+          payload = value,
+          execution = execution,
+          version = row.version,
+          priority = row.priority,
+          schedule = schedule(value),
+          consecutiveFailures = row.consecutiveFails,
+          scheduledAt = scheduledAt
+        )
+      case Left(error) =>
+        Task(
+          taskInstance = row.taskInstance,
+          descriptor = TaskDescriptor[Unit](descriptor.taskName),
+          payload = (),
+          execution = _ =>
+            IO.raiseError(new Exception(s"Failed to decode task payload for ${row.taskName}/${row.taskInstance}: $error")),
+          version = row.version,
+          priority = row.priority,
+          schedule = Schedule.Once,
+          consecutiveFailures = row.consecutiveFails,
+          scheduledAt = scheduledAt
+        )
+    }
+  }
+
   def pickAndMark(limit: Int): DB[List[Task[?]]] = {
     val session = summon[Session[IO]]
 
@@ -321,98 +357,23 @@ class SchedulerRepository(
       session.execute(query)((Some(schedulerName), Some(now), now, limit)).map { rows =>
         rows.map { row =>
           oneTimeTasks
-            .find(t => t.descriptor.taskName == row.taskName)
-            .map { oneTimeTask =>
-              val payload = oneTimeTask.descriptor.decoder.decodeJson(row.taskData)
-              payload match {
-                case Left(error) =>
-                  Task(
-                    taskInstance = row.taskInstance,
-                    descriptor = TaskDescriptor[Unit](oneTimeTask.descriptor.taskName),
-                    payload = (),
-                    execution = _ =>
-                      IO.raiseError(new Exception(s"Failed to decode one-time task payload for task ${row.taskName}/${row.taskInstance}: $error")),
-                    version = row.version,
-                    priority = row.priority,
-                    schedule = Schedule.Once,
-                    consecutiveFailures = row.consecutiveFails,
-                    scheduledAt = Some(row.nextExecution)
-                  )
-                case Right(value) =>
-                  Task(
-                    taskInstance = row.taskInstance,
-                    descriptor = oneTimeTask.descriptor,
-                    payload = value,
-                    execution = oneTimeTask.execution,
-                    version = row.version,
-                    priority = row.priority,
-                    schedule = Schedule.Once,
-                    consecutiveFailures = row.consecutiveFails,
-                    scheduledAt = Some(row.nextExecution)
-                  )
-              }
+            .find(_.descriptor.taskName == row.taskName)
+            .map { t =>
+              reconstructTask(row, t.descriptor, t.execution, _ => Schedule.Once, Some(row.nextExecution))
             }
             .orElse {
-              customTasks.find(t => t.descriptor.taskName == row.taskName).map { customTask =>
-                val payload = customTask.descriptor.decoder.decodeJson(row.taskData)
-                payload match {
-                  case Left(error) =>
-                    Task(
-                      taskInstance = row.taskInstance,
-                      descriptor = TaskDescriptor[Unit](customTask.descriptor.taskName),
-                      payload = (),
-                      execution = _ =>
-                        IO.raiseError(new Exception(s"Failed to decode custom task payload for task ${row.taskName}/${row.taskInstance}: $error")),
-                      version = row.version,
-                      priority = row.priority,
-                      schedule = Schedule.NextAt(row.nextExecution, ()),
-                      consecutiveFailures = row.consecutiveFails,
-                      scheduledAt = Some(row.nextExecution)
-                    )
-                  case Right(value) =>
-                    Task(
-                      taskInstance = row.taskInstance,
-                      descriptor = customTask.descriptor,
-                      payload = value,
-                      execution = customTask.execution,
-                      version = row.version,
-                      priority = row.priority,
-                      schedule = Schedule.NextAt(row.nextExecution, value),
-                      consecutiveFailures = row.consecutiveFails,
-                      scheduledAt = Some(row.nextExecution)
-                    )
+              customTasks
+                .find(_.descriptor.taskName == row.taskName)
+                .map { t =>
+                  reconstructTask(row, t.descriptor, t.execution, v => Schedule.NextAt(row.nextExecution, v), Some(row.nextExecution))
                 }
-              }
             }
             .orElse {
-              startTasks.find(t => t.descriptor.taskName == row.taskName).map { recurringTask =>
-                val payload = recurringTask.descriptor.decoder.decodeJson(row.taskData)
-                payload match {
-                  case Left(error) =>
-                    Task(
-                      taskInstance = row.taskInstance,
-                      descriptor = TaskDescriptor[Unit](recurringTask.descriptor.taskName),
-                      payload = (),
-                      execution = _ =>
-                        IO.raiseError(new Exception(s"Failed to decode recurring task payload for task ${row.taskName}/${row.taskInstance}: $error")),
-                      version = row.version,
-                      priority = row.priority,
-                      schedule = recurringTask.schedule,
-                      consecutiveFailures = row.consecutiveFails
-                    )
-                  case Right(value) =>
-                    Task(
-                      taskInstance = row.taskInstance,
-                      descriptor = recurringTask.descriptor,
-                      payload = value,
-                      execution = recurringTask.execution,
-                      version = row.version,
-                      priority = row.priority,
-                      schedule = recurringTask.schedule,
-                      consecutiveFailures = row.consecutiveFails
-                    )
+              startTasks
+                .find(_.descriptor.taskName == row.taskName)
+                .map { t =>
+                  reconstructTask(row, t.descriptor, t.execution, _ => t.schedule)
                 }
-              }
             }
             .getOrElse {
               Task(
