@@ -472,6 +472,7 @@ class Scheduler(
   missedHeartbeatLimit: Int = 6,
   retryBaseDelay: Duration = 30.seconds,
   retryBackoffRate: Double = 1.5,
+  retryMaxDelay: Duration = 1.hour,
   maxRetries: Option[Int] = None,
   schedulerName: SchedulerName = SchedulerName.Hostname
 )(using
@@ -522,7 +523,7 @@ class Scheduler(
     val repository = new SchedulerRepository(schedulerName, startTasks, oneTimeTasks, customTasks)
     logger.info(
       s"Starting scheduler with concurrency=$concurrency, pollingInterval=$pollingInterval, heartbeatInterval=$heartbeatInterval, missedHeartbeatLimit=$missedHeartbeatLimit, " +
-        s"retryBaseDelay=$retryBaseDelay, retryBackoffRate=$retryBackoffRate, maxRetries=$maxRetries, " +
+        s"retryBaseDelay=$retryBaseDelay, retryBackoffRate=$retryBackoffRate, retryMaxDelay=$retryMaxDelay, maxRetries=$maxRetries, " +
         s"initial tasks=${startTasks.map(_.taskId)}, " +
         s"registered one time tasks=${oneTimeTasks.map(_.descriptor.taskName)}, registered custom tasks=${customTasks.map(_.descriptor.taskName)}"
     ) *>
@@ -616,7 +617,10 @@ class Scheduler(
         transactor.inSession(repository.remove(task))
     } else {
       Clock[IO].realTimeInstant.flatMap { now =>
-        val backoffMs = (retryBaseDelay.toMillis * math.pow(retryBackoffRate, previous.toDouble)).toLong
+        val backoffMs = math.min(
+          (retryBaseDelay.toMillis * math.pow(retryBackoffRate, previous.toDouble)).toLong,
+          retryMaxDelay.toMillis
+        )
         val retryAt   = now.plusMillis(backoffMs)
         logger.error(error)(s"$taskId failed (attempt $failures), retrying at $retryAt") *>
           transactor.inSession(repository.markFailure(task, retryAt, failures))
