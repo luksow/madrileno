@@ -583,9 +583,8 @@ class Scheduler(
       Attribute("task.instance", task.taskInstance),
       Attribute("task.version", task.version),
       Attribute("task.priority", task.priority.toLong),
-      Attribute("task.consecutive_failures", task.consecutiveFailures.map(_.toLong).getOrElse(-1L)),
       Attribute("task.payload", payload)
-    )
+    ) ++ task.consecutiveFailures.map(f => Attribute("task.consecutive_failures", f.toLong))
 
     summon[TelemetryContext].tracer
       .span(s"scheduler.execute $taskId", attributes)
