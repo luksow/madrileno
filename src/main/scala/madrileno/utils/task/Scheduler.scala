@@ -417,35 +417,31 @@ private[task] class SchedulerRepository(
   private val table = TaskRowTable
 }
 
-enum SchedulerName {
-  case Hostname
-  case Fixed(name: String) extends SchedulerName
-}
-
 class Scheduler(
   transactor: Transactor,
-  concurrency: Int = 10,
-  pollingInterval: Duration = 10.seconds,
-  heartbeatInterval: Duration = 5.minutes,
-  missedHeartbeatLimit: Int = 6,
-  retryBaseDelay: Duration = 30.seconds,
-  retryBackoffRate: Double = 1.5,
-  retryMaxDelay: Duration = 1.hour,
-  maxRetries: Option[Int] = None,
-  schedulerName: SchedulerName = SchedulerName.Hostname
+  config: SchedulerConfig = SchedulerConfig()
 )(using
   Clock[IO],
   TelemetryContext)
     extends LoggingSupport {
-  private val schedulerNameToUse: IO[String] = schedulerName match {
-    case SchedulerName.Hostname =>
+
+  private val concurrency         = config.concurrency
+  private val pollingInterval     = config.pollingInterval
+  private val heartbeatInterval   = config.heartbeatInterval
+  private val missedHeartbeatLimit = config.missedHeartbeatLimit
+  private val retryBaseDelay      = config.retryBaseDelay
+  private val retryBackoffRate    = config.retryBackoffRate
+  private val retryMaxDelay       = config.retryMaxDelay
+  private val maxRetries          = config.maxRetries
+
+  private val schedulerNameToUse: IO[String] = config.schedulerName match {
+    case Some(name) => IO.pure(name)
+    case None =>
       IO.blocking {
         InetAddress.getLocalHost.getHostName
       }.recover { case _ =>
         "unknown-host"
       }
-    case SchedulerName.Fixed(name) =>
-      IO.pure(name)
   }
 
   def run(

@@ -4,6 +4,7 @@ import cats.effect.{Clock, IO, IOApp, Resource}
 import io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppender
 import madrileno.utils.db.transactor.{PgConfig, PgTransactor}
 import madrileno.utils.observability.TelemetryContext
+import madrileno.utils.task.{Schedule, Scheduler, SchedulerConfig, Task, TaskDescriptor}
 import org.http4s.RequestPrelude
 import org.http4s.ember.server.EmberServerBuilder
 import org.http4s.otel4s.middleware.metrics.OtelMetrics
@@ -17,6 +18,7 @@ import org.typelevel.otel4s.trace.{Tracer, TracerProvider}
 import pl.iterators.stir.server.ToHttpRoutes
 import pureconfig.*
 import sttp.client4.httpclient.fs2.HttpClientFs2Backend
+import scala.concurrent.duration.*
 
 object Main extends IOApp.Simple {
   override def run: IO[Unit] =
@@ -33,7 +35,22 @@ object Main extends IOApp.Simple {
       httpClient <- HttpClientFs2Backend.resource[IO]()
       pgConfig   <- Resource.eval(IO.delay(config.at("pg").loadOrThrow[PgConfig]))
       transactor <- PgTransactor.resource(pgConfig)
-      clock       = Clock[IO]
+      clock = Clock[IO]
+      startTasks = List(Task.recurring("my-every-second-task", Schedule.RecurringWithFixedRate(1.second)) { _ =>
+                     IO.println("Every second task executed")
+                   })
+      randomCustomTask = Task.custom(TaskDescriptor[Int]("random-number-task")) { number =>
+                           IO.println(s"Custom task fired with number=$number") *> {
+                             val nextNumber  = scala.util.Random.nextInt(100)
+                             val nextSeconds = scala.util.Random.nextInt(20)
+                             val nextAt      = java.time.Instant.now().plusSeconds(nextSeconds.toLong)
+                             IO.println(s"  -> next run in ${nextSeconds}s with number=$nextNumber") *>
+                               IO.pure(Schedule.NextAt(nextAt, nextNumber))
+                           }
+                         }
+      schedulerConfig <- Resource.eval(IO.delay(config.at("scheduler").loadOrThrow[SchedulerConfig]))
+      scheduler       <- Scheduler(transactor, schedulerConfig).run(startTasks, customTasks = List(randomCustomTask))
+      _         <- Resource.eval(scheduler.schedule(randomCustomTask.instance("random-1", payload = 42, firstAt = java.time.Instant.now())))
       application = ApplicationLoader(config, httpClient, transactor, clock)
       metricsOps <- OtelMetrics.serverMetricsOps[IO]().toResource
       redactor = new QueryRedactor.NeverRedact with PathRedactor.NeverRedact
