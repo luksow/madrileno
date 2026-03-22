@@ -8,6 +8,7 @@ import madrileno.utils.db.dsl.*
 import madrileno.utils.db.transactor.{DB, Transactor}
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
 import skunk.{Codec, Session}
+import skunk.data.Completion
 import skunk.codec.all.*
 import skunk.circe.codec.all.*
 import skunk.implicits.*
@@ -230,7 +231,7 @@ class SchedulerRepository(
     task: Task[A],
     nextExecution: Instant,
     newPayload: Option[A] = None
-  ): DB[Unit] = {
+  ): DB[Boolean] = {
     val session = summon[Session[IO]]
 
     clock.realTimeInstant.flatMap { now =>
@@ -251,7 +252,7 @@ class SchedulerRepository(
        """.command
       session
         .execute(command)((Some(now), Some(0), taskData, nextExecution, task.descriptor.taskName, task.taskInstance, task.version))
-        .void
+        .map(_ != Completion.Update(0))
     }
   }
 
@@ -259,7 +260,7 @@ class SchedulerRepository(
     task: Task[A],
     nextExecution: Instant,
     consecutiveFailures: Int
-  ): DB[Unit] = {
+  ): DB[Boolean] = {
     val session = summon[Session[IO]]
 
     clock.realTimeInstant.flatMap { now =>
@@ -278,11 +279,11 @@ class SchedulerRepository(
        """.command
       session
         .execute(command)((Some(now), Some(consecutiveFailures), nextExecution, task.descriptor.taskName, task.taskInstance, task.version))
-        .void
+        .map(_ != Completion.Update(0))
     }
   }
 
-  def remove(task: Task[?]): DB[Unit] = {
+  def remove(task: Task[?]): DB[Boolean] = {
     val session = summon[Session[IO]]
 
     val command =
@@ -293,7 +294,7 @@ class SchedulerRepository(
        """.command
     session
       .execute(command)((task.descriptor.taskName, task.taskInstance, task.version))
-      .void
+      .map(_ != Completion.Delete(0))
   }
 
   private def reconstructTask[A](
@@ -392,25 +393,23 @@ class SchedulerRepository(
     }
   }
 
-  def reviveStaleExecutions(staleThreshold: Instant): DB[Long] = {
+  def reviveStaleExecutions(staleThreshold: Instant): DB[Int] = {
     val session = summon[Session[IO]]
 
     clock.realTimeInstant.flatMap { now =>
-      val query =
-        sql"""WITH revived AS (
-          UPDATE ${table.n} SET
-            ${table.picked.n} = false,
-            ${table.pickedBy.n} = NULL,
-            ${table.lastHeartbeat.n} = NULL,
-            ${table.nextExecution.n} = ${table.nextExecution.c},
-            ${table.version.n} = ${table.version.n} + 1
-          WHERE ${table.picked.n} = true
-            AND ${table.lastHeartbeat.n} <= ${table.lastHeartbeat.c}
-          RETURNING 1
-        ) SELECT count(*) FROM revived
-       """.query(int8)
+      val command =
+        sql"""UPDATE ${table.n} SET
+          ${table.picked.n} = false,
+          ${table.pickedBy.n} = NULL,
+          ${table.lastHeartbeat.n} = NULL,
+          ${table.nextExecution.n} = ${table.nextExecution.c},
+          ${table.version.n} = ${table.version.n} + 1
+        WHERE ${table.picked.n} = true
+          AND ${table.lastHeartbeat.n} <= ${table.lastHeartbeat.c}
+       """.command
       session
-        .unique(query)((now, Some(staleThreshold)))
+        .execute(command)((now, Some(staleThreshold)))
+        .map { case Completion.Update(n) => n; case _ => 0 }
     }
   }
 
@@ -507,6 +506,12 @@ class Scheduler(
     oneBeat.foreverM
   }
 
+  private def withVersionCheck(taskId: String, operation: String)(db: DB[Boolean]): IO[Unit] =
+    transactor.inSession(db).flatMap {
+      case true  => IO.unit
+      case false => logger.warn(s"$taskId: $operation affected 0 rows (version mismatch, likely recovered by dead execution handler)")
+    }
+
   private def onSuccess[A](
     repository: SchedulerRepository,
     task: Task[A],
@@ -518,7 +523,7 @@ class Scheduler(
       task.schedule match {
         case _: Once =>
           logger.info(s"$taskId completed, removing") *>
-            transactor.inSession(repository.remove(task))
+            withVersionCheck(taskId, "remove")(repository.remove(task))
         case Schedule.RecurringWithFixedRate(every, _) =>
           val anchor    = task.scheduledAt.getOrElse(now)
           val candidate = anchor.plusMillis(every.toMillis)
@@ -528,7 +533,7 @@ class Scheduler(
             case payload => Some(payload.asInstanceOf[A])
           }
           logger.info(s"$taskId completed, next at $next") *>
-            transactor.inSession(repository.reschedule(task, next, newPayload))
+            withVersionCheck(taskId, "reschedule")(repository.reschedule(task, next, newPayload))
         case Schedule.RecurringWithFixedDelay(after, _) =>
           val next = now.plusMillis(after.toMillis)
           val newPayload = result match {
@@ -536,15 +541,15 @@ class Scheduler(
             case payload => Some(payload.asInstanceOf[A])
           }
           logger.info(s"$taskId completed, next at $next") *>
-            transactor.inSession(repository.reschedule(task, next, newPayload))
+            withVersionCheck(taskId, "reschedule")(repository.reschedule(task, next, newPayload))
         case Schedule.NextAt(_, _) =>
           result match {
             case nextAt: Schedule.NextAt[A @unchecked] =>
               logger.info(s"$taskId completed, next at ${nextAt.at}") *>
-                transactor.inSession(repository.reschedule(task, nextAt.at, Some(nextAt.payload)))
+                withVersionCheck(taskId, "reschedule")(repository.reschedule(task, nextAt.at, Some(nextAt.payload)))
             case _ =>
               logger.info(s"$taskId completed (custom, no continuation), removing") *>
-                transactor.inSession(repository.remove(task))
+                withVersionCheck(taskId, "remove")(repository.remove(task))
           }
       }
     }
@@ -562,13 +567,13 @@ class Scheduler(
 
     if (shouldDrop) {
       logger.error(error)(s"$taskId exceeded max retries ($failures), removing") *>
-        transactor.inSession(repository.remove(task))
+        withVersionCheck(taskId, "remove")(repository.remove(task))
     } else {
       Clock[IO].realTimeInstant.flatMap { now =>
         val backoffMs = math.min((retryBaseDelay.toMillis * math.pow(retryBackoffRate, previous.toDouble)).toLong, retryMaxDelay.toMillis)
         val retryAt   = now.plusMillis(backoffMs)
         logger.error(error)(s"$taskId failed (attempt $failures), retrying at $retryAt") *>
-          transactor.inSession(repository.markFailure(task, retryAt, failures))
+          withVersionCheck(taskId, "markFailure")(repository.markFailure(task, retryAt, failures))
       }
     }
   }
