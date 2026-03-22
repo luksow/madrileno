@@ -321,8 +321,7 @@ class SchedulerRepository(
           taskInstance = row.taskInstance,
           descriptor = TaskDescriptor[Unit](descriptor.taskName),
           payload = (),
-          execution = _ =>
-            IO.raiseError(new Exception(s"Failed to decode task payload for ${row.taskName}/${row.taskInstance}: $error")),
+          execution = _ => IO.raiseError(new Exception(s"Failed to decode task payload for ${row.taskName}/${row.taskInstance}: $error")),
           version = row.version,
           priority = row.priority,
           schedule = Schedule.Once,
@@ -449,27 +448,17 @@ class Scheduler(
       IO.pure(name)
   }
 
-  private val repositoryRef: cats.effect.Ref[IO, Option[SchedulerRepository]] =
-    cats.effect.Ref.unsafe[IO, Option[SchedulerRepository]](None)
-
-  def schedule[A](task: Task[A]): IO[Task[A]] =
-    repositoryRef.get.flatMap {
-      case Some(repository) => transactor.inSession(repository.save(task))
-      case None             => IO.raiseError(new IllegalStateException("Scheduler not started"))
-    }
-
   def run(
     recurringTasks: List[Task[?]] = Nil,
     oneTimeTasks: List[OneTimeTask[?]] = Nil,
     customTasks: List[CustomTask[?]] = Nil
-  ): Resource[IO, Unit] = {
+  ): Resource[IO, RunningScheduler] = {
     (for {
       schedulerName <- Resource.eval(schedulerNameToUse)
       repository    <- Resource.eval(setup(schedulerName, recurringTasks, oneTimeTasks, customTasks))
-      _             <- Resource.eval(repositoryRef.set(Some(repository)))
       _             <- mainLoop(repository)
-    } yield ()).onFinalize {
-      repositoryRef.set(None) *> logger.info("Shutting down scheduler...")
+    } yield new RunningScheduler(repository, transactor)).onFinalize {
+      logger.info("Shutting down scheduler...")
     }
   }
 
@@ -576,10 +565,7 @@ class Scheduler(
         transactor.inSession(repository.remove(task))
     } else {
       Clock[IO].realTimeInstant.flatMap { now =>
-        val backoffMs = math.min(
-          (retryBaseDelay.toMillis * math.pow(retryBackoffRate, previous.toDouble)).toLong,
-          retryMaxDelay.toMillis
-        )
+        val backoffMs = math.min((retryBaseDelay.toMillis * math.pow(retryBackoffRate, previous.toDouble)).toLong, retryMaxDelay.toMillis)
         val retryAt   = now.plusMillis(backoffMs)
         logger.error(error)(s"$taskId failed (attempt $failures), retrying at $retryAt") *>
           transactor.inSession(repository.markFailure(task, retryAt, failures))
@@ -690,4 +676,12 @@ class Scheduler(
            }
     } yield ()).foreverM.background
   }
+}
+
+class RunningScheduler private[task] (
+  repository: SchedulerRepository,
+  transactor: Transactor
+) {
+  def schedule[A](task: Task[A]): IO[Task[A]] =
+    transactor.inSession(repository.save(task))
 }
