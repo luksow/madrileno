@@ -442,8 +442,6 @@ class SchedulerRepository(
             ${table.picked.n} = false,
             ${table.pickedBy.n} = NULL,
             ${table.lastHeartbeat.n} = NULL,
-            ${table.lastFailure.n} = ${table.lastFailure.c},
-            ${table.consecutiveFailures.n} = COALESCE(${table.consecutiveFailures.n}, 0) + 1,
             ${table.nextExecution.n} = ${table.nextExecution.c},
             ${table.version.n} = ${table.version.n} + 1
           WHERE ${table.picked.n} = true
@@ -452,7 +450,7 @@ class SchedulerRepository(
         ) SELECT count(*) FROM revived
        """.query(int8)
       session
-        .unique(query)((Some(now), now, Some(staleThreshold)))
+        .unique(query)((now, Some(staleThreshold)))
     }
   }
 
