@@ -188,7 +188,7 @@ object TaskRowTable extends Table[TaskRow]("scheduled_task") {
     )
 }
 
-class SchedulerRepository(
+private[task] class SchedulerRepository(
   schedulerName: String,
   startTasks: List[Task[?]],
   oneTimeTasks: List[OneTimeTask[?]],
@@ -303,10 +303,10 @@ class SchedulerRepository(
     execution: Task[A] => IO[Unit | A | Schedule.NextAt[A]],
     schedule: A => Schedule,
     scheduledAt: Option[Instant] = None
-  ): Task[?] = {
+  ): Option[Task[?]] = {
     descriptor.decoder.decodeJson(row.taskData) match {
       case Right(value) =>
-        Task(
+        Some(Task(
           taskInstance = row.taskInstance,
           descriptor = descriptor,
           payload = value,
@@ -316,23 +316,30 @@ class SchedulerRepository(
           schedule = schedule(value),
           consecutiveFailures = row.consecutiveFails,
           scheduledAt = scheduledAt
-        )
-      case Left(error) =>
-        Task(
-          taskInstance = row.taskInstance,
-          descriptor = TaskDescriptor[Unit](descriptor.taskName),
-          payload = (),
-          execution = _ => IO.raiseError(new Exception(s"Failed to decode task payload for ${row.taskName}/${row.taskInstance}: $error")),
-          version = row.version,
-          priority = row.priority,
-          schedule = Schedule.Once,
-          consecutiveFailures = row.consecutiveFails,
-          scheduledAt = scheduledAt
-        )
+        ))
+      case Left(_) =>
+        None
     }
   }
 
-  def pickAndMark(limit: Int): DB[List[Task[?]]] = {
+  private def removePickedRow(row: TaskRow): DB[Unit] = {
+    val session = summon[Session[IO]]
+    val command =
+      sql"""UPDATE ${table.n} SET
+        ${table.picked.n} = false,
+        ${table.pickedBy.n} = NULL,
+        ${table.lastHeartbeat.n} = NULL,
+        ${table.version.n} = ${table.version.n} + 1
+      WHERE ${table.taskName.n} = ${table.taskName.c}
+        AND ${table.taskInstance.n} = ${table.taskInstance.c}
+        AND ${table.version.n} = ${table.version.c}
+     """.command
+    session
+      .execute(command)((row.taskName, row.taskInstance, row.version))
+      .void
+  }
+
+  def pickAndMark(limit: Int): DB[(List[Task[?]], List[String])] = {
     val session = summon[Session[IO]]
 
     clock.realTimeInstant.flatMap { now =>
@@ -354,41 +361,32 @@ class SchedulerRepository(
     )
     SELECT * FROM locked_executions ORDER BY ${table.priority.n} DESC, ${table.nextExecution.n} ASC
        """.query(table.c)
-      session.execute(query)((Some(schedulerName), Some(now), now, limit)).map { rows =>
-        rows.map { row =>
-          oneTimeTasks
+      session.execute(query)((Some(schedulerName), Some(now), now, limit)).flatMap { rows =>
+        val (failures, successes) = rows.partitionMap { row =>
+          val found = oneTimeTasks
             .find(_.descriptor.taskName == row.taskName)
-            .map { t =>
+            .flatMap { t =>
               reconstructTask(row, t.descriptor, t.execution, _ => Schedule.Once, Some(row.nextExecution))
             }
             .orElse {
               customTasks
                 .find(_.descriptor.taskName == row.taskName)
-                .map { t =>
+                .flatMap { t =>
                   reconstructTask(row, t.descriptor, t.execution, v => Schedule.NextAt(row.nextExecution, v), Some(row.nextExecution))
                 }
             }
             .orElse {
               startTasks
                 .find(_.descriptor.taskName == row.taskName)
-                .map { t =>
+                .flatMap { t =>
                   reconstructTask(row, t.descriptor, t.execution, _ => t.schedule)
                 }
             }
-            .getOrElse {
-              Task(
-                taskInstance = row.taskInstance,
-                descriptor = TaskDescriptor[Unit](row.taskName),
-                payload = (),
-                execution = _ => IO.raiseError(new IllegalStateException(s"Unknown task picked: ${row.taskName}/${row.taskInstance}")),
-                version = row.version,
-                priority = row.priority,
-                schedule = Schedule.Once,
-                consecutiveFailures = row.consecutiveFails,
-                scheduledAt = Some(row.nextExecution)
-              )
-            }
+
+          found.toRight(row)
         }
+
+        failures.traverse(removePickedRow).as((successes, failures.map(r => s"${r.taskName}/${r.taskInstance}")))
       }
     }
   }
@@ -662,9 +660,14 @@ class Scheduler(
                  repository.pickAndMark(reserved)
                }
                .recoverWith { case t =>
-                 logger.error(t)("Error while picking tasks") *> IO.pure(List.empty)
+                 logger.error(t)("Error while picking tasks") *>
+                   IO.pure((Nil, Nil))
                }
-               .flatMap { tasks =>
+               .flatMap { case (tasks, unreconstructable) =>
+                 val logUnreconstructable =
+                   if (unreconstructable.nonEmpty)
+                     logger.error(s"Failed to reconstruct tasks (decode error or unknown), released: ${unreconstructable.mkString(", ")}")
+                   else IO.unit
                  val used   = tasks.size
                  val unused = reserved - used
 
@@ -676,7 +679,7 @@ class Scheduler(
                  val releaseSurplus =
                    if (unused > 0) sem.releaseN(unused.toLong) else IO.unit
 
-                 startWorkers *> releaseSurplus *> IO.sleep(pollingInterval)
+                 logUnreconstructable *> startWorkers *> releaseSurplus *> IO.sleep(pollingInterval)
                }
            }
     } yield ()).foreverM.background
