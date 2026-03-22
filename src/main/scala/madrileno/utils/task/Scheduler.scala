@@ -499,9 +499,9 @@ class Scheduler(
         }
         .handleErrorWith { e =>
           logger.error(e)(s"Heartbeat failed for ${task.taskId}")
-        } *> IO.sleep(heartbeatInterval)
+        }
 
-    oneBeat.foreverM
+    (IO.sleep(heartbeatInterval) *> oneBeat).foreverM
   }
 
   private def withVersionCheck(taskId: String, operation: String)(db: DB[Boolean]): IO[Unit] =
