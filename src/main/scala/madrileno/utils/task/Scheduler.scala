@@ -125,7 +125,7 @@ private[task] case class TaskRow(
   pickedBy: Option[String],
   lastSuccess: Option[Instant],
   lastFailure: Option[Instant],
-  consecutiveFails: Option[Int],
+  consecutiveFailures: Option[Int],
   lastHeartbeat: Option[Instant],
   version: Long,
   priority: Short)
@@ -149,7 +149,7 @@ object TaskRow {
       pickedBy = None,
       lastSuccess = None,
       lastFailure = None,
-      consecutiveFails = None,
+      consecutiveFailures = None,
       lastHeartbeat = None,
       version = task.version,
       priority = task.priority
@@ -314,7 +314,7 @@ private[task] class SchedulerRepository(
           version = row.version,
           priority = row.priority,
           schedule = schedule(value),
-          consecutiveFailures = row.consecutiveFails,
+          consecutiveFailures = row.consecutiveFailures,
           scheduledAt = scheduledAt
         ))
       case Left(_) =>
