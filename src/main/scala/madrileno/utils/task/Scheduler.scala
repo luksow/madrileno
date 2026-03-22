@@ -7,6 +7,8 @@ import io.circe.{Decoder, Encoder, Json}
 import madrileno.utils.db.dsl.*
 import madrileno.utils.db.transactor.{DB, Transactor}
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
+import org.typelevel.otel4s.Attribute
+import org.typelevel.otel4s.trace.StatusCode
 import skunk.{Codec, Session}
 import skunk.data.Completion
 import skunk.codec.all.*
@@ -577,20 +579,35 @@ class Scheduler(
   }
 
   private def executeAndComplete[A](repository: SchedulerRepository, task: Task[A]): IO[Unit] = {
-    val taskId = task.taskId
+    val taskId     = task.taskId
+    val payload    = task.descriptor.encoder(task.payload).noSpaces
+    val attributes = Seq(
+      Attribute("task.name", task.descriptor.taskName),
+      Attribute("task.instance", task.taskInstance),
+      Attribute("task.version", task.version),
+      Attribute("task.priority", task.priority.toLong),
+      Attribute("task.consecutive_failures", task.consecutiveFailures.map(_.toLong).getOrElse(-1L)),
+      Attribute("task.payload", payload)
+    )
 
-    task.execution(task).attempt.flatMap {
-      case Right(result) =>
-        onSuccess(repository, task, result)
-          .handleErrorWith { e =>
-            logger.error(e)(s"Failed to complete $taskId after success")
-          }
-      case Left(e) =>
-        onFailure(repository, task, e)
-          .handleErrorWith { completionError =>
-            logger.error(completionError)(s"Failed to record failure for $taskId")
-          }
-    }
+    summon[TelemetryContext].tracer
+      .span(s"scheduler.execute $taskId", attributes)
+      .use { span =>
+        task.execution(task).attempt.flatMap {
+          case Right(result) =>
+            onSuccess(repository, task, result)
+              .handleErrorWith { e =>
+                logger.error(e)(s"Failed to complete $taskId after success")
+              }
+          case Left(e) =>
+            span.recordException(e) *>
+              span.setStatus(StatusCode.Error, e.getMessage) *>
+              onFailure(repository, task, e)
+                .handleErrorWith { completionError =>
+                  logger.error(completionError)(s"Failed to record failure for $taskId")
+                }
+        }
+      }
   }
 
   private def runTaskUsingReservedPermit(
