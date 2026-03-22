@@ -4,6 +4,7 @@ import cats.effect.{Clock, IO, IOApp, Resource}
 import io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppender
 import madrileno.utils.db.transactor.{PgConfig, PgTransactor}
 import madrileno.utils.observability.TelemetryContext
+import madrileno.utils.task.{Scheduler, SchedulerConfig}
 import org.http4s.RequestPrelude
 import org.http4s.ember.server.EmberServerBuilder
 import org.http4s.otel4s.middleware.metrics.OtelMetrics
@@ -33,7 +34,9 @@ object Main extends IOApp.Simple {
       httpClient <- HttpClientFs2Backend.resource[IO]()
       pgConfig   <- Resource.eval(IO.delay(config.at("pg").loadOrThrow[PgConfig]))
       transactor <- PgTransactor.resource(pgConfig)
-      clock       = Clock[IO]
+      clock = Clock[IO]
+      schedulerConfig <- Resource.eval(IO.delay(config.at("scheduler").loadOrThrow[SchedulerConfig]))
+      _               <- Scheduler(transactor, schedulerConfig).run()
       application = ApplicationLoader(config, httpClient, transactor, clock)
       metricsOps <- OtelMetrics.serverMetricsOps[IO]().toResource
       redactor = new QueryRedactor.NeverRedact with PathRedactor.NeverRedact
