@@ -1,8 +1,8 @@
 package madrileno.utils.task
 
 import cats.effect.std.{Semaphore, Supervisor}
-import cats.syntax.all.*
 import cats.effect.{Clock, IO, Resource}
+import cats.syntax.all.*
 import madrileno.utils.db.transactor.{DB, Transactor}
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
 import org.typelevel.otel4s.Attribute
@@ -10,24 +10,18 @@ import org.typelevel.otel4s.trace.StatusCode
 
 import java.net.InetAddress
 
-class Scheduler(
-  transactor: Transactor,
-  config: SchedulerConfig = SchedulerConfig()
-)(using
-  Clock[IO],
-  TelemetryContext)
-    extends LoggingSupport {
+class Scheduler(transactor: Transactor, config: SchedulerConfig = SchedulerConfig())(using Clock[IO], TelemetryContext) extends LoggingSupport {
 
   val client: SchedulerClient = new SchedulerClient(new ClientSchedulerRepository(), transactor)
 
-  private val concurrency         = config.concurrency
-  private val pollingInterval     = config.pollingInterval
-  private val heartbeatInterval   = config.heartbeatInterval
+  private val concurrency          = config.concurrency
+  private val pollingInterval      = config.pollingInterval
+  private val heartbeatInterval    = config.heartbeatInterval
   private val missedHeartbeatLimit = config.missedHeartbeatLimit
-  private val retryBaseDelay      = config.retryBaseDelay
-  private val retryBackoffRate    = config.retryBackoffRate
-  private val retryMaxDelay       = config.retryMaxDelay
-  private val maxRetries          = config.maxRetries
+  private val retryBaseDelay       = config.retryBaseDelay
+  private val retryBackoffRate     = config.retryBackoffRate
+  private val retryMaxDelay        = config.retryMaxDelay
+  private val maxRetries           = config.maxRetries
 
   private val schedulerNameToUse: IO[String] = config.schedulerName match {
     case Some(name) => IO.pure(name)
@@ -104,6 +98,12 @@ class Scheduler(
       case false => logger.warn(s"$taskId: $operation affected 0 rows (version mismatch, likely recovered by dead execution handler)")
     }
 
+  private def extractPayload[A](result: Unit | A | Schedule.NextAt[A]): Option[A] = result match {
+    case ()                                      => None
+    case nextAt: Schedule.NextAt[A @unchecked]    => Some(nextAt.payload)
+    case payload: A @unchecked                    => Some(payload)
+  }
+
   private def onSuccess[A](
     repository: SchedulerRepository,
     task: Task[A],
@@ -120,20 +120,21 @@ class Scheduler(
           val anchor    = task.scheduledAt.getOrElse(now)
           val candidate = anchor.plusMillis(every.toMillis)
           val next      = if (candidate.isBefore(now)) now.plusMillis(every.toMillis) else candidate
-          val newPayload = result match {
-            case ()      => None
-            case payload => Some(payload.asInstanceOf[A])
-          }
           logger.info(s"$taskId completed, next at $next") *>
-            withVersionCheck(taskId, "reschedule")(repository.reschedule(task, next, newPayload))
+            withVersionCheck(taskId, "reschedule")(repository.reschedule(task, next, extractPayload(result)))
         case Schedule.RecurringWithFixedDelay(after, _) =>
           val next = now.plusMillis(after.toMillis)
-          val newPayload = result match {
-            case ()      => None
-            case payload => Some(payload.asInstanceOf[A])
-          }
           logger.info(s"$taskId completed, next at $next") *>
-            withVersionCheck(taskId, "reschedule")(repository.reschedule(task, next, newPayload))
+            withVersionCheck(taskId, "reschedule")(repository.reschedule(task, next, extractPayload(result)))
+        case Schedule.Cron(expression) =>
+          CronSupport.nextFrom(expression, now) match {
+            case Some(next) =>
+              logger.info(s"$taskId completed, next at $next") *>
+                withVersionCheck(taskId, "reschedule")(repository.reschedule(task, next, extractPayload(result)))
+            case None =>
+              logger.error(s"$taskId: cron expression '$expression' failed to parse or has no future match, removing") *>
+                withVersionCheck(taskId, "remove")(repository.remove(task))
+          }
         case Schedule.NextAt(_, _) =>
           result match {
             case nextAt: Schedule.NextAt[A @unchecked] =>
@@ -171,8 +172,8 @@ class Scheduler(
   }
 
   private def executeAndComplete[A](repository: SchedulerRepository, task: Task[A]): IO[Unit] = {
-    val taskId     = task.taskId
-    val payload    = task.descriptor.encoder(task.payload).noSpaces
+    val taskId  = task.taskId
+    val payload = task.descriptor.encoder(task.payload).noSpaces
     val attributes = Seq(
       Attribute("task.name", task.descriptor.taskName),
       Attribute("task.instance", task.taskInstance),
@@ -296,4 +297,3 @@ class Scheduler(
     } yield ()).foreverM.background
   }
 }
-

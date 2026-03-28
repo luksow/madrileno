@@ -14,7 +14,6 @@ import madrileno.utils.task.{Schedule, Task}
 import pl.iterators.sealedmonad.syntax.*
 
 import java.time.Duration
-import scala.concurrent.duration.*
 
 class AuthenticationService(
   userAuthRepository: UserAuthRepository,
@@ -133,7 +132,7 @@ class AuthenticationService(
   }
 
   val cleanupExpiredRefreshTokensTask: Task[Unit] =
-    Task.recurring("cleanup-expired-refresh-tokens", Schedule.RecurringWithFixedDelay(24.hours)) { _ =>
+    Task.recurring("cleanup-expired-refresh-tokens", Schedule.Cron("0 1 * * *")) { _ =>
       Clock[IO].realTimeInstant.flatMap { now =>
         val cutoff = now.minus(Duration.ofDays(60))
         transactor.inSession {

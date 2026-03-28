@@ -29,6 +29,7 @@ libraryDependencies ++= {
   val sealedV            = "2.0.1"
   val jwtCoreV           = "11.0.3"
   val firebaseV          = "9.8.0"
+  val cron4sV            = "0.8.2"
   val scalatestV         = "3.2.20"
   Seq(
     "org.http4s"                      %% "http4s-ember-server"                       % http4sV,
@@ -67,6 +68,7 @@ libraryDependencies ++= {
     "pl.iterators"                    %% "kebs-instances"                            % kebsV,
     "pl.iterators"                    %% "sealed-monad"                              % sealedV,
     "com.github.jwt-scala"            %% "jwt-core"                                  % jwtCoreV,
+    "com.github.alonsodomin.cron4s"   %% "cron4s-core"                               % cron4sV,
     "com.google.firebase"              % "firebase-admin"                            % firebaseV,
     "pl.iterators"                    %% "http4s-stir-testkit"                       % http4sStirV        % "test",
     "org.scalatest"                   %% "scalatest"                                 % scalatestV         % "test",

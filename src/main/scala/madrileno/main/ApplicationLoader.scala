@@ -7,8 +7,8 @@ import madrileno.healthcheck.HealthCheckModule
 import madrileno.user.UserModule
 import madrileno.utils.db.transactor.Transactor
 import madrileno.utils.http.{ApplicationRouteProvider, Handlers}
-import madrileno.utils.task.{ApplicationTaskProvider, SchedulerClient}
 import madrileno.utils.observability.*
+import madrileno.utils.task.{ApplicationTaskProvider, SchedulerClient}
 import org.http4s.Headers
 import org.http4s.otel4s.middleware.instances.all.*
 import org.typelevel.otel4s.Attribute

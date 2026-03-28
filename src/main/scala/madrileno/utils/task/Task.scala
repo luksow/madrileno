@@ -3,8 +3,8 @@ package madrileno.utils.task
 import cats.effect.IO
 import io.circe.{Decoder, Encoder}
 
-import scala.concurrent.duration.*
 import java.time.Instant
+import scala.concurrent.duration.*
 
 final case class TaskDescriptor[A](taskName: String)(using val encoder: Encoder[A], val decoder: Decoder[A])
 
@@ -17,6 +17,7 @@ object Schedule {
   case class OnceAt(at: Instant)                                                          extends Once
   case class RecurringWithFixedRate(every: Duration, initialDelay: Duration = 0.seconds)  extends Recurring
   case class RecurringWithFixedDelay(after: Duration, initialDelay: Duration = 0.seconds) extends Recurring
+  case class Cron(expression: String)                                                     extends Recurring
   case class NextAt[A](at: Instant, payload: A)                                           extends Custom
 }
 
@@ -84,7 +85,7 @@ object Task {
     Decoder[A]
   ): Task[A] = {
     Task(
-      taskInstance = s"recurring",
+      taskInstance = "recurring",
       descriptor = TaskDescriptor[A](name),
       payload = payload,
       execution = execution,
