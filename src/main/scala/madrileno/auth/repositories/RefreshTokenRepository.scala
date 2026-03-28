@@ -60,17 +60,19 @@ case class RefreshTokenRowFilter(
   userId: SqlPredicate[UserId] = p.any,
   userAgent: SqlPredicate[UserAgent] = p.any,
   usedAt: SqlPredicate[Instant] = p.any,
-  deletedAt: SqlPredicate[Instant] = p.any)
+  deletedAt: SqlPredicate[Instant] = p.any,
+  separator: AppliedFragment = SqlFilter.And)
     extends SqlFilter {
 
   override def filterFragment: AppliedFragment = fromPredicatesAndSeparator(
     (
       id        -> RefreshTokenRowTable.id,
       userId    -> RefreshTokenRowTable.userId,
+      userAgent -> RefreshTokenRowTable.userAgent,
       usedAt    -> RefreshTokenRowTable.usedAt,
       deletedAt -> RefreshTokenRowTable.deletedAt
     ),
-    SqlAnd
+    separator
   )
 }
 
@@ -99,6 +101,10 @@ class RefreshTokenRepository {
 
   def update(refreshToken: RefreshToken): DB[Unit] = {
     repository.update(RefreshTokenRow(refreshToken))
+  }
+
+  def deleteUsedOrDeletedBefore(cutoff: Instant): DB[Unit] = {
+    repository.deleteByFilter(RefreshTokenRowFilter(usedAt = p.lessThan(cutoff), deletedAt = p.lessThan(cutoff), separator = SqlFilter.Or))
   }
 
   private val repository: IdRepository[RefreshTokenRow, RefreshTokenId] & SoftDeleteRepository[RefreshTokenRow, RefreshTokenId] & ForeignIdRepository[

@@ -85,27 +85,7 @@ object TaskRowTable extends Table[TaskRow]("scheduled_task") {
     )
 }
 
-private[task] class SchedulerRepository(
-  schedulerName: String,
-  startTasks: List[Task[?]],
-  oneTimeTasks: List[OneTimeTask[?]],
-  customTasks: List[CustomTask[?]]
-)(using clock: Clock[IO]) {
-  def registerOnStartup[A](task: Task[A]): DB[Boolean] = {
-    val session = summon[Session[IO]]
-
-    clock.realTimeInstant.flatMap { now =>
-      val row = TaskRow.fromTask(task, now)
-      session
-        .option(sql"""INSERT INTO ${table.n} VALUES (${table.c})
-           ON CONFLICT (${table.taskName.n}, ${table.taskInstance.n}) DO UPDATE SET
-           ${table.priority.n} = ${table.priority.n("EXCLUDED")}
-           WHERE ${table.n}.${table.picked.n} = false
-           RETURNING ${table.*}""".query(table.c))(row)
-        .map(_.isDefined)
-    }
-  }
-
+private[task] class ClientSchedulerRepository(using clock: Clock[IO]) {
   def save[A](task: Task[A]): DB[Boolean] = {
     val session = summon[Session[IO]]
 
@@ -116,6 +96,31 @@ private[task] class SchedulerRepository(
            ON CONFLICT (${table.taskName.n}, ${table.taskInstance.n}) DO UPDATE SET
            ${table.taskData.n} = ${table.taskData.n("EXCLUDED")},
            ${table.nextExecution.n} = ${table.nextExecution.n("EXCLUDED")},
+           ${table.priority.n} = ${table.priority.n("EXCLUDED")}
+           WHERE ${table.n}.${table.picked.n} = false
+           RETURNING ${table.*}""".query(table.c))(row)
+        .map(_.isDefined)
+    }
+  }
+
+  protected val table = TaskRowTable
+}
+
+private[task] class SchedulerRepository(
+  schedulerName: String,
+  startTasks: List[Task[?]],
+  oneTimeTasks: List[OneTimeTask[?]],
+  customTasks: List[CustomTask[?]]
+)(using clock: Clock[IO])
+    extends ClientSchedulerRepository {
+  def registerOnStartup[A](task: Task[A]): DB[Boolean] = {
+    val session = summon[Session[IO]]
+
+    clock.realTimeInstant.flatMap { now =>
+      val row = TaskRow.fromTask(task, now)
+      session
+        .option(sql"""INSERT INTO ${table.n} VALUES (${table.c})
+           ON CONFLICT (${table.taskName.n}, ${table.taskInstance.n}) DO UPDATE SET
            ${table.priority.n} = ${table.priority.n("EXCLUDED")}
            WHERE ${table.n}.${table.picked.n} = false
            RETURNING ${table.*}""".query(table.c))(row)
@@ -219,17 +224,19 @@ private[task] class SchedulerRepository(
   ): Option[Task[?]] = {
     descriptor.decoder.decodeJson(row.taskData) match {
       case Right(value) =>
-        Some(Task(
-          taskInstance = row.taskInstance,
-          descriptor = descriptor,
-          payload = value,
-          execution = execution,
-          version = row.version,
-          priority = row.priority,
-          schedule = schedule(value),
-          consecutiveFailures = row.consecutiveFailures,
-          scheduledAt = scheduledAt
-        ))
+        Some(
+          Task(
+            taskInstance = row.taskInstance,
+            descriptor = descriptor,
+            payload = value,
+            execution = execution,
+            version = row.version,
+            priority = row.priority,
+            schedule = schedule(value),
+            consecutiveFailures = row.consecutiveFailures,
+            scheduledAt = scheduledAt
+          )
+        )
       case Left(_) =>
         None
     }
@@ -320,5 +327,4 @@ private[task] class SchedulerRepository(
     }
   }
 
-  private val table = TaskRowTable
 }

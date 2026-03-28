@@ -12,13 +12,14 @@ import madrileno.user.repositories.UserRepository
 import madrileno.utils.db.transactor.Transactor
 import madrileno.utils.http.{AuthRouteProvider, RouteProvider}
 import madrileno.utils.observability.TelemetryContext
+import madrileno.utils.task.{RecurringTaskProvider, Task}
 import pl.iterators.stir.server.Route
 import pureconfig.ConfigSource
 
 import java.io.ByteArrayInputStream
 import scala.util.Try
 
-trait AuthModule extends RouteProvider with AuthRouteProvider {
+trait AuthModule extends RouteProvider with AuthRouteProvider with RecurringTaskProvider {
   val config: ConfigSource
   val jwtConfig: JwtService.Config = config.at("jwt").loadOrThrow[JwtService.Config]
   private val jwtService           = wire[JwtService]
@@ -52,5 +53,9 @@ trait AuthModule extends RouteProvider with AuthRouteProvider {
 
   override abstract def route: Route = {
     super.route ~ authRouter.routes
+  }
+
+  override abstract def recurringTasks: List[Task[?]] = {
+    super.recurringTasks :+ authenticationService.cleanupExpiredRefreshTokensTask
   }
 }

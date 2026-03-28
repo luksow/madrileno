@@ -3,7 +3,7 @@ package madrileno.utils.task
 import cats.effect.std.{Semaphore, Supervisor}
 import cats.syntax.all.*
 import cats.effect.{Clock, IO, Resource}
-import madrileno.utils.db.transactor.{DB, DBInTransaction, Transactor}
+import madrileno.utils.db.transactor.{DB, Transactor}
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
 import org.typelevel.otel4s.Attribute
 import org.typelevel.otel4s.trace.StatusCode
@@ -17,6 +17,8 @@ class Scheduler(
   Clock[IO],
   TelemetryContext)
     extends LoggingSupport {
+
+  val client: SchedulerClient = new SchedulerClient(new ClientSchedulerRepository(), transactor)
 
   private val concurrency         = config.concurrency
   private val pollingInterval     = config.pollingInterval
@@ -41,12 +43,12 @@ class Scheduler(
     recurringTasks: List[Task[?]] = Nil,
     oneTimeTasks: List[OneTimeTask[?]] = Nil,
     customTasks: List[CustomTask[?]] = Nil
-  ): Resource[IO, RunningScheduler] = {
+  ): Resource[IO, Unit] = {
     (for {
       schedulerName <- Resource.eval(schedulerNameToUse)
       repository    <- Resource.eval(setup(schedulerName, recurringTasks, oneTimeTasks, customTasks))
       _             <- mainLoop(repository)
-    } yield new RunningScheduler(repository, transactor)).onFinalize {
+    } yield ()).onFinalize {
       logger.info("Shutting down scheduler...")
     }
   }
@@ -295,16 +297,3 @@ class Scheduler(
   }
 }
 
-class RunningScheduler private[task] (
-  repository: SchedulerRepository,
-  transactor: Transactor
-) {
-  def schedule[A](task: Task[A]): IO[Boolean] =
-    transactor.inSession(repository.save(task))
-
-  def scheduleInSession[A](task: Task[A]): DB[Boolean] =
-    repository.save(task)
-
-  def scheduleTransactionally[A](task: Task[A]): DBInTransaction[Boolean] =
-    repository.save(task)
-}

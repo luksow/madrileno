@@ -33,7 +33,8 @@ trait SqlFilter {
     }
   }
 
-  protected val SqlAnd: AppliedFragment = sql" AND " (Void)
+  protected val SqlAnd: AppliedFragment = SqlFilter.And
+  protected val SqlOr: AppliedFragment  = SqlFilter.Or
 
   def filterFragment: AppliedFragment
 
@@ -56,6 +57,11 @@ trait SqlFilter {
       case None                => sql"" (Void)
     }
   }
+}
+
+object SqlFilter {
+  val And: AppliedFragment = sql" AND " (Void)
+  val Or: AppliedFragment  = sql" OR " (Void)
 }
 
 trait SqlPredicate[A] {

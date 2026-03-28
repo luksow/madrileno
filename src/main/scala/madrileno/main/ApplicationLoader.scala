@@ -7,6 +7,7 @@ import madrileno.healthcheck.HealthCheckModule
 import madrileno.user.UserModule
 import madrileno.utils.db.transactor.Transactor
 import madrileno.utils.http.{ApplicationRouteProvider, Handlers}
+import madrileno.utils.task.{ApplicationTaskProvider, SchedulerClient}
 import madrileno.utils.observability.*
 import org.http4s.Headers
 import org.http4s.otel4s.middleware.instances.all.*
@@ -35,9 +36,11 @@ class ApplicationLoader(
   val config: ConfigSource,
   httpBackend: WebSocketStreamBackend[IO, Fs2Streams[IO]],
   val transactor: Transactor,
-  val clock: Clock[IO]
+  val clock: Clock[IO],
+  val schedulerClient: SchedulerClient
 )(using TelemetryContext)
     extends ApplicationRouteProvider
+    with ApplicationTaskProvider
     with LoggingSupport
     with Handlers
     with AuthModule
