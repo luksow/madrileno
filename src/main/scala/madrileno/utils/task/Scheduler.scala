@@ -99,9 +99,9 @@ class Scheduler(transactor: Transactor, config: SchedulerConfig = SchedulerConfi
     }
 
   private def extractPayload[A](result: Unit | A | Schedule.NextAt[A]): Option[A] = result match {
-    case ()                                      => None
-    case nextAt: Schedule.NextAt[A @unchecked]    => Some(nextAt.payload)
-    case payload: A @unchecked                    => Some(payload)
+    case ()                                    => None
+    case nextAt: Schedule.NextAt[A @unchecked] => Some(nextAt.payload)
+    case payload: A @unchecked                 => Some(payload)
   }
 
   private def onSuccess[A](
@@ -127,7 +127,7 @@ class Scheduler(transactor: Transactor, config: SchedulerConfig = SchedulerConfi
           logger.info(s"$taskId completed, next at $next") *>
             withVersionCheck(taskId, "reschedule")(repository.reschedule(task, next, extractPayload(result)))
         case Schedule.Cron(expression) =>
-          CronSupport.nextFrom(expression, now) match {
+          expression.nextFrom(now) match {
             case Some(next) =>
               logger.info(s"$taskId completed, next at $next") *>
                 withVersionCheck(taskId, "reschedule")(repository.reschedule(task, next, extractPayload(result)))

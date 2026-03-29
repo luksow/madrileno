@@ -17,7 +17,7 @@ object Schedule {
   case class OnceAt(at: Instant)                                                          extends Once
   case class RecurringWithFixedRate(every: Duration, initialDelay: Duration = 0.seconds)  extends Recurring
   case class RecurringWithFixedDelay(after: Duration, initialDelay: Duration = 0.seconds) extends Recurring
-  case class Cron(expression: String)                                                     extends Recurring
+  case class Cron(expression: CronExpression)                                             extends Recurring
   case class NextAt[A](at: Instant, payload: A)                                           extends Custom
 }
 

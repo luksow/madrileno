@@ -35,9 +35,9 @@ object TaskRow {
       case Schedule.RecurringWithFixedRate(_, initialDelay)  => now.plusMillis(initialDelay.toMillis)
       case Schedule.RecurringWithFixedDelay(_, initialDelay) => now.plusMillis(initialDelay.toMillis)
       case Schedule.Cron(expression) =>
-        CronSupport
-          .nextFrom(expression, now)
-          .getOrElse(throw new RuntimeException(s"Failed to calculate next execution time for cron expression: $expression at $now"))
+        expression
+          .nextFrom(now)
+          .getOrElse(throw new IllegalStateException(s"Failed to calculate next execution time for cron expression: ${expression} at $now"))
       case Schedule.NextAt(at, _) => at
     }
 
