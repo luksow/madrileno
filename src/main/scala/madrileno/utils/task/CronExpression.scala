@@ -6,6 +6,7 @@ import cron4s.lib.javatime.*
 import cron4s.syntax.all.*
 
 import java.time.Instant
+import java.time.ZoneOffset
 import java.time.ZoneId
 
 opaque type CronExpression = CronExpr
@@ -17,9 +18,8 @@ object CronExpression {
     parse(expression).fold(msg => throw new IllegalArgumentException(s"Invalid cron expression: $expression, error: $msg"), identity)
 
   extension (cron: CronExpression) {
-    def nextFrom(now: Instant): Option[Instant] = {
-      val tz = ZoneId.of("UTC")
-      cron.next(now.atZone(tz).toLocalDateTime()).map(_.atZone(tz).toInstant())
+    def nextFrom(now: Instant, zoneId: ZoneId = ZoneOffset.UTC): Option[Instant] = {
+      cron.next(now.atZone(zoneId).toLocalDateTime()).map(_.atZone(zoneId).toInstant())
     }
   }
 }
