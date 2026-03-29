@@ -36,13 +36,9 @@ object Main extends IOApp.Simple {
       transactor <- PgTransactor.resource(pgConfig)
       clock = Clock[IO]
       schedulerConfig <- Resource.eval(IO.delay(config.at("scheduler").loadOrThrow[SchedulerConfig]))
-      scheduler = Scheduler(transactor, schedulerConfig)
+      scheduler   = Scheduler(transactor, schedulerConfig)
       application = ApplicationLoader(config, httpClient, transactor, clock, scheduler.client)
-      _ <- scheduler.run(
-             recurringTasks = application.recurringTasks,
-             oneTimeTasks = application.oneTimeTasks,
-             customTasks = application.customTasks
-           )
+      _ <- scheduler.run(recurringTasks = application.recurringTasks, oneTimeTasks = application.oneTimeTasks, customTasks = application.customTasks)
       metricsOps <- OtelMetrics.serverMetricsOps[IO]().toResource
       redactor = new QueryRedactor.NeverRedact with PathRedactor.NeverRedact
       routeClassifier = new RouteClassifier {

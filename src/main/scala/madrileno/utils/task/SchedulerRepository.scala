@@ -5,11 +5,11 @@ import cats.syntax.all.*
 import io.circe.Json
 import madrileno.utils.db.dsl.*
 import madrileno.utils.db.transactor.DB
-import skunk.{Codec, Session}
-import skunk.data.Completion
-import skunk.codec.all.*
 import skunk.circe.codec.all.*
+import skunk.codec.all.*
+import skunk.data.Completion
 import skunk.implicits.*
+import skunk.{Codec, Session}
 
 import java.time.Instant
 
@@ -34,7 +34,11 @@ object TaskRow {
       case Schedule.OnceAt(at)                               => at
       case Schedule.RecurringWithFixedRate(_, initialDelay)  => now.plusMillis(initialDelay.toMillis)
       case Schedule.RecurringWithFixedDelay(_, initialDelay) => now.plusMillis(initialDelay.toMillis)
-      case Schedule.NextAt(at, _)                            => at
+      case Schedule.Cron(expression) =>
+        expression
+          .nextFrom(now)
+          .getOrElse(throw new IllegalStateException(s"Failed to calculate next execution time for cron expression: ${expression} at $now"))
+      case Schedule.NextAt(at, _) => at
     }
 
     TaskRow(
