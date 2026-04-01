@@ -5,6 +5,7 @@ import scalatags.Text.all.*
 
 import java.net.URI
 
+/** Example email template demonstrating the pattern. The activation link is illustrative — implement the /activate endpoint as needed. */
 object WelcomeEmail {
   def apply(
     userName: String,

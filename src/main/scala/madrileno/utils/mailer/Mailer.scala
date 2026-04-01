@@ -37,71 +37,71 @@ class Mailer(smtpSender: SmtpSender, schedulerClient: SchedulerClient)(using Tel
     } yield Attachment(filename, contentType, data)
   }
 
-  private given Encoder[MailBody] = Encoder.instance {
-    case MailBody.Text(text)       => Json.obj("type" -> "text".asJson, "text" -> text.asJson)
-    case MailBody.Html(html)       => Json.obj("type" -> "html".asJson, "html" -> html.render.asJson)
-    case MailBody.Both(text, html) => Json.obj("type" -> "both".asJson, "text" -> text.asJson, "html" -> html.render.asJson)
+  private given Encoder[SerializedMailBody] = Encoder.instance {
+    case SerializedMailBody.Text(text)       => Json.obj("type" -> "text".asJson, "text" -> text.asJson)
+    case SerializedMailBody.Html(html)       => Json.obj("type" -> "html".asJson, "html" -> html.asJson)
+    case SerializedMailBody.Both(text, html) => Json.obj("type" -> "both".asJson, "text" -> text.asJson, "html" -> html.asJson)
   }
-  private given Decoder[MailBody] = Decoder.instance { c =>
+  private given Decoder[SerializedMailBody] = Decoder.instance { c =>
     c.downField("type").as[String].flatMap {
-      case "text" => c.downField("text").as[String].map(MailBody.Text(_))
-      case "html" => c.downField("html").as[String].map(s => MailBody.Html(scalatags.Text.all.span(scalatags.Text.all.raw(s))))
+      case "text" => c.downField("text").as[String].map(SerializedMailBody.Text(_))
+      case "html" => c.downField("html").as[String].map(SerializedMailBody.Html(_))
       case "both" =>
         for {
           text <- c.downField("text").as[String]
           html <- c.downField("html").as[String]
-        } yield MailBody.Both(text, scalatags.Text.all.span(scalatags.Text.all.raw(html)))
+        } yield SerializedMailBody.Both(text, html)
       case other => Left(io.circe.DecodingFailure(s"Unknown MailBody type: $other", c.history))
     }
   }
 
-  private given Encoder[RenderedMail] = Encoder.instance { rm =>
-    Json.obj("subject" -> rm.subject.asJson, "body" -> rm.body.asJson, "inlineAttachments" -> rm.inlineAttachments.asJson)
-  }
-  private given Decoder[RenderedMail] = Decoder.instance { c =>
-    for {
-      subject           <- c.downField("subject").as[String]
-      body              <- c.downField("body").as[MailBody]
-      inlineAttachments <- c.downField("inlineAttachments").as[List[InlineAttachment]]
-    } yield RenderedMail(subject, body, inlineAttachments)
-  }
-
-  private given Encoder[Mail] = Encoder.instance { m =>
+  private given Encoder[SerializedMail] = Encoder.instance { m =>
     Json.obj(
-      "to"          -> m.to.asJson,
-      "rendered"    -> m.rendered.asJson,
-      "from"        -> m.from.asJson,
-      "cc"          -> m.cc.asJson,
-      "bcc"         -> m.bcc.asJson,
-      "replyTo"     -> m.replyTo.asJson,
-      "attachments" -> m.attachments.asJson
+      "to"                -> m.to.asJson,
+      "subject"           -> m.subject.asJson,
+      "body"              -> m.body.asJson,
+      "from"              -> m.from.asJson,
+      "cc"                -> m.cc.asJson,
+      "bcc"               -> m.bcc.asJson,
+      "replyTo"           -> m.replyTo.asJson,
+      "attachments"       -> m.attachments.asJson,
+      "inlineAttachments" -> m.inlineAttachments.asJson
     )
   }
-  private given Decoder[Mail] = Decoder.instance { c =>
+  private given Decoder[SerializedMail] = Decoder.instance { c =>
     for {
-      to          <- c.downField("to").as[List[String]]
-      rendered    <- c.downField("rendered").as[RenderedMail]
-      from        <- c.downField("from").as[Option[String]]
-      cc          <- c.downField("cc").as[List[String]]
-      bcc         <- c.downField("bcc").as[List[String]]
-      replyTo     <- c.downField("replyTo").as[Option[String]]
-      attachments <- c.downField("attachments").as[List[Attachment]]
-    } yield Mail(to, rendered, from, cc, bcc, replyTo, attachments)
+      to                <- c.downField("to").as[List[String]]
+      subject           <- c.downField("subject").as[String]
+      body              <- c.downField("body").as[SerializedMailBody]
+      from              <- c.downField("from").as[Option[String]]
+      cc                <- c.downField("cc").as[List[String]]
+      bcc               <- c.downField("bcc").as[List[String]]
+      replyTo           <- c.downField("replyTo").as[Option[String]]
+      attachments       <- c.downField("attachments").as[List[Attachment]]
+      inlineAttachments <- c.downField("inlineAttachments").as[List[InlineAttachment]]
+    } yield SerializedMail(to, subject, body, from, cc, bcc, replyTo, attachments, inlineAttachments)
   }
 
-  val sendMailTask: OneTimeTask[Mail] = Task.oneTime(TaskDescriptor[Mail]("send-mail")) { task =>
-    logger.info(s"Sending email to ${task.payload.to.mkString(", ")}: ${task.payload.rendered.subject}") *>
-      smtpSender.send(task.payload)
+  val sendMailTask: OneTimeTask[SerializedMail] =
+    Task.oneTime(TaskDescriptor[SerializedMail]("send-mail")) { task =>
+      logger.info(s"Sending email to ${task.payload.to.mkString(", ")}: ${task.payload.subject}") *>
+        smtpSender.send(task.payload)
+    }
+
+  def send(mail: Mail): IO[Boolean] = {
+    val serialized = mail.serialize
+    schedulerClient.schedule(sendMailTask.instance(instanceId(mail), serialized))
   }
 
-  def send(mail: Mail): IO[Boolean] =
-    schedulerClient.schedule(sendMailTask.instance(instanceId(mail), mail))
+  def sendInSession(mail: Mail): DB[Boolean] = {
+    val serialized = mail.serialize
+    schedulerClient.scheduleInSession(sendMailTask.instance(instanceId(mail), serialized))
+  }
 
-  def sendInSession(mail: Mail): DB[Boolean] =
-    schedulerClient.scheduleInSession(sendMailTask.instance(instanceId(mail), mail))
-
-  def sendTransactionally(mail: Mail): DBInTransaction[Boolean] =
-    schedulerClient.scheduleTransactionally(sendMailTask.instance(instanceId(mail), mail))
+  def sendTransactionally(mail: Mail): DBInTransaction[Boolean] = {
+    val serialized = mail.serialize
+    schedulerClient.scheduleTransactionally(sendMailTask.instance(instanceId(mail), serialized))
+  }
 
   private def instanceId(mail: Mail): String =
     s"mail-${mail.to.headOption.getOrElse("unknown")}-${System.nanoTime()}"

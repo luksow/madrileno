@@ -7,7 +7,7 @@ import jakarta.mail.internet.*
 import java.util.Properties
 
 class SmtpSender(config: MailerConfig) {
-  def send(mail: Mail): IO[Unit] = IO.blocking {
+  def send(mail: SerializedMail): IO[Unit] = IO.blocking {
     val session = createSession()
     val message = buildMessage(mail, session)
     Transport.send(message)
@@ -33,7 +33,7 @@ class SmtpSender(config: MailerConfig) {
     authenticator.fold(Session.getInstance(props))(auth => Session.getInstance(props, auth))
   }
 
-  private def buildMessage(mail: Mail, session: Session): MimeMessage = {
+  private def buildMessage(mail: SerializedMail, session: Session): MimeMessage = {
     val message = new MimeMessage(session)
 
     val fromAddress  = mail.from.getOrElse(config.fromAddress)
@@ -45,12 +45,12 @@ class SmtpSender(config: MailerConfig) {
     mail.bcc.foreach(addr => message.addRecipient(Message.RecipientType.BCC, new InternetAddress(addr)))
     mail.replyTo.foreach(addr => message.setReplyTo(Array(new InternetAddress(addr))))
 
-    message.setSubject(mail.rendered.subject, "UTF-8")
+    message.setSubject(mail.subject, "UTF-8")
 
-    val inlineAtts  = mail.rendered.inlineAttachments
+    val inlineAtts  = mail.inlineAttachments
     val regularAtts = mail.attachments
 
-    val bodyContent = buildBodyContent(mail.rendered.body, inlineAtts)
+    val bodyContent = buildBodyContent(mail.body, inlineAtts)
 
     if (regularAtts.isEmpty) {
       message.setContent(bodyContent)
@@ -74,19 +74,19 @@ class SmtpSender(config: MailerConfig) {
     message
   }
 
-  private def buildBodyContent(body: MailBody, inlineAtts: List[InlineAttachment]): MimeMultipart = {
+  private def buildBodyContent(body: SerializedMailBody, inlineAtts: List[InlineAttachment]): MimeMultipart = {
     body match {
-      case MailBody.Text(text) =>
+      case SerializedMailBody.Text(text) =>
         val mp   = new MimeMultipart("mixed")
         val part = new MimeBodyPart()
         part.setText(text, "UTF-8")
         mp.addBodyPart(part)
         mp
 
-      case MailBody.Html(html) =>
-        buildHtmlWithInline(html.render, inlineAtts)
+      case SerializedMailBody.Html(html) =>
+        buildHtmlWithInline(html, inlineAtts)
 
-      case MailBody.Both(text, html) =>
+      case SerializedMailBody.Both(text, html) =>
         val alternative = new MimeMultipart("alternative")
         val textPart    = new MimeBodyPart()
         textPart.setText(text, "UTF-8")
@@ -94,11 +94,11 @@ class SmtpSender(config: MailerConfig) {
 
         if (inlineAtts.isEmpty) {
           val htmlPart = new MimeBodyPart()
-          htmlPart.setContent(html.render, "text/html; charset=UTF-8")
+          htmlPart.setContent(html, "text/html; charset=UTF-8")
           alternative.addBodyPart(htmlPart)
           alternative
         } else {
-          val related     = buildHtmlWithInline(html.render, inlineAtts)
+          val related     = buildHtmlWithInline(html, inlineAtts)
           val relatedPart = new MimeBodyPart()
           relatedPart.setContent(related)
           alternative.addBodyPart(relatedPart)
