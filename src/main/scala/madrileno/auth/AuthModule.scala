@@ -12,6 +12,8 @@ import madrileno.user.repositories.UserRepository
 import madrileno.utils.db.transactor.Transactor
 import madrileno.utils.http.{AuthRouteProvider, RouteProvider}
 import madrileno.utils.observability.TelemetryContext
+import madrileno.auth.emails.WelcomeEmail
+import madrileno.utils.mailer.{MailPreview, MailPreviewProvider}
 import madrileno.utils.task.{RecurringTaskProvider, Task}
 import pl.iterators.stir.server.Route
 import pureconfig.ConfigSource
@@ -19,7 +21,7 @@ import pureconfig.ConfigSource
 import java.io.ByteArrayInputStream
 import scala.util.Try
 
-trait AuthModule extends RouteProvider with AuthRouteProvider with RecurringTaskProvider {
+trait AuthModule extends RouteProvider with AuthRouteProvider with RecurringTaskProvider with MailPreviewProvider {
   val config: ConfigSource
   val jwtConfig: JwtService.Config = config.at("jwt").loadOrThrow[JwtService.Config]
   private val jwtService           = wire[JwtService]
@@ -57,5 +59,9 @@ trait AuthModule extends RouteProvider with AuthRouteProvider with RecurringTask
 
   override abstract def recurringTasks: List[Task[?]] = {
     super.recurringTasks :+ authenticationService.cleanupExpiredRefreshTokensTask
+  }
+
+  override abstract def mailPreviews: List[MailPreview] = {
+    super.mailPreviews :+ WelcomeEmail.preview
   }
 }
