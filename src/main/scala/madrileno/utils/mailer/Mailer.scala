@@ -1,19 +1,15 @@
 package madrileno.utils.mailer
 
 import cats.effect.IO
-import io.circe.{Decoder, Encoder, Json}
 import io.circe.syntax.*
+import io.circe.{Decoder, Encoder, Json}
 import madrileno.utils.db.transactor.{DB, DBInTransaction}
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
 import madrileno.utils.task.*
 
 import java.util.Base64
 
-class Mailer(
-  smtpSender: SmtpSender,
-  schedulerClient: SchedulerClient
-)(using TelemetryContext)
-    extends LoggingSupport {
+class Mailer(smtpSender: SmtpSender, schedulerClient: SchedulerClient)(using TelemetryContext) extends LoggingSupport {
 
   private given Encoder[Array[Byte]] = Encoder.encodeString.contramap(Base64.getEncoder.encodeToString)
   private given Decoder[Array[Byte]] = Decoder.decodeString.map(Base64.getDecoder.decode)
@@ -72,12 +68,12 @@ class Mailer(
 
   private given Encoder[Mail] = Encoder.instance { m =>
     Json.obj(
-      "to" -> m.to.asJson,
-      "rendered" -> m.rendered.asJson,
-      "from" -> m.from.asJson,
-      "cc" -> m.cc.asJson,
-      "bcc" -> m.bcc.asJson,
-      "replyTo" -> m.replyTo.asJson,
+      "to"          -> m.to.asJson,
+      "rendered"    -> m.rendered.asJson,
+      "from"        -> m.from.asJson,
+      "cc"          -> m.cc.asJson,
+      "bcc"         -> m.bcc.asJson,
+      "replyTo"     -> m.replyTo.asJson,
       "attachments" -> m.attachments.asJson
     )
   }

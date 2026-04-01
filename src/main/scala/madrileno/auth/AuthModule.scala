@@ -5,15 +5,15 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.{FirebaseApp, FirebaseOptions}
 import com.softwaremill.macwire.*
 import madrileno.auth.domain.AuthContext
+import madrileno.auth.emails.WelcomeEmail
 import madrileno.auth.repositories.*
 import madrileno.auth.routers.{AuthRouter, UserAuthenticator}
 import madrileno.auth.services.*
 import madrileno.user.repositories.UserRepository
 import madrileno.utils.db.transactor.Transactor
 import madrileno.utils.http.{AuthRouteProvider, RouteProvider}
-import madrileno.utils.observability.TelemetryContext
-import madrileno.auth.emails.WelcomeEmail
 import madrileno.utils.mailer.{MailPreview, MailPreviewProvider}
+import madrileno.utils.observability.TelemetryContext
 import madrileno.utils.task.{RecurringTaskProvider, Task}
 import pl.iterators.stir.server.Route
 import pureconfig.ConfigSource

@@ -19,14 +19,14 @@ class MailPreviewRouter(previews: List[MailPreview]) extends BaseRouter {
             previews.find(_.name == name) match {
               case Some(preview) =>
                 val rendered = preview.render()
-                var emailHtml = rendered.body match {
+                val rawHtml = rendered.body match {
                   case MailBody.Text(text) => s"<pre>$text</pre>"
                   case MailBody.Html(h)    => h.render
                   case MailBody.Both(_, h) => h.render
                 }
-                rendered.inlineAttachments.foreach { att =>
+                val emailHtml = rendered.inlineAttachments.foldLeft(rawHtml) { (html, att) =>
                   val dataUri = s"data:${att.contentType};base64,${Base64.getEncoder.encodeToString(att.data)}"
-                  emailHtml = emailHtml.replace(s"cid:${att.contentId}", dataUri)
+                  html.replace(s"cid:${att.contentId}", dataUri)
                 }
                 val page = s"""<!DOCTYPE html>
                   |<html>

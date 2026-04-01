@@ -36,7 +36,7 @@ class SmtpSender(config: MailerConfig) {
   private def buildMessage(mail: Mail, session: Session): MimeMessage = {
     val message = new MimeMessage(session)
 
-    val fromAddress = mail.from.getOrElse(config.fromAddress)
+    val fromAddress  = mail.from.getOrElse(config.fromAddress)
     val fromPersonal = config.fromName.orNull
     message.setFrom(new InternetAddress(fromAddress, fromPersonal))
 
@@ -47,7 +47,7 @@ class SmtpSender(config: MailerConfig) {
 
     message.setSubject(mail.rendered.subject, "UTF-8")
 
-    val inlineAtts = mail.rendered.inlineAttachments
+    val inlineAtts  = mail.rendered.inlineAttachments
     val regularAtts = mail.attachments
 
     val bodyContent = buildBodyContent(mail.rendered.body, inlineAtts)
@@ -55,16 +55,14 @@ class SmtpSender(config: MailerConfig) {
     if (regularAtts.isEmpty) {
       message.setContent(bodyContent)
     } else {
-      val mixed = new MimeMultipart("mixed")
+      val mixed    = new MimeMultipart("mixed")
       val bodyPart = new MimeBodyPart()
       bodyPart.setContent(bodyContent)
       mixed.addBodyPart(bodyPart)
 
       regularAtts.foreach { att =>
         val part = new MimeBodyPart()
-        part.setDataHandler(new jakarta.activation.DataHandler(
-          new jakarta.mail.util.ByteArrayDataSource(att.data, att.contentType)
-        ))
+        part.setDataHandler(new jakarta.activation.DataHandler(new jakarta.mail.util.ByteArrayDataSource(att.data, att.contentType)))
         part.setFileName(att.filename)
         part.setDisposition(Part.ATTACHMENT)
         mixed.addBodyPart(part)
@@ -79,7 +77,7 @@ class SmtpSender(config: MailerConfig) {
   private def buildBodyContent(body: MailBody, inlineAtts: List[InlineAttachment]): MimeMultipart = {
     body match {
       case MailBody.Text(text) =>
-        val mp = new MimeMultipart("mixed")
+        val mp   = new MimeMultipart("mixed")
         val part = new MimeBodyPart()
         part.setText(text, "UTF-8")
         mp.addBodyPart(part)
@@ -90,7 +88,7 @@ class SmtpSender(config: MailerConfig) {
 
       case MailBody.Both(text, html) =>
         val alternative = new MimeMultipart("alternative")
-        val textPart = new MimeBodyPart()
+        val textPart    = new MimeBodyPart()
         textPart.setText(text, "UTF-8")
         alternative.addBodyPart(textPart)
 
@@ -100,7 +98,7 @@ class SmtpSender(config: MailerConfig) {
           alternative.addBodyPart(htmlPart)
           alternative
         } else {
-          val related = buildHtmlWithInline(html.render, inlineAtts)
+          val related     = buildHtmlWithInline(html.render, inlineAtts)
           val relatedPart = new MimeBodyPart()
           relatedPart.setContent(related)
           alternative.addBodyPart(relatedPart)
@@ -110,16 +108,14 @@ class SmtpSender(config: MailerConfig) {
   }
 
   private def buildHtmlWithInline(htmlContent: String, inlineAtts: List[InlineAttachment]): MimeMultipart = {
-    val related = new MimeMultipart(if (inlineAtts.nonEmpty) "related" else "mixed")
+    val related  = new MimeMultipart(if (inlineAtts.nonEmpty) "related" else "mixed")
     val htmlPart = new MimeBodyPart()
     htmlPart.setContent(htmlContent, "text/html; charset=UTF-8")
     related.addBodyPart(htmlPart)
 
     inlineAtts.foreach { att =>
       val part = new MimeBodyPart()
-      part.setDataHandler(new jakarta.activation.DataHandler(
-        new jakarta.mail.util.ByteArrayDataSource(att.data, att.contentType)
-      ))
+      part.setDataHandler(new jakarta.activation.DataHandler(new jakarta.mail.util.ByteArrayDataSource(att.data, att.contentType)))
       part.setContentID(s"<${att.contentId}>")
       part.setDisposition(Part.INLINE)
       part.setFileName(att.filename)

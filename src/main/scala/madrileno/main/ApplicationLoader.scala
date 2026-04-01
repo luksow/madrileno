@@ -7,8 +7,8 @@ import madrileno.healthcheck.HealthCheckModule
 import madrileno.user.UserModule
 import madrileno.utils.db.transactor.Transactor
 import madrileno.utils.http.{ApplicationRouteProvider, Handlers}
+import madrileno.utils.mailer.{ApplicationMailPreviewProvider, MailPreviewRouter, Mailer, MailerConfig, SmtpSender}
 import madrileno.utils.observability.*
-import madrileno.utils.mailer.{ApplicationMailPreviewProvider, Mailer, MailerConfig, MailPreviewRouter, SmtpSender}
 import madrileno.utils.task.{ApplicationTaskProvider, OneTimeTask, SchedulerClient}
 import org.http4s.Headers
 import org.http4s.otel4s.middleware.instances.all.*
