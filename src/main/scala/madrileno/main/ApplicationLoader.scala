@@ -23,7 +23,8 @@ import sttp.client4.{WebSocketStreamBackend, logging}
 final case class HttpConfig(
   host: Ipv4Address,
   port: Port,
-  maxRequestSize: Long)
+  maxRequestSize: Long,
+  baseUrl: java.net.URI)
     derives ConfigReader
 final case class AppConfig(
   name: String,
