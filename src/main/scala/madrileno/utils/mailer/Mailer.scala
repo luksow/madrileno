@@ -1,18 +1,64 @@
 package madrileno.utils.mailer
 
 import cats.effect.IO
+import cats.effect.std.UUIDGen
 import io.circe.syntax.*
-import io.circe.{Decoder, Encoder, Json}
+import io.circe.{Codec, Decoder, Encoder, Json}
 import madrileno.utils.db.transactor.{DB, DBInTransaction}
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
 import madrileno.utils.task.*
 
 import java.util.Base64
 
-class Mailer(smtpSender: SmtpSender, schedulerClient: SchedulerClient)(using TelemetryContext) extends LoggingSupport {
+class Mailer(
+  smtpSender: SmtpSender,
+  schedulerClient: SchedulerClient,
+  context: MailContext
+)(using
+  TelemetryContext,
+  UUIDGen[IO])
+    extends LoggingSupport {
 
-  private given Encoder[Array[Byte]] = Encoder.encodeString.contramap(Base64.getEncoder.encodeToString)
-  private given Decoder[Array[Byte]] = Decoder.decodeString.map(Base64.getDecoder.decode)
+  val sendMailTask: OneTimeTask[SerializedMail] =
+    Task.oneTime(TaskDescriptor[SerializedMail]("send-mail")) { task =>
+      logger.info(s"Sending email to ${task.payload.to.mkString(", ")}: ${task.payload.subject}") *>
+        smtpSender.send(task.payload)
+    }
+
+  def send(mail: MailRequest): IO[Boolean] = {
+    val serialized = serialize(mail)
+    UUIDGen[IO].randomUUID.flatMap { uuid =>
+      schedulerClient.schedule(sendMailTask.instance(s"mail-$uuid", serialized))
+    }
+  }
+
+  def sendInSession(mail: MailRequest): DB[Boolean] = {
+    val serialized = serialize(mail)
+    schedulerClient.scheduleInSession(sendMailTask.instance(s"mail-${java.util.UUID.randomUUID()}", serialized))
+  }
+
+  def sendTransactionally(mail: MailRequest): DBInTransaction[Boolean] = {
+    val serialized = serialize(mail)
+    schedulerClient.scheduleTransactionally(sendMailTask.instance(s"mail-${java.util.UUID.randomUUID()}", serialized))
+  }
+
+  private def serialize(mail: MailRequest): SerializedMail = {
+    val rendered = mail.template.render(context, mail.lang)
+    SerializedMail(
+      to = mail.to,
+      subject = rendered.subject,
+      body = rendered.body.serialize,
+      from = mail.from,
+      cc = mail.cc,
+      bcc = mail.bcc,
+      replyTo = mail.replyTo,
+      attachments = mail.attachments,
+      inlineAttachments = rendered.inlineAttachments
+    )
+  }
+
+  private given Codec[Array[Byte]] =
+    Codec.from(Decoder.decodeString.map(Base64.getDecoder.decode), Encoder.encodeString.contramap(Base64.getEncoder.encodeToString))
 
   private given Encoder[InlineAttachment] = Encoder.instance { a =>
     Json.obj("contentId" -> a.contentId.asJson, "filename" -> a.filename.asJson, "contentType" -> a.contentType.asJson, "data" -> a.data.asJson)
@@ -81,28 +127,4 @@ class Mailer(smtpSender: SmtpSender, schedulerClient: SchedulerClient)(using Tel
       inlineAttachments <- c.downField("inlineAttachments").as[List[InlineAttachment]]
     } yield SerializedMail(to, subject, body, from, cc, bcc, replyTo, attachments, inlineAttachments)
   }
-
-  val sendMailTask: OneTimeTask[SerializedMail] =
-    Task.oneTime(TaskDescriptor[SerializedMail]("send-mail")) { task =>
-      logger.info(s"Sending email to ${task.payload.to.mkString(", ")}: ${task.payload.subject}") *>
-        smtpSender.send(task.payload)
-    }
-
-  def send(mail: Mail): IO[Boolean] = {
-    val serialized = mail.serialize
-    schedulerClient.schedule(sendMailTask.instance(instanceId(mail), serialized))
-  }
-
-  def sendInSession(mail: Mail): DB[Boolean] = {
-    val serialized = mail.serialize
-    schedulerClient.scheduleInSession(sendMailTask.instance(instanceId(mail), serialized))
-  }
-
-  def sendTransactionally(mail: Mail): DBInTransaction[Boolean] = {
-    val serialized = mail.serialize
-    schedulerClient.scheduleTransactionally(sendMailTask.instance(instanceId(mail), serialized))
-  }
-
-  private def instanceId(mail: Mail): String =
-    s"mail-${mail.to.headOption.getOrElse("unknown")}-${System.nanoTime()}"
 }

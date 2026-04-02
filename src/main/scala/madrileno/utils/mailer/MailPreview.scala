@@ -1,11 +1,7 @@
 package madrileno.utils.mailer
 
-case class MailPreview(name: String, render: () => RenderedMail)
+case class MailPreview(name: String, template: EmailTemplate)
 
 trait MailPreviewProvider {
-  def mailPreviews: List[MailPreview]
-}
-
-trait ApplicationMailPreviewProvider extends MailPreviewProvider {
-  override def mailPreviews: List[MailPreview] = Nil
+  def mailPreviews: List[MailPreview] = Nil
 }

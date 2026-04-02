@@ -7,7 +7,7 @@ import madrileno.healthcheck.HealthCheckModule
 import madrileno.user.UserModule
 import madrileno.utils.db.transactor.Transactor
 import madrileno.utils.http.{ApplicationRouteProvider, Handlers}
-import madrileno.utils.mailer.{ApplicationMailPreviewProvider, MailPreviewRouter, Mailer, MailerConfig, SmtpSender}
+import madrileno.utils.mailer.{MailContext, MailPreviewProvider, MailPreviewRouter, Mailer, MailerConfig, SmtpSender}
 import madrileno.utils.observability.*
 import madrileno.utils.task.{ApplicationTaskProvider, OneTimeTask, SchedulerClient}
 import org.http4s.Headers
@@ -21,11 +21,13 @@ import sttp.client4.logging.{LogConfig, LogLevel, Logger, LoggingBackend}
 import sttp.client4.opentelemetry.OpenTelemetryMetricsBackend
 import sttp.client4.{WebSocketStreamBackend, logging}
 
+import java.net.URI
+
 final case class HttpConfig(
   host: Ipv4Address,
   port: Port,
   maxRequestSize: Long,
-  baseUrl: java.net.URI)
+  baseUrl: URI)
     derives ConfigReader
 final case class AppConfig(
   name: String,
@@ -43,7 +45,7 @@ class ApplicationLoader(
 )(using TelemetryContext)
     extends ApplicationRouteProvider
     with ApplicationTaskProvider
-    with ApplicationMailPreviewProvider
+    with MailPreviewProvider
     with LoggingSupport
     with Handlers
     with AuthModule
@@ -52,20 +54,13 @@ class ApplicationLoader(
   lazy val httpConfig: HttpConfig             = config.at("http").loadOrThrow[HttpConfig]
   lazy val appConfig: AppConfig               = config.at("app").loadOrThrow[AppConfig]
   lazy val telemetryContext: TelemetryContext = summon[TelemetryContext]
+  lazy val mailContext: MailContext           = MailContext(httpConfig.baseUrl)
 
   private val mailerConfig: MailerConfig = config.at("mailer").loadOrThrow[MailerConfig]
   private val smtpSender                 = new SmtpSender(mailerConfig)
-  val mailer: Mailer                     = new Mailer(smtpSender, schedulerClient)
+  val mailer: Mailer                     = new Mailer(smtpSender, schedulerClient, mailContext)
 
-  override def route: Route = {
-    val base = super.route
-    if (appConfig.environment == "dev") base ~ new MailPreviewRouter(mailPreviews).routes
-    else base
-  }
-
-  override def oneTimeTasks: List[OneTimeTask[?]] = {
-    super.oneTimeTasks :+ mailer.sendMailTask
-  }
+  override def oneTimeTasks: List[OneTimeTask[?]] = super.oneTimeTasks :+ mailer.sendMailTask
 
   private lazy val httpClientLogger: logging.Logger[IO] = new Logger[IO] {
     override def apply(
@@ -133,7 +128,7 @@ class ApplicationLoader(
                     }
                   }
                 }
-            }
+            } ~ (if (appConfig.environment == "dev") new MailPreviewRouter(mailPreviews, mailContext).routes else reject)
           }
         }
       }

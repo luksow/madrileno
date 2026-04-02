@@ -10,12 +10,16 @@ enum Language {
 
 case class MailContext(baseUrl: URI)
 
+trait EmailTemplate {
+  def render(ctx: MailContext, lang: Language): RenderedMail
+}
+
 enum MailBody {
   case Text(text: String)
   case Html(html: TypedTag[String])
   case Both(text: String, html: TypedTag[String])
 
-  def render: SerializedMailBody = this match {
+  def serialize: SerializedMailBody = this match {
     case Text(text)       => SerializedMailBody.Text(text)
     case Html(html)       => SerializedMailBody.Html(html.render)
     case Both(text, html) => SerializedMailBody.Both(text, html.render)
@@ -44,6 +48,16 @@ case class InlineAttachment(
   contentType: String,
   data: Array[Byte])
 
+case class MailRequest(
+  to: List[String],
+  template: EmailTemplate,
+  lang: Language,
+  from: Option[String] = None,
+  cc: List[String] = Nil,
+  bcc: List[String] = Nil,
+  replyTo: Option[String] = None,
+  attachments: List[Attachment] = Nil)
+
 case class SerializedMail(
   to: List[String],
   subject: String,
@@ -54,25 +68,3 @@ case class SerializedMail(
   replyTo: Option[String] = None,
   attachments: List[Attachment] = Nil,
   inlineAttachments: List[InlineAttachment] = Nil)
-
-case class Mail(
-  to: List[String],
-  rendered: RenderedMail,
-  from: Option[String] = None,
-  cc: List[String] = Nil,
-  bcc: List[String] = Nil,
-  replyTo: Option[String] = None,
-  attachments: List[Attachment] = Nil) {
-
-  def serialize: SerializedMail = SerializedMail(
-    to = to,
-    subject = rendered.subject,
-    body = rendered.body.render,
-    from = from,
-    cc = cc,
-    bcc = bcc,
-    replyTo = replyTo,
-    attachments = attachments,
-    inlineAttachments = rendered.inlineAttachments
-  )
-}

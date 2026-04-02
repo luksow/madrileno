@@ -1,8 +1,10 @@
 package madrileno.utils.mailer
 
 import cats.effect.IO
+import jakarta.activation.DataHandler
 import jakarta.mail.*
 import jakarta.mail.internet.*
+import jakarta.mail.util.ByteArrayDataSource
 
 import java.util.Properties
 
@@ -62,7 +64,7 @@ class SmtpSender(config: MailerConfig) {
 
       regularAtts.foreach { att =>
         val part = new MimeBodyPart()
-        part.setDataHandler(new jakarta.activation.DataHandler(new jakarta.mail.util.ByteArrayDataSource(att.data, att.contentType)))
+        part.setDataHandler(new DataHandler(new ByteArrayDataSource(att.data, att.contentType)))
         part.setFileName(att.filename)
         part.setDisposition(Part.ATTACHMENT)
         mixed.addBodyPart(part)
@@ -115,7 +117,7 @@ class SmtpSender(config: MailerConfig) {
 
     inlineAtts.foreach { att =>
       val part = new MimeBodyPart()
-      part.setDataHandler(new jakarta.activation.DataHandler(new jakarta.mail.util.ByteArrayDataSource(att.data, att.contentType)))
+      part.setDataHandler(new DataHandler(new ByteArrayDataSource(att.data, att.contentType)))
       part.setContentID(s"<${att.contentId}>")
       part.setDisposition(Part.INLINE)
       part.setFileName(att.filename)

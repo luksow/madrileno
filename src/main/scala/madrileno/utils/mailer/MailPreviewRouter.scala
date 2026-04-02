@@ -1,57 +1,93 @@
 package madrileno.utils.mailer
 
 import cats.effect.IO
+import fs2.{Chunk, Stream}
 import madrileno.utils.http.BaseRouter
+import org.http4s.headers.`Content-Type`
+import org.http4s.{Headers, MediaType, Response, Status}
 import pl.iterators.stir.server.Route
 
 import java.util.Base64
 
-class MailPreviewRouter(previews: List[MailPreview]) extends BaseRouter {
+class MailPreviewRouter(previews: List[MailPreview], context: MailContext) extends BaseRouter {
   val routes: Route =
-    (get & pathPrefix("mail-previews")) {
-      pathEndOrSingleSlash {
-        complete {
-          IO.pure(Ok -> previews.map(_.name))
+    (get & path("mail-previews") & pathEnd) {
+      htmlPage(Ok, indexPage)
+    } ~
+      (get & path("mail-previews" / Segment) & parameter("lang".as[Language].optional)) { (name, lang) =>
+        val language = lang.getOrElse(Language.En)
+        previews.find(_.name == name) match {
+          case Some(preview) => htmlPage(Ok, previewPage(name, preview.template.render(context, language), language))
+          case None          => htmlPage(NotFound, notFoundPage(name))
         }
-      } ~
-        path(Segment) { name =>
-          complete {
-            previews.find(_.name == name) match {
-              case Some(preview) =>
-                val rendered = preview.render()
-                val rawHtml = rendered.body match {
-                  case MailBody.Text(text) => s"<pre>$text</pre>"
-                  case MailBody.Html(h)    => h.render
-                  case MailBody.Both(_, h) => h.render
-                }
-                val emailHtml = rendered.inlineAttachments.foldLeft(rawHtml) { (html, att) =>
-                  val dataUri = s"data:${att.contentType};base64,${Base64.getEncoder.encodeToString(att.data)}"
-                  html.replace(s"cid:${att.contentId}", dataUri)
-                }
-                val page = s"""<!DOCTYPE html>
-                  |<html>
-                  |<head>
-                  |  <meta charset="UTF-8">
-                  |  <title>${rendered.subject}</title>
-                  |  <style>
-                  |    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 0; background: #f5f5f5; }
-                  |    .preview-banner { background: #1a1a2e; color: #eee; padding: 12px 24px; font-size: 13px; }
-                  |    .preview-banner strong { color: #fff; }
-                  |    .preview-subject { background: #16213e; color: #fff; padding: 16px 24px; font-size: 18px; font-weight: 600; }
-                  |    .preview-body { max-width: 800px; margin: 24px auto; background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); overflow: hidden; }
-                  |  </style>
-                  |</head>
-                  |<body>
-                  |  <div class="preview-banner">Mail Preview: <strong>$name</strong></div>
-                  |  <div class="preview-subject">${rendered.subject}</div>
-                  |  <div class="preview-body">$emailHtml</div>
-                  |</body>
-                  |</html>""".stripMargin
-                IO.pure(Ok -> page)
-              case None =>
-                IO.pure(NotFound -> s"Preview '$name' not found")
-            }
-          }
-        }
+      }
+
+  private def indexPage: String = {
+    import scalatags.Text.all.{head as stHead, *}
+    import scalatags.Text.tags2.title
+    html(
+      stHead(meta(charset := "UTF-8"), title("Mail Previews")),
+      body(style := "font-family:system-ui,sans-serif;max-width:600px;margin:40px auto;padding:0 16px")(
+        h2("Mail Previews"),
+        ul(style := "padding-left:20px")(
+          previews.sortBy(_.name).map(p => li(style := "padding:4px 0")(a(href := s"mail-previews/${p.name}")(p.name)))
+        )
+      )
+    ).render
+  }
+
+  private def previewPage(
+    previewName: String,
+    rendered: RenderedMail,
+    language: Language
+  ): String = {
+    import scalatags.Text.all.{head as stHead, *}
+    import scalatags.Text.tags2.title
+    val emailHtml = renderBody(rendered)
+    val langOptions = Language.values.map { l =>
+      option(value := l.toString, if (l == language) selected := "selected" else ())(l.toString)
+    }
+    html(
+      stHead(meta(charset := "UTF-8"), title(rendered.subject)),
+      body(style := "margin:0;font-family:system-ui,sans-serif;display:flex;flex-direction:column;height:100vh")(
+        div(style := "padding:8px 16px;background:#eee;font-size:13px;display:flex;align-items:center;gap:12px;border-bottom:1px solid #ccc")(
+          a(href := "/mail-previews")("< Back"),
+          b(previewName),
+          span(style := "color:#666")(s"Subject: ${rendered.subject}"),
+          tag("select")(
+            style := "margin-left:auto;font-size:13px",
+            attr("onchange") := s"window.location.href='mail-previews/$previewName?lang='+this.value"
+          )(langOptions)
+        ),
+        tag("iframe")(style := "flex:1;border:none;width:100%", attr("srcdoc") := emailHtml)
+      )
+    ).render
+  }
+
+  private def notFoundPage(previewName: String): String = {
+    import scalatags.Text.all.{head as stHead, *}
+    import scalatags.Text.tags2.title
+    html(stHead(meta(charset := "UTF-8"), title("Not Found")), body(h1("404"), p(s"Preview '$previewName' not found"))).render
+  }
+
+  private def renderBody(rendered: RenderedMail): String = {
+    val rawHtml = rendered.body match {
+      case MailBody.Text(text) => s"<pre>$text</pre>"
+      case MailBody.Html(h)    => h.render
+      case MailBody.Both(_, h) => h.render
+    }
+    rendered.inlineAttachments.foldLeft(rawHtml) { (html, att) =>
+      val dataUri = s"data:${att.contentType};base64,${Base64.getEncoder.encodeToString(att.data)}"
+      html.replace(s"cid:${att.contentId}", dataUri)
+    }
+  }
+
+  private def htmlPage(status: Status, html: String): Route =
+    complete {
+      IO.pure(
+        Response[IO](status)
+          .withHeaders(Headers(`Content-Type`(MediaType.text.html)))
+          .withBodyStream(Stream.chunk(Chunk.array(html.getBytes("UTF-8"))))
+      )
     }
 }
