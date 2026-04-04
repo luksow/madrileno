@@ -26,15 +26,14 @@ trait SqlFilter {
     tFrag: TupleFragments[T]
   ): TupleFragments[H *: T] = (t: H *: T) => hConv(t.head) :: tFrag.toList(t.tail)
 
-  protected def fromPredicatesAndSeparator[T <: Tuple](tuple: T, sep: AppliedFragment)(using tf: TupleFragments[T]): AppliedFragment = {
+  private val AndSeparator: AppliedFragment = sql" AND " (Void)
+
+  protected def fromPredicates[T <: Tuple](tuple: T)(using tf: TupleFragments[T]): AppliedFragment = {
     tf.toList(tuple) match {
-      case Nil       => sql"True" (Void)
-      case h :: tail => tail.foldLeft(h)((acc, frag) => acc |+| sep |+| frag)
+      case Nil       => sql"1=1" (Void)
+      case h :: tail => tail.foldLeft(h)((acc, frag) => acc |+| AndSeparator |+| frag)
     }
   }
-
-  protected val SqlAnd: AppliedFragment = SqlFilter.And
-  protected val SqlOr: AppliedFragment  = SqlFilter.Or
 
   def filterFragment: AppliedFragment
 
@@ -57,11 +56,6 @@ trait SqlFilter {
       case None                => sql"" (Void)
     }
   }
-}
-
-object SqlFilter {
-  val And: AppliedFragment = sql" AND " (Void)
-  val Or: AppliedFragment  = sql" OR " (Void)
 }
 
 trait SqlPredicate[A] {

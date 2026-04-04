@@ -68,7 +68,7 @@ case class UserAuthRowFilter(
   credential: SqlPredicate[Credential] = p.any,
   deletedAt: SqlPredicate[Instant] = p.any)
     extends SqlFilter {
-  override def filterFragment: AppliedFragment = fromPredicatesAndSeparator(
+  override def filterFragment: AppliedFragment = fromPredicates(
     (
       id             -> UserAuthRowTable.id,
       userId         -> UserAuthRowTable.userId,
@@ -76,8 +76,7 @@ case class UserAuthRowFilter(
       providerUserId -> UserAuthRowTable.providerUserId,
       credential     -> UserAuthRowTable.credential,
       deletedAt      -> UserAuthRowTable.deletedAt
-    ),
-    SqlAnd
+    )
   )
 }
 

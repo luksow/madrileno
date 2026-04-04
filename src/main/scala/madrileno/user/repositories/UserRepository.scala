@@ -64,14 +64,13 @@ case class UserRowFilter(
   emailVerified: SqlPredicate[Boolean],
   deletedAt: SqlPredicate[Instant])
     extends SqlFilter {
-  override def filterFragment: AppliedFragment = fromPredicatesAndSeparator(
+  override def filterFragment: AppliedFragment = fromPredicates(
     (
       id            -> UserRowTable.id,
       emailAddress  -> UserRowTable.emailAddress,
       emailVerified -> UserRowTable.emailVerified,
       deletedAt     -> UserRowTable.deletedAt
-    ),
-    SqlAnd
+    )
   )
 }
 
