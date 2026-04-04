@@ -114,7 +114,7 @@ object p {
     }
   }
 
-  def like[A](value: String, caseSensitive: Boolean = true): SqlPredicate[A] = (column: Column[Option[A]]) => {
+  def like(value: String, caseSensitive: Boolean = true): SqlPredicate[String] = (column: Column[Option[String]]) => {
     if (caseSensitive) {
       sql"(${column.n} LIKE $text)" (value)
     } else {
@@ -122,7 +122,7 @@ object p {
     }
   }
 
-  def notLike[A](value: String, caseSensitive: Boolean = true): SqlPredicate[A] = (column: Column[Option[A]]) => {
+  def notLike(value: String, caseSensitive: Boolean = true): SqlPredicate[String] = (column: Column[Option[String]]) => {
     if (caseSensitive) {
       sql"(${column.n} NOT LIKE $text)" (value)
     } else {
@@ -130,11 +130,11 @@ object p {
     }
   }
 
-  def similarTo[A](value: String): SqlPredicate[A] = (column: Column[Option[A]]) => {
+  def similarTo(value: String): SqlPredicate[String] = (column: Column[Option[String]]) => {
     sql"(${column.n} SIMILAR TO $text)" (value)
   }
 
-  def notSimilarTo[A](value: String): SqlPredicate[A] = (column: Column[Option[A]]) => {
+  def notSimilarTo(value: String): SqlPredicate[String] = (column: Column[Option[String]]) => {
     sql"(${column.n} NOT SIMILAR TO $text)" (value)
   }
 
