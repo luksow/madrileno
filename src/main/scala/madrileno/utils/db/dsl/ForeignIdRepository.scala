@@ -36,14 +36,16 @@ trait ForeignIdRepository[A, Id] extends BaseRepository[A] {
 
   def deleteByForeignId(foreignId: Id)(using session: Session[IO]): IO[Unit] =
     session
-      .execute(sql"DELETE FROM ${table.n} WHERE ${table.foreignId.n} = ${table.foreignId.c}".command)(foreignId)
+      .execute(sql"DELETE FROM ${table.n} WHERE $baseFilter AND ${table.foreignId.n} = ${table.foreignId.c}".command)(foreignId)
       .void
 
   def deleteByForeignIds(foreignIds: List[Id])(using session: Session[IO]): IO[Unit] =
     if (foreignIds.isEmpty) IO.unit
     else
       session
-        .execute(sql"DELETE FROM ${table.n} WHERE ${table.foreignId.n} IN (${table.foreignId.c.list(foreignIds)})".command)(foreignIds)
+        .execute(sql"DELETE FROM ${table.n} WHERE $baseFilter AND ${table.foreignId.n} IN (${table.foreignId.c.list(foreignIds)})".command)(
+          foreignIds
+        )
         .void
 
   override val table: Table[A] & ForeignIdTable[Id]

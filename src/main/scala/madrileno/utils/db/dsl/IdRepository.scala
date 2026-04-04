@@ -61,21 +61,24 @@ trait IdRepository[A, Id](val getId: A => Id) extends BaseRepository[A] {
 
   def update(toBeUpdated: A)(using session: Session[IO]): IO[Unit] =
     session
-      .execute(sql"UPDATE ${table.n} SET (${table.*}) = (${table.c}) WHERE ${table.id.n} = ${table.id.c}".command)((toBeUpdated, getId(toBeUpdated)))
+      .execute(sql"UPDATE ${table.n} SET (${table.*}) = (${table.c}) WHERE $baseFilter AND ${table.id.n} = ${table.id.c}".command)(
+        (toBeUpdated, getId(toBeUpdated))
+      )
       .void
 
-  def updateById(id: Id, transform: A => A)(using session: Session[IO]): IO[Unit] = {
-    session.option(sql"SELECT ${table.*} FROM ${table.n} WHERE ${table.id.n} = ${table.id.c} FOR UPDATE".query(table.c))(id).flatMap {
-      case Some(obj) =>
-        val toBeUpdated = transform(obj)
-        session
-          .execute(sql"UPDATE ${table.n} SET (${table.*}) = (${table.c}) WHERE ${table.id.n} = ${table.id.c}".command)(
-            (toBeUpdated, getId(toBeUpdated))
-          )
-          .void
-      case None => IO.unit
-    }
-  }
+  def updateById(id: Id, transform: A => A)(using session: Session[IO]): IO[Unit] =
+    session
+      .option(sql"SELECT ${table.*} FROM ${table.n} WHERE $baseFilter AND ${table.id.n} = ${table.id.c} FOR UPDATE".query(table.c))(id)
+      .flatMap {
+        case Some(obj) =>
+          val toBeUpdated = transform(obj)
+          session
+            .execute(sql"UPDATE ${table.n} SET (${table.*}) = (${table.c}) WHERE $baseFilter AND ${table.id.n} = ${table.id.c}".command)(
+              (toBeUpdated, getId(toBeUpdated))
+            )
+            .void
+        case None => IO.unit
+      }
 
   def deleteById(id: Id)(using session: Session[IO]): IO[Unit] =
     session
