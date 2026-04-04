@@ -64,13 +64,14 @@ case class RefreshTokenRowFilter(
   deletedAt: SqlPredicate[Instant] = p.any)
     extends SqlFilter {
 
-  override def filterFragment: AppliedFragment = fromPredicates(
+  override def filterFragment: AppliedFragment = SqlFilterDerivation.filterFragment(
+    this,
     (
-      id        -> RefreshTokenRowTable.id,
-      userId    -> RefreshTokenRowTable.userId,
-      userAgent -> RefreshTokenRowTable.userAgent,
-      usedAt    -> RefreshTokenRowTable.usedAt,
-      deletedAt -> RefreshTokenRowTable.deletedAt
+      RefreshTokenRowTable.id,
+      RefreshTokenRowTable.userId,
+      RefreshTokenRowTable.userAgent,
+      RefreshTokenRowTable.usedAt,
+      RefreshTokenRowTable.deletedAt
     )
   )
 }

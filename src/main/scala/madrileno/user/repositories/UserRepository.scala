@@ -59,19 +59,13 @@ object UserRowTable extends Table[UserRow]("\"user\"") with IdTable[UserRow, Use
 }
 
 case class UserRowFilter(
-  id: SqlPredicate[UserId],
-  emailAddress: SqlPredicate[Option[EmailAddress]],
-  emailVerified: SqlPredicate[Boolean],
-  deletedAt: SqlPredicate[Instant])
+  id: SqlPredicate[UserId] = p.any,
+  emailAddress: SqlPredicate[Option[EmailAddress]] = p.any,
+  emailVerified: SqlPredicate[Boolean] = p.any,
+  deletedAt: SqlPredicate[Instant] = p.any)
     extends SqlFilter {
-  override def filterFragment: AppliedFragment = fromPredicates(
-    (
-      id            -> UserRowTable.id,
-      emailAddress  -> UserRowTable.emailAddress,
-      emailVerified -> UserRowTable.emailVerified,
-      deletedAt     -> UserRowTable.deletedAt
-    )
-  )
+  override def filterFragment: AppliedFragment =
+    SqlFilterDerivation.filterFragment(this, (UserRowTable.id, UserRowTable.emailAddress, UserRowTable.emailVerified, UserRowTable.deletedAt))
 }
 
 class UserRepository(using Clock[IO]) {
