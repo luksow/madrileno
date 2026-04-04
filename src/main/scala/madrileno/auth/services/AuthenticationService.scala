@@ -11,7 +11,7 @@ import madrileno.user.domain.*
 import madrileno.user.repositories.*
 import madrileno.utils.crypto.IdGenerator
 import madrileno.utils.db.transactor.*
-import madrileno.utils.mailer.{Language, MailRequest, Mailer}
+import madrileno.utils.mailer.{Language, Mailer}
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
 import madrileno.utils.task.{CronExpression, Schedule, Task}
 import pl.iterators.sealedmonad.syntax.*
@@ -61,7 +61,7 @@ class AuthenticationService(
                     _ <- logger.info(s"Created new user: $user with Firebase UID: ${verifiedToken.providerUserId}")
                     _ <- user.emailAddress.fold(IO.unit) { email =>
                            mailer
-                             .send(MailRequest(to = List(email.toString), template = WelcomeEmailTemplate(user.fullName), lang = Language.En))
+                             .send(to = List(email.toString), template = WelcomeEmailTemplate(user.fullName), lang = Language.En)
                              .void
                          }
                     tokens <- generateTokens(user.id, command.userAgent, command.ipAddress, AuthenticationResult.UserCreated.apply)

@@ -28,35 +28,62 @@ class Mailer(
     }
 
   def send(
-    mail: MailRequest,
+    to: List[String],
+    template: EmailTemplate,
+    lang: Language,
+    from: Option[String] = None,
+    cc: List[String] = Nil,
+    bcc: List[String] = Nil,
+    replyTo: Option[String] = None,
+    attachments: List[Attachment] = Nil,
     at: Option[Instant] = None,
     in: Option[FiniteDuration] = None
   ): IO[Boolean] =
     Clock[IO].realTimeInstant.flatMap { now =>
       UUIDGen[IO].randomUUID.flatMap { uuid =>
-        schedulerClient.schedule(sendMailTask.instance(s"mail-$uuid", serialize(mail), at = resolveTime(now, at, in)))
+        schedulerClient.schedule(
+          sendMailTask.instance(s"mail-$uuid", serialize(to, template, lang, from, cc, bcc, replyTo, attachments), at = resolveTime(now, at, in))
+        )
       }
     }
 
   def sendInSession(
-    mail: MailRequest,
+    to: List[String],
+    template: EmailTemplate,
+    lang: Language,
+    from: Option[String] = None,
+    cc: List[String] = Nil,
+    bcc: List[String] = Nil,
+    replyTo: Option[String] = None,
+    attachments: List[Attachment] = Nil,
     at: Option[Instant] = None,
     in: Option[FiniteDuration] = None
   ): DB[Boolean] =
     Clock[IO].realTimeInstant.flatMap { now =>
       UUIDGen[IO].randomUUID.flatMap { uuid =>
-        schedulerClient.scheduleInSession(sendMailTask.instance(s"mail-$uuid", serialize(mail), at = resolveTime(now, at, in)))
+        schedulerClient.scheduleInSession(
+          sendMailTask.instance(s"mail-$uuid", serialize(to, template, lang, from, cc, bcc, replyTo, attachments), at = resolveTime(now, at, in))
+        )
       }
     }
 
   def sendTransactionally(
-    mail: MailRequest,
+    to: List[String],
+    template: EmailTemplate,
+    lang: Language,
+    from: Option[String] = None,
+    cc: List[String] = Nil,
+    bcc: List[String] = Nil,
+    replyTo: Option[String] = None,
+    attachments: List[Attachment] = Nil,
     at: Option[Instant] = None,
     in: Option[FiniteDuration] = None
   ): DBInTransaction[Boolean] =
     Clock[IO].realTimeInstant.flatMap { now =>
       UUIDGen[IO].randomUUID.flatMap { uuid =>
-        schedulerClient.scheduleTransactionally(sendMailTask.instance(s"mail-$uuid", serialize(mail), at = resolveTime(now, at, in)))
+        schedulerClient.scheduleTransactionally(
+          sendMailTask.instance(s"mail-$uuid", serialize(to, template, lang, from, cc, bcc, replyTo, attachments), at = resolveTime(now, at, in))
+        )
       }
     }
 
@@ -67,17 +94,26 @@ class Mailer(
   ): Option[Instant] =
     at.orElse(in.map(d => now.plusMillis(d.toMillis)))
 
-  private def serialize(mail: MailRequest): SerializedMail = {
-    val rendered = mail.template.render(context, mail.lang)
+  private def serialize(
+    to: List[String],
+    template: EmailTemplate,
+    lang: Language,
+    from: Option[String],
+    cc: List[String],
+    bcc: List[String],
+    replyTo: Option[String],
+    attachments: List[Attachment]
+  ): SerializedMail = {
+    val rendered = template.render(context, lang)
     SerializedMail(
-      to = mail.to,
+      to = to,
       subject = rendered.subject,
       body = rendered.body.serialize,
-      from = mail.from,
-      cc = mail.cc,
-      bcc = mail.bcc,
-      replyTo = mail.replyTo,
-      attachments = mail.attachments,
+      from = from,
+      cc = cc,
+      bcc = bcc,
+      replyTo = replyTo,
+      attachments = attachments,
       inlineAttachments = rendered.inlineAttachments
     )
   }

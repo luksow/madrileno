@@ -48,16 +48,6 @@ case class InlineAttachment(
   contentType: String,
   data: Array[Byte])
 
-case class MailRequest(
-  to: List[String],
-  template: EmailTemplate,
-  lang: Language,
-  from: Option[String] = None,
-  cc: List[String] = Nil,
-  bcc: List[String] = Nil,
-  replyTo: Option[String] = None,
-  attachments: List[Attachment] = Nil)
-
 case class SerializedMail(
   to: List[String],
   subject: String,
