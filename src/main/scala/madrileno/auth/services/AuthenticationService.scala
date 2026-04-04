@@ -2,13 +2,16 @@ package madrileno.auth.services
 
 import cats.effect.std.UUIDGen
 import cats.effect.{Clock, IO}
+import cats.syntax.all.*
 import com.comcast.ip4s.IpAddress
 import madrileno.auth.domain.*
+import madrileno.auth.emails.WelcomeEmailTemplate
 import madrileno.auth.repositories.*
 import madrileno.user.domain.*
 import madrileno.user.repositories.*
 import madrileno.utils.crypto.IdGenerator
 import madrileno.utils.db.transactor.*
+import madrileno.utils.mailer.{Language, Mailer}
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
 import madrileno.utils.task.{CronExpression, Schedule, Task}
 import pl.iterators.sealedmonad.syntax.*
@@ -21,7 +24,8 @@ class AuthenticationService(
   userRepository: UserRepository,
   firebaseService: FirebaseService,
   jwtService: JwtService,
-  transactor: Transactor
+  transactor: Transactor,
+  mailer: Mailer
 )(using
   TelemetryContext,
   UUIDGen[IO],
@@ -52,9 +56,14 @@ class AuthenticationService(
                       IdGenerator
                         .generateId(UserAuthId)
                         .map(id => UserAuth(id, user.id, verifiedToken))
-                    _      <- userRepository.save(user)
-                    _      <- userAuthRepository.save(userAuth)
-                    _      <- logger.info(s"Created new user: $user with Firebase UID: ${verifiedToken.providerUserId}")
+                    _ <- userRepository.save(user)
+                    _ <- userAuthRepository.save(userAuth)
+                    _ <- logger.info(s"Created new user: $user with Firebase UID: ${verifiedToken.providerUserId}")
+                    _ <- user.emailAddress.fold(IO.unit) { email =>
+                           mailer
+                             .send(to = List(email.toString), template = WelcomeEmailTemplate(user.fullName), lang = Language.En)
+                             .void
+                         }
                     tokens <- generateTokens(user.id, command.userAgent, command.ipAddress, AuthenticationResult.UserCreated.apply)
                   } yield {
                     tokens

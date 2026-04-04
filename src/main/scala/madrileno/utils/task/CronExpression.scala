@@ -5,9 +5,7 @@ import cron4s.expr.CronExpr
 import cron4s.lib.javatime.*
 import cron4s.syntax.all.*
 
-import java.time.Instant
-import java.time.ZoneOffset
-import java.time.ZoneId
+import java.time.{Instant, ZoneId, ZoneOffset}
 
 opaque type CronExpression = CronExpr
 object CronExpression {

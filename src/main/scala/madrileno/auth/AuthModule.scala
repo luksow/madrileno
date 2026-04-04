@@ -5,12 +5,14 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.{FirebaseApp, FirebaseOptions}
 import com.softwaremill.macwire.*
 import madrileno.auth.domain.AuthContext
+import madrileno.auth.emails.WelcomeEmailTemplate
 import madrileno.auth.repositories.*
 import madrileno.auth.routers.{AuthRouter, UserAuthenticator}
 import madrileno.auth.services.*
 import madrileno.user.repositories.UserRepository
 import madrileno.utils.db.transactor.Transactor
 import madrileno.utils.http.{AuthRouteProvider, RouteProvider}
+import madrileno.utils.mailer.{MailPreview, MailPreviewProvider, Mailer}
 import madrileno.utils.observability.TelemetryContext
 import madrileno.utils.task.{RecurringTaskProvider, Task}
 import pl.iterators.stir.server.Route
@@ -19,13 +21,14 @@ import pureconfig.ConfigSource
 import java.io.ByteArrayInputStream
 import scala.util.Try
 
-trait AuthModule extends RouteProvider with AuthRouteProvider with RecurringTaskProvider {
+trait AuthModule extends RouteProvider with AuthRouteProvider with RecurringTaskProvider with MailPreviewProvider {
   val config: ConfigSource
   val jwtConfig: JwtService.Config = config.at("jwt").loadOrThrow[JwtService.Config]
   private val jwtService           = wire[JwtService]
   given telemetryContext: TelemetryContext
   val transactor: Transactor
   lazy val userRepository: UserRepository
+  lazy val mailer: Mailer
 
   val userAuthenticator: UserAuthenticator = wire[UserAuthenticator]
 
@@ -57,5 +60,9 @@ trait AuthModule extends RouteProvider with AuthRouteProvider with RecurringTask
 
   override abstract def recurringTasks: List[Task[?]] = {
     super.recurringTasks :+ authenticationService.cleanupExpiredRefreshTokensTask
+  }
+
+  override abstract def mailPreviews: List[MailPreview] = {
+    super.mailPreviews :+ WelcomeEmailTemplate.preview
   }
 }
