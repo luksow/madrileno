@@ -48,6 +48,7 @@ class Mailer(
       }
     }
 
+  /** Schedule an email for delivery within an existing DB session. If both `at` and `in` are provided, `at` takes precedence. */
   def sendInSession(
     to: List[String],
     template: EmailTemplate,
@@ -68,6 +69,7 @@ class Mailer(
       }
     }
 
+  /** Schedule an email for delivery within an existing DB transaction. If both `at` and `in` are provided, `at` takes precedence. */
   def sendTransactionally(
     to: List[String],
     template: EmailTemplate,
