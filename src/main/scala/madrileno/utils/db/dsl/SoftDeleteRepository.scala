@@ -32,15 +32,16 @@ trait SoftDeleteRepository[A, Id](using Clock[IO]) extends IdRepository[A, Id] {
       .void
   }
 
-  def softDeleteByIds(ids: List[Id])(using session: Session[IO]): IO[Unit] = {
-    now.flatMap { instant =>
-      session
-        .execute(sql"UPDATE ${table.n} SET ${table.deletedAt.n} = ${table.deletedAt.c} WHERE ${table.id.n} IN (${table.id.c.list(ids)})".command)(
-          (Some(instant), ids)
-        )
-        .void
-    }
-  }
+  def softDeleteByIds(ids: List[Id])(using session: Session[IO]): IO[Unit] =
+    if (ids.isEmpty) IO.unit
+    else
+      now.flatMap { instant =>
+        session
+          .execute(sql"UPDATE ${table.n} SET ${table.deletedAt.n} = ${table.deletedAt.c} WHERE ${table.id.n} IN (${table.id.c.list(ids)})".command)(
+            (Some(instant), ids)
+          )
+          .void
+      }
 
   def softDeleteAll(using session: Session[IO]): IO[Unit] = {
     now.flatMap { instant =>
@@ -50,11 +51,12 @@ trait SoftDeleteRepository[A, Id](using Clock[IO]) extends IdRepository[A, Id] {
     }
   }
 
-  def restoreByIds(ids: List[Id])(using session: Session[IO]): IO[Unit] = {
-    session
-      .execute(sql"UPDATE ${table.n} SET ${table.deletedAt.n} = NULL WHERE ${table.id.n} IN (${table.id.c.list(ids)})".command)(ids)
-      .void
-  }
+  def restoreByIds(ids: List[Id])(using session: Session[IO]): IO[Unit] =
+    if (ids.isEmpty) IO.unit
+    else
+      session
+        .execute(sql"UPDATE ${table.n} SET ${table.deletedAt.n} = NULL WHERE ${table.id.n} IN (${table.id.c.list(ids)})".command)(ids)
+        .void
 
   def findByIdWithDeleted(id: Id, lock: Lock = Lock.NoLock)(using session: Session[IO]): IO[Option[A]] = {
     session.option(
@@ -68,13 +70,14 @@ trait SoftDeleteRepository[A, Id](using Clock[IO]) extends IdRepository[A, Id] {
       .map(_.isDefined)
   }
 
-  def findByIdsWithDeleted(ids: List[Id], lock: Lock = Lock.NoLock)(using session: Session[IO]): IO[List[A]] = {
-    session
-      .execute(
-        sql"SELECT ${table.*} FROM ${table.n} WHERE ${table.id.n} IN (${table.id.c.list(ids)}) AND ${super.baseFilter} ${lock.fragment}"
-          .query(table.c)
-      )(ids)
-  }
+  def findByIdsWithDeleted(ids: List[Id], lock: Lock = Lock.NoLock)(using session: Session[IO]): IO[List[A]] =
+    if (ids.isEmpty) IO.pure(Nil)
+    else
+      session
+        .execute(
+          sql"SELECT ${table.*} FROM ${table.n} WHERE ${table.id.n} IN (${table.id.c.list(ids)}) AND ${super.baseFilter} ${lock.fragment}"
+            .query(table.c)
+        )(ids)
 
   def findWithDeleted(id: Id, lock: Lock = Lock.NoLock)(using session: Session[IO]): IO[A] = {
     session.unique(
