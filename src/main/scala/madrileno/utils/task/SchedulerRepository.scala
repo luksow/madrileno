@@ -323,7 +323,7 @@ private[task] class SchedulerRepository(
           ${table.nextExecution.n} = ${table.nextExecution.c},
           ${table.version.n} = ${table.version.n} + 1
         WHERE ${table.picked.n} = true
-          AND ${table.lastHeartbeat.n} <= ${table.lastHeartbeat.c}
+          AND (${table.lastHeartbeat.n} IS NULL OR ${table.lastHeartbeat.n} <= ${table.lastHeartbeat.c})
        """.command
       session
         .execute(command)((now, Some(staleThreshold)))
