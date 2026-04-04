@@ -43,5 +43,5 @@ class WelcomeEmailTemplate(fullName: Option[FullName]) extends EmailTemplate {
 }
 
 object WelcomeEmailTemplate {
-  val preview: MailPreview = MailPreview("welcome-email", WelcomeEmailTemplate(Some(FullName("Alice Example"))))
+  val preview: MailPreview = MailPreview("welcome-email", WelcomeEmailTemplate(Some(FullName("Jane Doe"))))
 }

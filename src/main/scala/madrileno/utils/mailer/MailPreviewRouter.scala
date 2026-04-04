@@ -1,10 +1,9 @@
 package madrileno.utils.mailer
 
 import cats.effect.IO
-import fs2.{Chunk, Stream}
 import madrileno.utils.http.BaseRouter
 import org.http4s.headers.`Content-Type`
-import org.http4s.{Headers, MediaType, Response, Status}
+import org.http4s.{EntityEncoder, MediaType, Response, Status}
 import pl.iterators.stir.server.Route
 
 import java.util.Base64
@@ -84,10 +83,7 @@ class MailPreviewRouter(previews: List[MailPreview], context: MailContext) exten
 
   private def htmlPage(status: Status, html: String): Route =
     complete {
-      IO.pure(
-        Response[IO](status)
-          .withHeaders(Headers(`Content-Type`(MediaType.text.html)))
-          .withBodyStream(Stream.chunk(Chunk.array(html.getBytes("UTF-8"))))
-      )
+      Response[IO](status)
+        .withEntity(html)(using EntityEncoder.stringEncoder[IO].withContentType(`Content-Type`(MediaType.text.html)))
     }
 }
