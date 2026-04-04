@@ -4,6 +4,6 @@ import skunk.*
 import skunk.implicits.*
 
 trait BaseRepository[T] {
-  def baseFilter: Fragment[Void] = sql"True"
+  def baseFilter: Fragment[Void] = sql"1=1"
   val table: Table[T]
 }
