@@ -87,7 +87,7 @@ trait Handlers extends LoggingSupport with BaseRouter {
           BadRequest,
           typeFromRejection[SchemeRejection],
           "Uri scheme not allowed",
-          Some(s"Supported schemes: ${schemes.mkString(", ")}"),
+          Some(s"Supported schemes: $schemes"),
           Headers.empty,
           Map("supportedSchemes" -> schemes),
           loggingDirective
