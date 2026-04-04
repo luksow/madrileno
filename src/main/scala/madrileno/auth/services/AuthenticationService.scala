@@ -160,8 +160,8 @@ class AuthenticationService(
       user <- userRepository
                 .get(userId)
                 .ensure(_.isActive, AuthenticationResult.UserBlocked)
-      jwt = jwtService.encode(AuthContext(user))
       now          <- Clock[IO].realTimeInstant.seal
+      jwt = jwtService.encode(AuthContext(user), now)
       refreshToken <- IdGenerator.generateId(RefreshTokenId).map(id => RefreshToken.mint(id, now, user.id, userAgent, ipAddress)).seal
       _            <- refreshTokenRepository.save(refreshToken).seal
       _            <- logger.debug(s"Generated JWT: $jwt and RefreshToken: $refreshToken for user: $userId").seal
