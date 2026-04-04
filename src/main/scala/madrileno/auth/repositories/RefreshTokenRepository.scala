@@ -8,6 +8,7 @@ import madrileno.utils.db.dsl.*
 import madrileno.utils.db.transactor.{DB, DBInTransaction}
 import skunk.*
 import skunk.codec.all.*
+import skunk.implicits.*
 
 import java.time.Instant
 
@@ -60,8 +61,7 @@ case class RefreshTokenRowFilter(
   userId: SqlPredicate[UserId] = p.any,
   userAgent: SqlPredicate[UserAgent] = p.any,
   usedAt: SqlPredicate[Instant] = p.any,
-  deletedAt: SqlPredicate[Instant] = p.any,
-  separator: AppliedFragment = SqlFilter.And)
+  deletedAt: SqlPredicate[Instant] = p.any)
     extends SqlFilter {
 
   override def filterFragment: AppliedFragment = fromPredicatesAndSeparator(
@@ -72,7 +72,7 @@ case class RefreshTokenRowFilter(
       usedAt    -> RefreshTokenRowTable.usedAt,
       deletedAt -> RefreshTokenRowTable.deletedAt
     ),
-    separator
+    SqlAnd
   )
 }
 
@@ -104,7 +104,14 @@ class RefreshTokenRepository {
   }
 
   def deleteUsedOrDeletedBefore(cutoff: Instant): DB[Unit] = {
-    repository.deleteByFilter(RefreshTokenRowFilter(usedAt = p.lessThan(cutoff), deletedAt = p.lessThan(cutoff), separator = SqlFilter.Or))
+    val session = summon[Session[IO]]
+    val table   = RefreshTokenRowTable
+    session
+      .execute(sql"""DELETE FROM ${table.n}
+          WHERE ${table.usedAt.n} < ${table.usedAt.c}
+             OR ${table.deletedAt.n} < ${table.deletedAt.c}
+        """.command)((Some(cutoff), Some(cutoff)))
+      .void
   }
 
   private val repository: IdRepository[RefreshTokenRow, RefreshTokenId] & SoftDeleteRepository[RefreshTokenRow, RefreshTokenId] & ForeignIdRepository[
