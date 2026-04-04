@@ -25,9 +25,9 @@ case class UserRow(
     this.into[User].transform
   }
 
-  def update(user: User): UserRow = {
+  def update(user: User, now: Instant): UserRow = {
     import io.scalaland.chimney.dsl.*
-    this.patchUsing(user)
+    this.patchUsing(user).copy(updatedAt = now)
   }
 }
 
@@ -80,9 +80,10 @@ class UserRepository(using Clock[IO]) {
     repository.getById(id).map(_.toUser)
   }
 
-  def update(id: UserId, f: User => User): DB[Unit] = {
-    repository.updateById(id, userRow => userRow.update(f(userRow.toUser)))
-  }
+  def update(id: UserId, f: User => User): DB[Unit] =
+    Clock[IO].realTimeInstant.flatMap { now =>
+      repository.updateById(id, userRow => userRow.update(f(userRow.toUser), now))
+    }
 
   private val repository: IdRepository[UserRow, UserId] & SoftDeleteRepository[UserRow, UserId] & FilteringRepository[UserRow, UserRowFilter] =
     new IdRepository[UserRow, UserId](_.id) with SoftDeleteRepository[UserRow, UserId] with FilteringRepository[UserRow, UserRowFilter] {
