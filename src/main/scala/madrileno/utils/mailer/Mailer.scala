@@ -27,6 +27,7 @@ class Mailer(
         smtpSender.send(task.payload)
     }
 
+  /** Schedule an email for delivery. If both `at` and `in` are provided, `at` takes precedence. */
   def send(
     to: List[String],
     template: EmailTemplate,

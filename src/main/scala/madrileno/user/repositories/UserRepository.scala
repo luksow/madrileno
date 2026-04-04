@@ -69,16 +69,18 @@ case class UserRowFilter(
 }
 
 class UserRepository(using Clock[IO]) {
-  def save(user: User): DB[User] = {
+  def create(user: User): DB[User] = {
     Clock[IO].realTimeInstant.flatMap { now =>
       val row = UserRow(user, now)
       repository.create(row).as(row.toUser)
     }
   }
 
-  def get(id: UserId): DB[User] = {
+  def find(id: UserId): DB[Option[User]] =
+    repository.findById(id).map(_.map(_.toUser))
+
+  def get(id: UserId): DB[User] =
     repository.getById(id).map(_.toUser)
-  }
 
   def update(id: UserId, f: User => User): DB[Unit] =
     Clock[IO].realTimeInstant.flatMap { now =>

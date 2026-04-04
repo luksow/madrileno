@@ -56,7 +56,7 @@ class AuthenticationService(
                       IdGenerator
                         .generateId(UserAuthId)
                         .map(id => UserAuth(id, user.id, verifiedToken))
-                    _ <- userRepository.save(user)
+                    _ <- userRepository.create(user)
                     _ <- userAuthRepository.save(userAuth)
                     _ <- logger.info(s"Created new user: $user with Firebase UID: ${verifiedToken.providerUserId}")
                     _ <- user.emailAddress.fold(IO.unit) { email =>
