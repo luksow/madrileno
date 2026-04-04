@@ -207,16 +207,16 @@ trait FilteringRepository[A, F <: SqlFilter] extends BaseRepository[A] {
 
   def findOneByFilter(filter: F, lock: Lock = Lock.NoLock)(using session: Session[IO]): IO[Option[A]] = {
     val appliedFragment = filter.filterFragment
-    session.option(sql"SELECT ${table.*} FROM ${table.n} WHERE ${appliedFragment.fragment} LIMIT 1 ${lock.fragment}".query(table.c))(
-      appliedFragment.argument
-    )
+    session.option(
+      sql"SELECT ${table.*} FROM ${table.n} WHERE ${appliedFragment.fragment} ${filter.orderByFragment} LIMIT 1 ${lock.fragment}".query(table.c)
+    )(appliedFragment.argument)
   }
 
   def getByFilter(filter: F, lock: Lock = Lock.NoLock)(using session: Session[IO]): IO[A] = {
     val appliedFragment = filter.filterFragment
-    session.unique(sql"SELECT ${table.*} FROM ${table.n} WHERE ${appliedFragment.fragment} LIMIT 1 ${lock.fragment}".query(table.c))(
-      appliedFragment.argument
-    )
+    session.unique(
+      sql"SELECT ${table.*} FROM ${table.n} WHERE ${appliedFragment.fragment} ${filter.orderByFragment} LIMIT 1 ${lock.fragment}".query(table.c)
+    )(appliedFragment.argument)
   }
 
   def existsByFilter(filter: F)(using session: Session[IO]): IO[Boolean] = {
