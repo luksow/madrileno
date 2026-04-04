@@ -28,7 +28,7 @@ trait AuthModule extends RouteProvider with AuthRouteProvider with RecurringTask
   given telemetryContext: TelemetryContext
   val transactor: Transactor
   lazy val userRepository: UserRepository
-  val mailer: Mailer
+  lazy val mailer: Mailer
 
   val userAuthenticator: UserAuthenticator = wire[UserAuthenticator]
 

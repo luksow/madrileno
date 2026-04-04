@@ -56,9 +56,9 @@ class ApplicationLoader(
   lazy val telemetryContext: TelemetryContext = summon[TelemetryContext]
   lazy val mailContext: MailContext           = MailContext(httpConfig.baseUrl)
 
-  private val mailerConfig: MailerConfig = config.at("mailer").loadOrThrow[MailerConfig]
-  private val smtpSender                 = new SmtpSender(mailerConfig)
-  val mailer: Mailer                     = new Mailer(smtpSender, schedulerClient, mailContext)
+  private lazy val mailerConfig: MailerConfig = config.at("mailer").loadOrThrow[MailerConfig]
+  private lazy val smtpSender                 = new SmtpSender(mailerConfig)
+  lazy val mailer: Mailer                     = new Mailer(smtpSender, schedulerClient, mailContext)
 
   override def oneTimeTasks: List[OneTimeTask[?]] = super.oneTimeTasks :+ mailer.sendMailTask
 
