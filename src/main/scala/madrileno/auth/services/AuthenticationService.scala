@@ -61,7 +61,7 @@ class AuthenticationService(
                     _ <- logger.info(s"Created new user: $user with Firebase UID: ${verifiedToken.providerUserId}")
                     _ <- user.emailAddress.fold(IO.unit) { email =>
                            mailer
-                             .send(to = List(email.toString), template = WelcomeEmailTemplate(user.fullName), lang = Language.En)
+                             .sendTransactionally(to = List(email.toString), template = WelcomeEmailTemplate(user.fullName), lang = Language.En)
                              .void
                          }
                     tokens <- generateTokens(user.id, command.userAgent, command.ipAddress, AuthenticationResult.UserCreated.apply)

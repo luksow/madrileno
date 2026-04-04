@@ -10,7 +10,7 @@ import java.util.Base64
 
 class MailPreviewRouter(previews: List[MailPreview], context: MailContext) extends BaseRouter {
   val routes: Route =
-    (get & path("mail-previews") & pathEnd) {
+    (get & pathPrefix("mail-previews") & pathEndOrSingleSlash) {
       htmlPage(Ok, indexPage)
     } ~
       (get & path("mail-previews" / Segment) & parameter("lang".as[Language].optional)) { (name, lang) =>
@@ -29,7 +29,7 @@ class MailPreviewRouter(previews: List[MailPreview], context: MailContext) exten
       body(style := "font-family:system-ui,sans-serif;max-width:600px;margin:40px auto;padding:0 16px")(
         h2("Mail Previews"),
         ul(style := "padding-left:20px")(
-          previews.sortBy(_.name).map(p => li(style := "padding:4px 0")(a(href := s"mail-previews/${p.name}")(p.name)))
+          previews.sortBy(_.name).map(p => li(style := "padding:4px 0")(a(href := s"/mail-previews/${p.name}")(p.name)))
         )
       )
     ).render
@@ -55,7 +55,7 @@ class MailPreviewRouter(previews: List[MailPreview], context: MailContext) exten
           span(style := "color:#666")(s"Subject: ${rendered.subject}"),
           tag("select")(
             style := "margin-left:auto;font-size:13px",
-            attr("onchange") := s"window.location.href='mail-previews/$previewName?lang='+this.value"
+            attr("onchange") := s"window.location.href='/mail-previews/$previewName?lang='+this.value"
           )(langOptions)
         ),
         tag("iframe")(style := "flex:1;border:none;width:100%", attr("srcdoc") := emailHtml)
