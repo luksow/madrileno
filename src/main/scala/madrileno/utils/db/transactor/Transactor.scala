@@ -8,6 +8,8 @@ type DB[A]              = Session[IO] ?=> IO[A]
 type DBInTransaction[A] = Session[IO] ?=> Transaction[IO] ?=> IO[A]
 
 trait Transactor {
+
+  /** Runs `f` within a single database transaction. All operations share the same session and transaction. */
   def inTransaction[A](f: DBInTransaction[A]): IO[A]
 
   def savepoint(using
@@ -17,5 +19,8 @@ trait Transactor {
     transaction.savepoint
   }
 
+  /** Runs `f` with a session from the pool. Each `inSession` call gets its own session — multiple `inSession` calls are NOT transactional together.
+    * Use `inTransaction` for atomicity.
+    */
   def inSession[A](f: DB[A]): IO[A]
 }

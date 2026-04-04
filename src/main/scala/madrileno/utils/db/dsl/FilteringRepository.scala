@@ -72,9 +72,7 @@ trait SqlOrderBy {
   val fragment: Fragment[Void]
 }
 
-opaque type AnyOrder <: SqlOrderBy = SqlOrderBy
-
-val AnyOrder: AnyOrder = new SqlOrderBy {
+object AnyOrder extends SqlOrderBy {
   override val fragment: Fragment[Void] = sql""
 }
 
