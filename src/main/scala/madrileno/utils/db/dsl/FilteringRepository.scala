@@ -72,9 +72,7 @@ trait SqlOrderBy {
   val fragment: Fragment[Void]
 }
 
-opaque type AnyOrder <: SqlOrderBy = SqlOrderBy
-
-val AnyOrder: AnyOrder = new SqlOrderBy {
+object AnyOrder extends SqlOrderBy {
   override val fragment: Fragment[Void] = sql""
 }
 
@@ -114,7 +112,7 @@ object p {
     }
   }
 
-  def like[A](value: String, caseSensitive: Boolean = true): SqlPredicate[A] = (column: Column[Option[A]]) => {
+  def like(value: String, caseSensitive: Boolean = true): SqlPredicate[String] = (column: Column[Option[String]]) => {
     if (caseSensitive) {
       sql"(${column.n} LIKE $text)" (value)
     } else {
@@ -122,7 +120,7 @@ object p {
     }
   }
 
-  def notLike[A](value: String, caseSensitive: Boolean = true): SqlPredicate[A] = (column: Column[Option[A]]) => {
+  def notLike(value: String, caseSensitive: Boolean = true): SqlPredicate[String] = (column: Column[Option[String]]) => {
     if (caseSensitive) {
       sql"(${column.n} NOT LIKE $text)" (value)
     } else {
@@ -130,11 +128,11 @@ object p {
     }
   }
 
-  def similarTo[A](value: String): SqlPredicate[A] = (column: Column[Option[A]]) => {
+  def similarTo(value: String): SqlPredicate[String] = (column: Column[Option[String]]) => {
     sql"(${column.n} SIMILAR TO $text)" (value)
   }
 
-  def notSimilarTo[A](value: String): SqlPredicate[A] = (column: Column[Option[A]]) => {
+  def notSimilarTo(value: String): SqlPredicate[String] = (column: Column[Option[String]]) => {
     sql"(${column.n} NOT SIMILAR TO $text)" (value)
   }
 
@@ -207,16 +205,16 @@ trait FilteringRepository[A, F <: SqlFilter] extends BaseRepository[A] {
 
   def findOneByFilter(filter: F, lock: Lock = Lock.NoLock)(using session: Session[IO]): IO[Option[A]] = {
     val appliedFragment = filter.filterFragment
-    session.option(sql"SELECT ${table.*} FROM ${table.n} WHERE ${appliedFragment.fragment} LIMIT 1 ${lock.fragment}".query(table.c))(
-      appliedFragment.argument
-    )
+    session.option(
+      sql"SELECT ${table.*} FROM ${table.n} WHERE ${appliedFragment.fragment} ${filter.orderByFragment} LIMIT 1 ${lock.fragment}".query(table.c)
+    )(appliedFragment.argument)
   }
 
   def getByFilter(filter: F, lock: Lock = Lock.NoLock)(using session: Session[IO]): IO[A] = {
     val appliedFragment = filter.filterFragment
-    session.unique(sql"SELECT ${table.*} FROM ${table.n} WHERE ${appliedFragment.fragment} LIMIT 1 ${lock.fragment}".query(table.c))(
-      appliedFragment.argument
-    )
+    session.unique(
+      sql"SELECT ${table.*} FROM ${table.n} WHERE ${appliedFragment.fragment} ${filter.orderByFragment} LIMIT 1 ${lock.fragment}".query(table.c)
+    )(appliedFragment.argument)
   }
 
   def existsByFilter(filter: F)(using session: Session[IO]): IO[Boolean] = {

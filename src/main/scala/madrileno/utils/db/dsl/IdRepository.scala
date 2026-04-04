@@ -21,10 +21,12 @@ trait IdRepository[A, Id](val getId: A => Id) extends BaseRepository[A] {
   def create(a: A)(using session: Session[IO]): IO[A] =
     session.unique(sql"INSERT INTO ${table.n} (${table.*}) VALUES (${table.c}) RETURNING ${table.*}".query(table.c))(a)
 
-  def createAll(s: List[A])(using session: Session[IO]): IO[List[A]] = {
-    val enc = table.c.values.list(s)
-    session.execute(sql"INSERT INTO ${table.n} (${table.*}) VALUES $enc RETURNING ${table.*}".query(table.c))(s)
-  }
+  def createAll(s: List[A])(using session: Session[IO]): IO[List[A]] =
+    if (s.isEmpty) IO.pure(Nil)
+    else {
+      val enc = table.c.values.list(s)
+      session.execute(sql"INSERT INTO ${table.n} (${table.*}) VALUES $enc RETURNING ${table.*}".query(table.c))(s)
+    }
 
   def upsert(a: A)(using session: Session[IO]): IO[Unit] =
     session
@@ -42,9 +44,11 @@ trait IdRepository[A, Id](val getId: A => Id) extends BaseRepository[A] {
       .map(_.isDefined)
 
   def findByIds(ids: List[Id], lock: Lock = Lock.NoLock)(using session: Session[IO]): IO[List[A]] =
-    session.execute(
-      sql"SELECT ${table.*} FROM ${table.n} WHERE $baseFilter AND ${table.id.n} IN (${table.id.c.list(ids)}) ${lock.fragment}".query(table.c)
-    )(ids)
+    if (ids.isEmpty) IO.pure(Nil)
+    else
+      session.execute(
+        sql"SELECT ${table.*} FROM ${table.n} WHERE $baseFilter AND ${table.id.n} IN (${table.id.c.list(ids)}) ${lock.fragment}".query(table.c)
+      )(ids)
 
   def getById(id: Id, lock: Lock = Lock.NoLock)(using session: Session[IO]): IO[A] =
     session.unique(sql"SELECT ${table.*} FROM ${table.n} WHERE $baseFilter AND ${table.id.n} = ${table.id.c} ${lock.fragment}".query(table.c))(id)
@@ -57,21 +61,24 @@ trait IdRepository[A, Id](val getId: A => Id) extends BaseRepository[A] {
 
   def update(toBeUpdated: A)(using session: Session[IO]): IO[Unit] =
     session
-      .execute(sql"UPDATE ${table.n} SET (${table.*}) = (${table.c}) WHERE ${table.id.n} = ${table.id.c}".command)((toBeUpdated, getId(toBeUpdated)))
+      .execute(sql"UPDATE ${table.n} SET (${table.*}) = (${table.c}) WHERE $baseFilter AND ${table.id.n} = ${table.id.c}".command)(
+        (toBeUpdated, getId(toBeUpdated))
+      )
       .void
 
-  def updateById(id: Id, transform: A => A)(using session: Session[IO]): IO[Unit] = {
-    session.option(sql"SELECT ${table.*} FROM ${table.n} WHERE ${table.id.n} = ${table.id.c} FOR UPDATE".query(table.c))(id).flatMap {
-      case Some(obj) =>
-        val toBeUpdated = transform(obj)
-        session
-          .execute(sql"UPDATE ${table.n} SET (${table.*}) = (${table.c}) WHERE ${table.id.n} = ${table.id.c}".command)(
-            (toBeUpdated, getId(toBeUpdated))
-          )
-          .void
-      case None => IO.unit
-    }
-  }
+  def updateById(id: Id, transform: A => A)(using session: Session[IO]): IO[Unit] =
+    session
+      .option(sql"SELECT ${table.*} FROM ${table.n} WHERE $baseFilter AND ${table.id.n} = ${table.id.c} FOR UPDATE".query(table.c))(id)
+      .flatMap {
+        case Some(obj) =>
+          val toBeUpdated = transform(obj)
+          session
+            .execute(sql"UPDATE ${table.n} SET (${table.*}) = (${table.c}) WHERE $baseFilter AND ${table.id.n} = ${table.id.c}".command)(
+              (toBeUpdated, getId(toBeUpdated))
+            )
+            .void
+        case None => IO.unit
+      }
 
   def deleteById(id: Id)(using session: Session[IO]): IO[Unit] =
     session
@@ -79,9 +86,11 @@ trait IdRepository[A, Id](val getId: A => Id) extends BaseRepository[A] {
       .void
 
   def deleteByIds(ids: List[Id])(using session: Session[IO]): IO[Unit] =
-    session
-      .execute(sql"DELETE FROM ${table.n} WHERE ${table.id.n} IN (${table.id.c.list(ids)})".command)(ids)
-      .void
+    if (ids.isEmpty) IO.unit
+    else
+      session
+        .execute(sql"DELETE FROM ${table.n} WHERE ${table.id.n} IN (${table.id.c.list(ids)})".command)(ids)
+        .void
 
   def delete(a: A)(using session: Session[IO]): IO[Unit] = deleteById(getId(a))
 

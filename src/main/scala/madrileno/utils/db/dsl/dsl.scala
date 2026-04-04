@@ -1,5 +1,6 @@
 package madrileno.utils.db.dsl
 
+import cats.syntax.all.*
 import org.typelevel.twiddles.Iso
 import pl.iterators.kebs.core.enums.EnumLike
 import pl.iterators.kebs.core.instances.InstanceConverter
@@ -7,6 +8,7 @@ import pl.iterators.kebs.core.macros.ValueClassLike
 import pl.iterators.kebs.enums.KebsEnum
 import pl.iterators.kebs.instances.KebsInstances
 import skunk.*
+import skunk.data.{Arr, Type}
 import skunk.implicits.*
 
 import java.time.{Instant, OffsetDateTime, ZoneOffset}
@@ -69,18 +71,16 @@ trait CodecHelpers extends KebsEnum with KebsInstances {
   extension (codec: Codec[OffsetDateTime]) {
     def asInstant[T]: Codec[Instant] = codec.imap(_.toInstant)(_.atOffset(ZoneOffset.UTC))
   }
-//  def enumOf[T <: scala.reflect.Enum](es: Array[T], typeName: String) =
-//    `enum`[T](_.toString(), s => es.find(_.toString == s), Type(typeName))
-//
-//  def arrOf[A](codec: Codec[A]): Codec[Arr[A]] = {
-//    val ty     = Type(s"_${codec.types.head.name}", codec.types)
-//    val encode = (elem: A) => codec.encode(elem).head.get
-//    val decode = (str: String) => codec.decode(0, List(Some(str))).left.map(_.message)
-//    Codec.array[A](encode.andThen(_.value), decode, ty)
-//  }
-//
-//  def listOf[A](codec: Codec[A]): Codec[List[A]] =
-//    arrOf(codec).imap(_.toList)(l => Arr(l*))
+
+  def arrOf[A](codec: Codec[A]): Codec[Arr[A]] = {
+    val ty     = Type(s"_${codec.types.head.name}", codec.types)
+    val encode = (elem: A) => codec.encode(elem).head.get
+    val decode = (str: String) => codec.decode(0, List(Some(str))).left.map(_.message)
+    Codec.array[A](encode.andThen(_.value), decode, ty)
+  }
+
+  def listOf[A](codec: Codec[A]): Codec[List[A]] =
+    arrOf(codec).imap(_.toList)(l => Arr(l*))
 }
 
 trait MappingHelpers[BaseType] {
