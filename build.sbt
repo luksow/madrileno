@@ -97,6 +97,8 @@ libraryDependencySchemes ++= Seq(
   "org.typelevel" %% "otel4s-core-common" % VersionScheme.Always
 )
 
+Test / scalacOptions ++= Seq("-Wconf:msg=should not be used as infix:s", "-Wconf:msg=unused value of type org.scalatest:s")
+
 javaOptions += "-Dotel.java.global-autoconfigure.enabled=true"
 
 Compile / run / fork := true
