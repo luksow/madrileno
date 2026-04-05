@@ -7,7 +7,6 @@ import madrileno.user.domain.*
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AsyncWordSpec
 
-
 class UserRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matchers with TestTransactor {
 
   private lazy val repo = new UserRepository

@@ -12,11 +12,8 @@ class SmtpSenderSpec extends AsyncWordSpec with AsyncIOSpec with Matchers with T
   "SmtpSender" should {
     "send plain text email" in {
       clearMailpit()
-      val mail = SerializedMail(
-        to = List("user@example.com"),
-        subject = "Plain text test",
-        body = SerializedMailBody.Text("Hello, this is plain text.")
-      )
+      val mail =
+        SerializedMail(to = List("user@example.com"), subject = "Plain text test", body = SerializedMailBody.Text("Hello, this is plain text."))
 
       sender.send(mail).map { _ =>
         val messages = getMailpitMessages
@@ -86,9 +83,9 @@ class SmtpSenderSpec extends AsyncWordSpec with AsyncIOSpec with Matchers with T
       )
 
       sender.send(mail).map { _ =>
-        val id          = getMailpitMessages.hcursor.downField("messages").downArray.get[String]("ID").toOption.get
-        val detail      = getMailpitMessage(id)
-        val html        = detail.hcursor.get[String]("HTML").toOption.getOrElse("")
+        val id     = getMailpitMessages.hcursor.downField("messages").downArray.get[String]("ID").toOption.get
+        val detail = getMailpitMessage(id)
+        val html   = detail.hcursor.get[String]("HTML").toOption.getOrElse("")
         html should include("cid:test-img")
         val inlineCount = detail.hcursor.downField("Inline").focus.flatMap(_.asArray).map(_.size).getOrElse(0)
         inlineCount shouldBe 1

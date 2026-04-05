@@ -9,15 +9,15 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.{AtomicInteger, AtomicReference}
 import scala.concurrent.duration.FiniteDuration
 
-/** A controllable Clock for tests — returns a fixed instant that can be advanced.
-  * For scheduler timing tests that need full IO time control, use cats-effect TestControl instead.
+/** A controllable Clock for tests — returns a fixed instant that can be advanced. For scheduler timing tests that need full IO time control, use
+  * cats-effect TestControl instead.
   */
 class TestClock(initial: Instant = Instant.now()) extends Clock[IO] {
   private val current = new AtomicReference[Instant](initial)
 
-  def advance(millis: Long): Unit  = { current.updateAndGet(_.plusMillis(millis)): Unit }
-  def set(instant: Instant): Unit  = current.set(instant)
-  def now: Instant                 = current.get()
+  def advance(millis: Long): Unit = { current.updateAndGet(_.plusMillis(millis)): Unit }
+  def set(instant: Instant): Unit = current.set(instant)
+  def now: Instant                = current.get()
 
   override def realTime: IO[FiniteDuration] =
     IO.pure(FiniteDuration(current.get().toEpochMilli, TimeUnit.MILLISECONDS))
@@ -40,5 +40,5 @@ class TestUUIDGen(uuids: UUID*) extends UUIDGen[IO] {
 
 object TestGivens {
   def fixedClock(at: Instant = Instant.now()): TestClock = new TestClock(at)
-  def deterministicUUIDs(uuids: UUID*): TestUUIDGen     = new TestUUIDGen(uuids*)
+  def deterministicUUIDs(uuids: UUID*): TestUUIDGen      = new TestUUIDGen(uuids*)
 }

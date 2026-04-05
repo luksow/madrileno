@@ -17,10 +17,7 @@ class RefreshTokenRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Mat
   private lazy val userRepo  = new UserRepository
   private lazy val tokenRepo = new RefreshTokenRepository
 
-  private def createUserAndToken(
-    usedAt: Option[Instant] = None,
-    deletedAt: Option[Instant] = None
-  ): DBInTransaction[(UserId, RefreshToken)] = {
+  private def createUserAndToken(usedAt: Option[Instant] = None, deletedAt: Option[Instant] = None): DBInTransaction[(UserId, RefreshToken)] = {
     val user  = TestData.user()
     val token = TestData.refreshToken(userId = user.id, usedAt = usedAt, deletedAt = deletedAt)
     for {

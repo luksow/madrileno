@@ -11,7 +11,7 @@ class JwtServiceSpec extends AnyWordSpec with Matchers {
   private val config  = JwtService.Config(secret = "test-secret-at-least-256-bits-long-for-hs256!!", validFor = Duration.ofMinutes(5))
   private val service = JwtService(config)
 
-  private val testUser = TestData.user()
+  private val testUser    = TestData.user()
   private val authContext = AuthContext(testUser)
 
   "JwtService" should {

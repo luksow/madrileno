@@ -22,8 +22,8 @@ import scala.concurrent.duration.*
 
 class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers with TestTransactor with TestMailpit {
 
-  private val testClock   = TestGivens.fixedClock()
-  private val testUUIDGen = TestGivens.deterministicUUIDs()
+  private val testClock       = TestGivens.fixedClock()
+  private val testUUIDGen     = TestGivens.deterministicUUIDs()
   given cats.effect.Clock[IO] = testClock
   given UUIDGen[IO]           = testUUIDGen
   given TelemetryContext      = TelemetryContext(Meter.noop[IO], Tracer.noop[IO], null)
@@ -49,11 +49,7 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
     (svc, token)
   }
 
-  private val command = AuthenticateWithFirebaseCommand(
-    FirebaseJwt("fake-token"),
-    UserAgent("test-agent"),
-    TestData.defaultIpAddress
-  )
+  private val command = AuthenticateWithFirebaseCommand(FirebaseJwt("fake-token"), UserAgent("test-agent"), TestData.defaultIpAddress)
 
   "authenticateWithFirebase" should {
     "create a new user on first login" in {
@@ -79,9 +75,13 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
 
     "return InvalidToken for failed Firebase verification" in {
       val failingService = new AuthenticationService(
-        userAuthRepo, refreshTokenRepo, userRepo,
+        userAuthRepo,
+        refreshTokenRepo,
+        userRepo,
         new FakeAuthVerifier(Left(new RuntimeException("Firebase error"))),
-        jwtService, transactor, mailer
+        jwtService,
+        transactor,
+        mailer
       )
       failingService.authenticateWithFirebase(command).map { result =>
         result shouldBe AuthenticationResult.InvalidToken
@@ -107,9 +107,9 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
         .run(oneTimeTasks = List(mailer.sendMailTask))
         .use { _ =>
           for {
-            _  <- IO(clearMailpit())
-            _  <- service.authenticateWithFirebase(command)
-            _  <- IO.sleep(3.seconds)
+            _ <- IO(clearMailpit())
+            _ <- service.authenticateWithFirebase(command)
+            _ <- IO.sleep(3.seconds)
           } yield ()
         }
         .map { _ =>
@@ -125,9 +125,9 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
       for {
         created <- service.authenticateWithFirebase(command)
         refreshTokenId = created match {
-          case AuthenticationResult.UserCreated(_, rt) => rt.id
-          case other                                   => fail(s"Expected UserCreated, got $other")
-        }
+                           case AuthenticationResult.UserCreated(_, rt) => rt.id
+                           case other                                   => fail(s"Expected UserCreated, got $other")
+                         }
         result <- service.authenticateWithRefreshToken(
                     AuthenticateWithRefreshTokenCommand(refreshTokenId, UserAgent("test-agent"), TestData.defaultIpAddress)
                   )
@@ -139,10 +139,10 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
       for {
         created <- service.authenticateWithFirebase(command)
         refreshTokenId = created match {
-          case AuthenticationResult.UserCreated(_, rt)   => rt.id
-          case AuthenticationResult.Authenticated(_, rt) => rt.id
-          case other                                     => fail(s"Unexpected: $other")
-        }
+                           case AuthenticationResult.UserCreated(_, rt)   => rt.id
+                           case AuthenticationResult.Authenticated(_, rt) => rt.id
+                           case other                                     => fail(s"Unexpected: $other")
+                         }
         _ <- service.authenticateWithRefreshToken(
                AuthenticateWithRefreshTokenCommand(refreshTokenId, UserAgent("test-agent"), TestData.defaultIpAddress)
              )

@@ -17,8 +17,8 @@ import scala.concurrent.duration.*
 
 class MailSerializationSpec extends AsyncWordSpec with AsyncIOSpec with Matchers with TestTransactor {
 
-  given Meter[IO]            = Meter.noop[IO]
-  given TelemetryContext     = TelemetryContext(Meter.noop[IO], Tracer.noop[IO], null)
+  given Meter[IO]        = Meter.noop[IO]
+  given TelemetryContext = TelemetryContext(Meter.noop[IO], Tracer.noop[IO], null)
 
   private val capturedMail = new AtomicReference[SerializedMail]()
 
