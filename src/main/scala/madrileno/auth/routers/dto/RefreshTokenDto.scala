@@ -8,7 +8,8 @@ case class RefreshTokenDto(
   id: RefreshTokenId,
   userAgent: UserAgent,
   ipAddress: String)
-    derives Encoder.AsObject
+    derives Encoder.AsObject,
+      Decoder
 
 object RefreshTokenDto {
   def apply(refreshToken: RefreshToken): RefreshTokenDto = {

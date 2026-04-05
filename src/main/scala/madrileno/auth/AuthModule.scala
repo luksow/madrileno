@@ -41,6 +41,8 @@ trait AuthModule extends RouteProvider with AuthRouteProvider with RecurringTask
       .build()
 
     FirebaseApp.initializeApp(options)
+  }.recover { case _: IllegalStateException =>
+    FirebaseApp.getInstance()
   }.fold(e => throw new RuntimeException("Failed to initialize Firebase", e), identity)
   private val firebaseAuth    = FirebaseAuth.getInstance(firebaseApp)
   private val firebaseService = wire[FirebaseService]

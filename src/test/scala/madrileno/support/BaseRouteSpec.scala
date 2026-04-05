@@ -7,7 +7,8 @@ import org.scalatest.funspec.AnyFunSpec
 import org.scalatest.matchers.should.Matchers
 import pl.iterators.baklava.http4s.BaklavaHttp4s
 import pl.iterators.baklava.scalatest.{BaklavaScalatest, ScalatestAsExecution}
-import pl.iterators.baklava.{HttpBearer, SecurityScheme}
+import pl.iterators.baklava.{HttpBearer, Schema, SchemaType, SecurityScheme}
+import madrileno.utils.http.Error
 import pl.iterators.kebs.baklava.params.KebsBaklavaParams
 import pl.iterators.kebs.baklava.params.enums.{KebsBaklavaEnumsParams, KebsBaklavaValueEnumsParams}
 import pl.iterators.kebs.baklava.schema.KebsBaklavaSchema
@@ -40,4 +41,24 @@ trait BaseRouteSpec
   // Shared auth helpers for route specs
   protected val bearer: HttpBearer           = HttpBearer(bearerFormat = "JWT")
   protected val bearerScheme: SecurityScheme = SecurityScheme("bearer", bearer)
+
+  // RFC 9457 error schema
+  given Schema[Error[Unit]] = new Schema[Error[Unit]] {
+    val className                          = "Error"
+    val `type`                             = SchemaType.ObjectType
+    val format                             = None
+    val properties: Map[String, Schema[?]] = Map(
+      "type"     -> Schema.stringSchema.withDescription("A URI reference identifying the problem type"),
+      "status"   -> Schema.intSchema.withDescription("HTTP status code"),
+      "title"    -> Schema.stringSchema.withDescription("Short human-readable summary"),
+      "detail"   -> Schema.optionSchema(Schema.stringSchema).withDescription("Human-readable explanation"),
+      "instance" -> Schema.optionSchema(Schema.stringSchema).withDescription("URI reference identifying the specific occurrence")
+    )
+    val items                  = None
+    val `enum`                 = None
+    val required               = true
+    val additionalProperties   = false
+    val default                = None
+    val description            = Some("RFC 9457 Problem Details error response")
+  }
 }

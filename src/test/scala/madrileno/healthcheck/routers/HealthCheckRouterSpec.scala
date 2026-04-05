@@ -2,14 +2,13 @@ package madrileno.healthcheck.routers
 
 import cats.effect.IO
 import madrileno.healthcheck.routers.dto.HealthCheckDto
-import madrileno.support.{BaseRouteSpec, TestApplicationLoader}
+import madrileno.support.{BaseRouteSpec, TestApplicationLoader, TestData}
 import madrileno.utils.json.JsonProtocol.*
 import org.http4s.*
 import org.http4s.Method.*
 import org.http4s.Status.*
 import org.http4s.circe.CirceEntityCodec.*
 import pl.iterators.stir.server.Route
-import madrileno.support.TestData
 
 class HealthCheckRouterSpec extends BaseRouteSpec with TestApplicationLoader {
   override def route: Route = application.routes

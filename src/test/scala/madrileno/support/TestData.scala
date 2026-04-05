@@ -1,9 +1,9 @@
 package madrileno.support
 
 import com.comcast.ip4s.IpAddress
-import madrileno.auth.domain.*
+import madrileno.auth.domain.{AuthContext, *}
 import madrileno.user.domain.*
-import madrileno.auth.domain.AuthContext
+
 import java.time.Instant
 import java.util.UUID
 

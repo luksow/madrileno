@@ -34,4 +34,22 @@ object Error {
         )
     }
   }
+
+  given Decoder[Error[Unit]] = new Decoder[Error[Unit]] {
+    def apply(c: io.circe.HCursor): Decoder.Result[Error[Unit]] = {
+      for {
+        tpe      <- c.downField("type").as[Option[String]]
+        status   <- c.downField("status").as[Option[Int]]
+        title    <- c.downField("title").as[Option[String]]
+        detail   <- c.downField("detail").as[Option[String]]
+        instance <- c.downField("instance").as[Option[String]]
+      } yield Error[Unit](
+        `type` = tpe.map(URI.create),
+        status = status.map(Status.fromInt(_).toOption).flatten,
+        title = title,
+        detail = detail,
+        instance = instance.map(URI.create)
+      )
+    }
+  }
 }
