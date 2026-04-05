@@ -13,7 +13,7 @@ import java.nio.charset.StandardCharsets.UTF_8
 import java.util.Base64
 import java.util.concurrent.CompletableFuture
 
-class FirebaseService(firebase: FirebaseAuth) {
+class FirebaseService(firebase: FirebaseAuth) extends ExternalAuthVerifier {
 
   def verifyToken(token: String): IO[Either[Throwable, VerifiedExternalToken]] =
     apiFutureToIO(firebase.verifyIdTokenAsync(token)).map { firebaseToken =>
