@@ -5,7 +5,7 @@ import cats.effect.{Clock, IO}
 import com.dimafeng.testcontainers.PostgreSQLContainer
 import com.dimafeng.testcontainers.scalatest.TestContainersForAll
 import madrileno.auth.domain.AuthContext
-import madrileno.auth.services.JwtService
+import madrileno.auth.services.{ExternalAuthVerifier, JwtService}
 import madrileno.main.ApplicationLoader
 import madrileno.utils.db.transactor.{PgConfig, PgTransactor}
 import madrileno.utils.observability.TelemetryContext
@@ -46,11 +46,14 @@ trait TestApplicationLoader extends TestContainersForAll with TestMailpit { self
     val config          = ConfigSource.default
     val schedulerConfig = SchedulerConfig()
     val scheduler       = Scheduler(transactor, schedulerConfig)
-    ApplicationLoader(config, httpClient, transactor, Clock[IO], scheduler.client)
+    new ApplicationLoader(config, httpClient, transactor, Clock[IO], scheduler.client) {
+      override protected lazy val externalAuthVerifier: ExternalAuthVerifier =
+        FakeAuthVerifier(TestData.verifiedExternalToken())
+    }
   }
 
   private val config                             = ConfigSource.default
   private val jwtConfig: JwtService.Config       = config.at("jwt").loadOrThrow[JwtService.Config]
-  private val jwtService                         = JwtService(jwtConfig)
+  val jwtService: JwtService                     = JwtService(jwtConfig)
   def validJwt(authContext: AuthContext): String = jwtService.encode(authContext, Instant.now()).unwrap
 }

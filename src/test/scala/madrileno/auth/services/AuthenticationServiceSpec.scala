@@ -44,7 +44,7 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
 
   private def serviceWithFreshAuth() = {
     val token = freshVerifiedToken()
-    val auth  = new FakeAuthVerifier(Right(token))
+    val auth  = new FakeAuthVerifier(token)
     val svc   = new AuthenticationService(userAuthRepo, refreshTokenRepo, userRepo, auth, jwtService, transactor, mailer)
     (svc, token)
   }
@@ -74,16 +74,9 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
     }
 
     "return InvalidToken for failed Firebase verification" in {
-      val failingService = new AuthenticationService(
-        userAuthRepo,
-        refreshTokenRepo,
-        userRepo,
-        new FakeAuthVerifier(Left(new RuntimeException("Firebase error"))),
-        jwtService,
-        transactor,
-        mailer
-      )
-      failingService.authenticateWithFirebase(command).map { result =>
+      val (service, _)        = serviceWithFreshAuth()
+      val invalidTokenCommand = command.copy(firebaseJwt = FirebaseJwt("invalid-token"))
+      service.authenticateWithFirebase(invalidTokenCommand).map { result =>
         result shouldBe AuthenticationResult.InvalidToken
       }
     }
