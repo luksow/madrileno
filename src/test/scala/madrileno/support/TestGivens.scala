@@ -1,7 +1,7 @@
 package madrileno.support
 
-import cats.effect.{Clock, IO}
 import cats.effect.std.UUIDGen
+import cats.effect.{Clock, IO}
 
 import java.time.Instant
 import java.util.UUID

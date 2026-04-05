@@ -26,7 +26,7 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
   private val testUUIDGen     = TestGivens.deterministicUUIDs()
   given cats.effect.Clock[IO] = testClock
   given UUIDGen[IO]           = testUUIDGen
-  given TelemetryContext      = TelemetryContext(Meter.noop[IO], Tracer.noop[IO], null)
+  given TelemetryContext      = TelemetryContext(Meter.noop[IO], Tracer.noop[IO], io.opentelemetry.api.OpenTelemetry.noop())
 
   private val jwtConfig  = JwtService.Config(secret = "test-secret-at-least-256-bits-long-for-hs256!!", validFor = Duration.ofMinutes(5))
   private val jwtService = JwtService(jwtConfig)

@@ -18,7 +18,7 @@ import scala.concurrent.duration.*
 class MailSerializationSpec extends AsyncWordSpec with AsyncIOSpec with Matchers with TestTransactor {
 
   given Meter[IO]        = Meter.noop[IO]
-  given TelemetryContext = TelemetryContext(Meter.noop[IO], Tracer.noop[IO], null)
+  given TelemetryContext = TelemetryContext(Meter.noop[IO], Tracer.noop[IO], io.opentelemetry.api.OpenTelemetry.noop())
 
   private val capturedMail = new AtomicReference[SerializedMail]()
 
@@ -51,8 +51,7 @@ class MailSerializationSpec extends AsyncWordSpec with AsyncIOSpec with Matchers
                  } yield ()
                }
       } yield {
-        val captured = capturedMail.get()
-        captured should not be null
+        val captured = Option(capturedMail.get()).getOrElse(fail("No mail was captured"))
         captured.to shouldBe List("user@example.com")
         captured.subject shouldBe "Test subject"
         captured.body match {
