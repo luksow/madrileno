@@ -33,6 +33,9 @@ libraryDependencies ++= {
   val jakartaMailV       = "2.1.3"
   val angusMailV         = "2.0.3"
   val scalatagsV         = "0.13.1"
+  val testcontainersV    = "0.43.0"
+  val baklavaV           = "1.0.2"
+  val flywayV            = "12.0.1"
   val scalatestV         = "3.2.20"
   Seq(
     "org.http4s"                      %% "http4s-ember-server"                       % http4sV,
@@ -77,6 +80,12 @@ libraryDependencies ++= {
     "com.lihaoyi"                     %% "scalatags"                                 % scalatagsV,
     "com.google.firebase"              % "firebase-admin"                            % firebaseV,
     "pl.iterators"                    %% "http4s-stir-testkit"                       % http4sStirV        % "test",
+    "pl.iterators"                    %% "baklava-http4s"                            % baklavaV           % "test",
+    "pl.iterators"                    %% "baklava-scalatest"                         % baklavaV           % "test",
+    "com.dimafeng"                    %% "testcontainers-scala-scalatest"            % testcontainersV    % "test",
+    "com.dimafeng"                    %% "testcontainers-scala-postgresql"           % testcontainersV    % "test",
+    "org.flywaydb"                     % "flyway-core"                              % flywayV            % "test",
+    "org.flywaydb"                     % "flyway-database-postgresql"               % flywayV            % "test",
     "org.scalatest"                   %% "scalatest"                                 % scalatestV         % "test",
     "org.typelevel"                   %% "cats-effect-testkit"                       % catsEffectV        % "test",
     "org.typelevel"                   %% "cats-effect-testing-scalatest"             % catsEffectTestingV % "test"
