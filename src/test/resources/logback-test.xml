@@ -1,0 +1,18 @@
+<configuration>
+  <appender name="Console" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder>
+      <pattern>%d{HH:mm:ss.SSS} %-5level %logger{36} - %msg%n</pattern>
+    </encoder>
+  </appender>
+
+  <!-- Silence noisy infrastructure -->
+  <logger name="org.testcontainers" level="WARN" />
+  <logger name="com.github.dockerjava" level="WARN" />
+  <logger name="docker.java" level="WARN" />
+  <logger name="tc" level="WARN" />
+  <logger name="org.apache.hc" level="WARN" />
+
+  <root level="DEBUG">
+    <appender-ref ref="Console" />
+  </root>
+</configuration>
