@@ -3,7 +3,7 @@ package madrileno.support
 import com.comcast.ip4s.IpAddress
 import madrileno.auth.domain.*
 import madrileno.user.domain.*
-
+import madrileno.auth.domain.AuthContext
 import java.time.Instant
 import java.util.UUID
 
@@ -11,6 +11,8 @@ object TestData {
   def randomUserId(): UserId                 = UserId(UUID.randomUUID())
   def randomRefreshTokenId(): RefreshTokenId = RefreshTokenId(UUID.randomUUID())
   def randomUserAuthId(): UserAuthId         = UserAuthId(UUID.randomUUID())
+
+  def authContext(): AuthContext = AuthContext(user = user())
 
   def user(
     id: UserId = randomUserId(),

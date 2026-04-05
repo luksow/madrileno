@@ -7,9 +7,9 @@ import madrileno.utils.json.JsonProtocol.*
 
 import scala.concurrent.duration.FiniteDuration
 
-final case class DbStatus(status: String, latency: Option[Long]) derives Encoder.AsObject
+final case class DbStatus(status: String, latency: Option[Long]) derives Encoder.AsObject, Decoder
 
-final case class ExternalConnectionStatus(status: String, ip: Option[String]) derives Encoder.AsObject
+final case class ExternalConnectionStatus(status: String, ip: Option[String]) derives Encoder.AsObject, Decoder
 
 final case class HealthCheckDto(
   name: String,
@@ -19,7 +19,8 @@ final case class HealthCheckDto(
   userId: Option[UserId],
   db: Option[DbStatus],
   externalConnection: Option[ExternalConnectionStatus])
-    derives Encoder.AsObject
+    derives Encoder.AsObject,
+      Decoder
 
 object HealthCheckDto {
   def apply(appConfig: AppConfig): HealthCheckDto = {
