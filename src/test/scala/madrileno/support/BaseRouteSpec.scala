@@ -51,14 +51,14 @@ trait BaseRouteSpec
       "type"     -> Schema.stringSchema.withDescription("A URI reference identifying the problem type"),
       "status"   -> Schema.intSchema.withDescription("HTTP status code"),
       "title"    -> Schema.stringSchema.withDescription("Short human-readable summary"),
-      "detail"   -> Schema.optionSchema(Schema.stringSchema).withDescription("Human-readable explanation"),
-      "instance" -> Schema.optionSchema(Schema.stringSchema).withDescription("URI reference identifying the specific occurrence")
+      "detail"   -> Schema.optionSchema(using Schema.stringSchema).withDescription("Human-readable explanation"),
+      "instance" -> Schema.optionSchema(using Schema.stringSchema).withDescription("URI reference identifying the specific occurrence")
     )
-    val items                = None
-    val `enum`               = None
-    val required             = true
-    val additionalProperties = false
-    val default              = None
-    val description: Option[String]          = Some("RFC 9457 Problem Details error response")
+    val items                       = None
+    val `enum`                      = None
+    val required                    = true
+    val additionalProperties        = false
+    val default                     = None
+    val description: Option[String] = Some("RFC 9457 Problem Details error response")
   }
 }

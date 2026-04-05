@@ -98,7 +98,7 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
         .assert { ctx =>
           val user         = TestData.user()
           val refreshToken = TestData.refreshToken(id = TestData.knownRefreshTokenId, userId = user.id)
-          application.transactor
+          val _ = application.transactor
             .inTransaction {
               application.userRepository.create(user) *>
                 new RefreshTokenRepository().save(refreshToken)
