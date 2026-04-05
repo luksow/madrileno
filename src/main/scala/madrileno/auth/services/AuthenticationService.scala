@@ -56,12 +56,12 @@ class AuthenticationService(
                       IdGenerator
                         .generateId(UserAuthId)
                         .map(id => UserAuth(id, user.id, verifiedToken))
-                    _ <- userRepository.save(user)
+                    _ <- userRepository.create(user)
                     _ <- userAuthRepository.save(userAuth)
                     _ <- logger.info(s"Created new user: $user with Firebase UID: ${verifiedToken.providerUserId}")
                     _ <- user.emailAddress.fold(IO.unit) { email =>
                            mailer
-                             .send(to = List(email.toString), template = WelcomeEmailTemplate(user.fullName), lang = Language.En)
+                             .sendTransactionally(to = List(email.toString), template = WelcomeEmailTemplate(user.fullName), lang = Language.En)
                              .void
                          }
                     tokens <- generateTokens(user.id, command.userAgent, command.ipAddress, AuthenticationResult.UserCreated.apply)
@@ -160,8 +160,8 @@ class AuthenticationService(
       user <- userRepository
                 .get(userId)
                 .ensure(_.isActive, AuthenticationResult.UserBlocked)
-      jwt = jwtService.encode(AuthContext(user))
-      now          <- Clock[IO].realTimeInstant.seal
+      now <- Clock[IO].realTimeInstant.seal
+      jwt = jwtService.encode(AuthContext(user), now)
       refreshToken <- IdGenerator.generateId(RefreshTokenId).map(id => RefreshToken.mint(id, now, user.id, userAgent, ipAddress)).seal
       _            <- refreshTokenRepository.save(refreshToken).seal
       _            <- logger.debug(s"Generated JWT: $jwt and RefreshToken: $refreshToken for user: $userId").seal

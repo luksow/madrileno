@@ -25,9 +25,9 @@ case class UserRow(
     this.into[User].transform
   }
 
-  def update(user: User): UserRow = {
+  def update(user: User, now: Instant): UserRow = {
     import io.scalaland.chimney.dsl.*
-    this.patchUsing(user)
+    this.patchUsing(user).copy(updatedAt = now)
   }
 }
 
@@ -59,37 +59,33 @@ object UserRowTable extends Table[UserRow]("\"user\"") with IdTable[UserRow, Use
 }
 
 case class UserRowFilter(
-  id: SqlPredicate[UserId],
-  emailAddress: SqlPredicate[Option[EmailAddress]],
-  emailVerified: SqlPredicate[Boolean],
-  deletedAt: SqlPredicate[Instant])
+  id: SqlPredicate[UserId] = p.any,
+  emailAddress: SqlPredicate[Option[EmailAddress]] = p.any,
+  emailVerified: SqlPredicate[Boolean] = p.any,
+  deletedAt: SqlPredicate[Instant] = p.any)
     extends SqlFilter {
-  override def filterFragment: AppliedFragment = fromPredicatesAndSeparator(
-    (
-      id            -> UserRowTable.id,
-      emailAddress  -> UserRowTable.emailAddress,
-      emailVerified -> UserRowTable.emailVerified,
-      deletedAt     -> UserRowTable.deletedAt
-    ),
-    SqlAnd
-  )
+  override def filterFragment: AppliedFragment =
+    SqlFilterDerivation.filterFragment(this, (UserRowTable.id, UserRowTable.emailAddress, UserRowTable.emailVerified, UserRowTable.deletedAt))
 }
 
 class UserRepository(using Clock[IO]) {
-  def save(user: User): DB[User] = {
+  def create(user: User): DB[User] = {
     Clock[IO].realTimeInstant.flatMap { now =>
       val row = UserRow(user, now)
       repository.create(row).as(row.toUser)
     }
   }
 
-  def get(id: UserId): DB[User] = {
-    repository.getById(id).map(_.toUser)
-  }
+  def find(id: UserId): DB[Option[User]] =
+    repository.findById(id).map(_.map(_.toUser))
 
-  def update(id: UserId, f: User => User): DB[Unit] = {
-    repository.updateById(id, userRow => userRow.update(f(userRow.toUser)))
-  }
+  def get(id: UserId): DB[User] =
+    repository.getById(id).map(_.toUser)
+
+  def update(id: UserId, f: User => User): DB[Unit] =
+    Clock[IO].realTimeInstant.flatMap { now =>
+      repository.updateById(id, userRow => userRow.update(f(userRow.toUser), now))
+    }
 
   private val repository: IdRepository[UserRow, UserId] & SoftDeleteRepository[UserRow, UserId] & FilteringRepository[UserRow, UserRowFilter] =
     new IdRepository[UserRow, UserId](_.id) with SoftDeleteRepository[UserRow, UserId] with FilteringRepository[UserRow, UserRowFilter] {

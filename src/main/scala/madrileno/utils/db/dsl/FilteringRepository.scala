@@ -5,6 +5,11 @@ import skunk.*
 import skunk.codec.all.*
 import skunk.implicits.*
 
+import scala.compiletime.*
+import scala.deriving.Mirror
+
+private val TrueFragment: AppliedFragment = sql"1=1" (Void)
+private val AndFragment: AppliedFragment  = sql" AND " (Void)
 trait SqlFilter {
   protected given conv[A]: Conversion[(SqlPredicate[A], Column[A]), AppliedFragment] = (pair: (SqlPredicate[A], Column[A])) => {
     pair._1.toAppliedFragment(pair._2.copy(codec = pair._2.codec.opt))
@@ -26,15 +31,12 @@ trait SqlFilter {
     tFrag: TupleFragments[T]
   ): TupleFragments[H *: T] = (t: H *: T) => hConv(t.head) :: tFrag.toList(t.tail)
 
-  protected def fromPredicatesAndSeparator[T <: Tuple](tuple: T, sep: AppliedFragment)(using tf: TupleFragments[T]): AppliedFragment = {
+  protected def fromPredicates[T <: Tuple](tuple: T)(using tf: TupleFragments[T]): AppliedFragment = {
     tf.toList(tuple) match {
-      case Nil       => sql"True" (Void)
-      case h :: tail => tail.foldLeft(h)((acc, frag) => acc |+| sep |+| frag)
+      case Nil       => sql"1=1" (Void)
+      case h :: tail => tail.foldLeft(h)((acc, frag) => acc |+| AndFragment |+| frag)
     }
   }
-
-  protected val SqlAnd: AppliedFragment = SqlFilter.And
-  protected val SqlOr: AppliedFragment  = SqlFilter.Or
 
   def filterFragment: AppliedFragment
 
@@ -59,9 +61,32 @@ trait SqlFilter {
   }
 }
 
-object SqlFilter {
-  val And: AppliedFragment = sql" AND " (Void)
-  val Or: AppliedFragment  = sql" OR " (Void)
+object SqlFilterDerivation {
+  trait ColumnPairing[Pred, Col] {
+    def toFragment(pred: Pred, col: Col): AppliedFragment
+  }
+
+  given pairWithColumn[A]: ColumnPairing[SqlPredicate[A], Column[A]] = (pred, col) => pred.toAppliedFragment(col.copy(codec = col.codec.opt))
+
+  given pairWithOptColumn[A]: ColumnPairing[SqlPredicate[A], Column[Option[A]]] = (pred, col) => pred.toAppliedFragment(col)
+
+  inline def buildFragments[Preds <: Tuple, Cols <: Tuple](preds: Preds, cols: Cols): List[AppliedFragment] =
+    inline erasedValue[(Preds, Cols)] match {
+      case _: (EmptyTuple, EmptyTuple) => Nil
+      case _: (ph *: pt, ch *: ct) =>
+        val pairing = summonInline[ColumnPairing[ph, ch]]
+        val p       = preds.asInstanceOf[ph *: pt] // scalafix:ok DisableSyntax.asInstanceOf
+        val c       = cols.asInstanceOf[ch *: ct] // scalafix:ok DisableSyntax.asInstanceOf
+        pairing.toFragment(p.head, c.head) :: buildFragments[pt, ct](p.tail, c.tail)
+    }
+
+  inline def filterFragment[F <: Product, Cols <: Tuple](filter: F, columns: Cols)(using m: Mirror.ProductOf[F]): AppliedFragment = {
+    val fragments = buildFragments[m.MirroredElemTypes, Cols](Tuple.fromProductTyped(filter), columns)
+    fragments match {
+      case Nil       => TrueFragment
+      case h :: tail => tail.foldLeft(h)((acc, frag) => acc |+| AndFragment |+| frag)
+    }
+  }
 }
 
 trait SqlPredicate[A] {

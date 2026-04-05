@@ -31,12 +31,11 @@ class JwtService(config: JwtService.Config) {
 
   def encode[A](
     payload: A,
+    now: Instant,
     issuer: Option[String] = None,
     subject: Option[String] = None,
     audience: Option[Set[String]] = None,
-    expiresAt: Option[Instant] = None,
     notBefore: Option[Instant] = None,
-    issuedAt: Option[Instant] = None,
     jti: Option[String] = None
   )(using encoder: Encoder[A]
   ): InternalJwt = {
@@ -47,9 +46,9 @@ class JwtService(config: JwtService.Config) {
           issuer = issuer,
           subject = subject,
           audience = audience,
-          expiration = expiresAt.map(_.getEpochSecond()),
-          notBefore = notBefore.map(_.getEpochSecond()),
-          issuedAt = issuedAt.map(_.getEpochSecond()),
+          expiration = Some(now.plus(config.validFor).getEpochSecond),
+          notBefore = notBefore.map(_.getEpochSecond),
+          issuedAt = Some(now.getEpochSecond),
           jwtId = jti
         ),
         config.secret,

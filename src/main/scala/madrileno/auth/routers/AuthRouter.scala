@@ -18,20 +18,25 @@ class AuthRouter(authenticationService: AuthenticationService)(using TelemetryCo
         userAgent,
         ipAddress
       ) =>
-        complete {
-          val command = AuthenticateWithFirebaseCommand(
-            request.firebaseJwtToken,
-            UserAgent(userAgent.getOrElse("Unknown")),
-            ipAddress.getOrElse(throw new IllegalArgumentException("Could not establish request's IP address"))
-          )
-          authenticationService
-            .authenticateWithFirebase(command)
-            .map[ToResponseMarshallable] {
-              case AuthenticationResult.Authenticated(jwt, rt) => Ok      -> AuthenticatedResponse(jwt, rt.id)
-              case AuthenticationResult.UserCreated(jwt, rt)   => Created -> AuthenticatedResponse(jwt, rt.id)
-              case AuthenticationResult.UserBlocked            => error(Locked, "user-blocked", "User is blocked")
-              case AuthenticationResult.InvalidToken           => error(Unauthorized, "invalid-token", "Invalid Firebase token")
+        ipAddress match {
+          case Some(ip) =>
+            complete {
+              val command = AuthenticateWithFirebaseCommand(
+                request.firebaseJwtToken,
+                UserAgent(userAgent.getOrElse("Unknown")),
+                ip
+              )
+              authenticationService
+                .authenticateWithFirebase(command)
+                .map[ToResponseMarshallable] {
+                  case AuthenticationResult.Authenticated(jwt, rt) => Ok      -> AuthenticatedResponse(jwt, rt.id)
+                  case AuthenticationResult.UserCreated(jwt, rt)   => Created -> AuthenticatedResponse(jwt, rt.id)
+                  case AuthenticationResult.UserBlocked            => error(Locked, "user-blocked", "User is blocked")
+                  case AuthenticationResult.InvalidToken           => error(Unauthorized, "invalid-token", "Invalid Firebase token")
+                }
             }
+          case None =>
+            complete(error(BadRequest, "missing-ip", "Could not establish request's IP address"))
         }
     } ~
       (post & path("auth" / "refresh-token") & entity(as[AuthWithRefreshTokenRequest]) & pathEndOrSingleSlash & optionalHeaderValueByName(
@@ -42,20 +47,25 @@ class AuthRouter(authenticationService: AuthenticationService)(using TelemetryCo
           userAgent,
           ipAddress
         ) =>
-          complete {
-            val command = AuthenticateWithRefreshTokenCommand(
-              request.refreshToken,
-              UserAgent(userAgent.getOrElse("Unknown")),
-              ipAddress.getOrElse(throw new IllegalArgumentException("Could not establish request's IP address"))
-            )
-            authenticationService
-              .authenticateWithRefreshToken(command)
-              .map[ToResponseMarshallable] {
-                case AuthenticationResult.Authenticated(jwt, rt) => Ok      -> AuthenticatedResponse(jwt, rt.id)
-                case AuthenticationResult.UserCreated(jwt, rt)   => Created -> AuthenticatedResponse(jwt, rt.id)
-                case AuthenticationResult.UserBlocked            => error(Locked, "user-blocked", "User is blocked")
-                case AuthenticationResult.InvalidToken           => error(Unauthorized, "invalid-token", "Invalid refresh token")
+          ipAddress match {
+            case Some(ip) =>
+              complete {
+                val command = AuthenticateWithRefreshTokenCommand(
+                  request.refreshToken,
+                  UserAgent(userAgent.getOrElse("Unknown")),
+                  ip
+                )
+                authenticationService
+                  .authenticateWithRefreshToken(command)
+                  .map[ToResponseMarshallable] {
+                    case AuthenticationResult.Authenticated(jwt, rt) => Ok      -> AuthenticatedResponse(jwt, rt.id)
+                    case AuthenticationResult.UserCreated(jwt, rt)   => Created -> AuthenticatedResponse(jwt, rt.id)
+                    case AuthenticationResult.UserBlocked            => error(Locked, "user-blocked", "User is blocked")
+                    case AuthenticationResult.InvalidToken           => error(Unauthorized, "invalid-token", "Invalid refresh token")
+                  }
               }
+            case None =>
+              complete(error(BadRequest, "missing-ip", "Could not establish request's IP address"))
           }
       }
   }
