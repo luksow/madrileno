@@ -37,6 +37,8 @@ class SchedulerIntegrationSpec extends AsyncWordSpec with AsyncIOSpec with Match
       for {
         onceCounter      <- Ref.of[IO, Int](0)
         recurringCounter <- Ref.of[IO, Int](0)
+        fixedRateCounter <- Ref.of[IO, Int](0)
+        cronCounter      <- Ref.of[IO, Int](0)
         retryCounter     <- Ref.of[IO, Int](0)
         payloadRef       <- Ref.of[IO, Int](0)
         customPayloadRef <- Ref.of[IO, String]("")
@@ -46,9 +48,17 @@ class SchedulerIntegrationSpec extends AsyncWordSpec with AsyncIOSpec with Match
         onceDescriptor = TaskDescriptor[Unit]("test-once")
         onceTask       = Task.oneTime(onceDescriptor) { _ => onceCounter.update(_ + 1) }
 
-        recurringTask = Task.recurring("test-recurring", Schedule.RecurringWithFixedDelay(200.millis)) { _ =>
-                          recurringCounter.update(_ + 1)
+        recurringDelayTask = Task.recurring("test-recurring-delay", Schedule.RecurringWithFixedDelay(200.millis)) { _ =>
+                               recurringCounter.update(_ + 1)
+                             }
+
+        fixedRateTask = Task.recurring("test-fixed-rate", Schedule.RecurringWithFixedRate(200.millis)) { _ =>
+                          fixedRateCounter.update(_ + 1)
                         }
+
+        cronTask = Task.recurring("test-cron", Schedule.Cron(CronExpression.unsafeParse("* * * ? * *"))) { _ =>
+                     cronCounter.update(_ + 1)
+                   }
 
         retryDescriptor = TaskDescriptor[Unit]("test-retry")
         retryTask = Task.oneTime(retryDescriptor) { _ =>
@@ -78,7 +88,11 @@ class SchedulerIntegrationSpec extends AsyncWordSpec with AsyncIOSpec with Match
 
         results <-
           scheduler
-            .run(recurringTasks = List(recurringTask, payloadTask), oneTimeTasks = List(onceTask, retryTask, txTask), customTasks = List(customTask))
+            .run(
+              recurringTasks = List(recurringDelayTask, fixedRateTask, cronTask, payloadTask),
+              oneTimeTasks = List(onceTask, retryTask, txTask),
+              customTasks = List(customTask)
+            )
             .use { _ =>
               for {
                 _ <- client.schedule(onceTask.instance("exec-once", ()))
@@ -88,17 +102,22 @@ class SchedulerIntegrationSpec extends AsyncWordSpec with AsyncIOSpec with Match
 
                 onceResult      <- waitFor(onceCounter, 1)
                 recurringResult <- waitFor(recurringCounter, 3)
+                fixedRateResult <- waitFor(fixedRateCounter, 3)
+                cronResult      <- waitFor(cronCounter, 2)
                 retryResult     <- waitFor(retryCounter, 3, timeout = 10.seconds)
                 payloadResult   <- waitFor(payloadRef, 3)
                 customResult    <- waitFor(customCounter, 3, timeout = 10.seconds)
                 txResult        <- waitFor(txCounter, 1)
                 lastPayload     <- customPayloadRef.get
-              } yield (onceResult, recurringResult, retryResult, payloadResult, customResult, txResult, lastPayload)
+              } yield (onceResult, recurringResult, fixedRateResult, cronResult, retryResult, payloadResult, customResult, txResult, lastPayload)
             }
       } yield {
-        val (onceResult, recurringResult, retryResult, payloadResult, customResult, txResult, lastCustomPayload) = results
+        val (onceResult, recurringResult, fixedRateResult, cronResult, retryResult, payloadResult, customResult, txResult, lastCustomPayload) =
+          results
         onceResult shouldBe 1
         recurringResult should be >= 3
+        fixedRateResult should be >= 3
+        cronResult should be >= 2
         retryResult shouldBe 3
         payloadResult should be >= 3
         customResult shouldBe 3
