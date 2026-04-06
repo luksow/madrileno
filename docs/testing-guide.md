@@ -207,7 +207,7 @@ case class AuthWithFirebaseRequest(firebaseJwtToken: FirebaseJwt) derives Decode
 
 Real SMTP delivery via Mailpit container. Extend `AsyncWordSpec with AsyncIOSpec with Matchers with TestMailpit`.
 
-**What belongs here:** verifying actual MIME structure — plain text, HTML, multipart/alternative, attachments, inline images. Use `getMailpitMessages` and `getMailpitMessage(id)` to inspect delivered mail via Mailpit's REST API.
+**What belongs here:** verifying actual MIME structure — plain text, HTML, multipart/alternative, attachments, inline images. Use `getMessages` and `getMessage(id)` to inspect delivered mail via Mailpit's REST API.
 
 Delivery timing (`at`/`in` parameters) is a scheduler concern, not SMTP. Test delay semantics in scheduler integration tests with a controllable clock.
 

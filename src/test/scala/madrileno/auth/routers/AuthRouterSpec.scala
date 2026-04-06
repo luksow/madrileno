@@ -1,7 +1,7 @@
 package madrileno.auth.routers
 
 import cats.effect.IO
-import madrileno.auth.domain.{AuthContext, FirebaseJwt}
+import madrileno.auth.domain.{AuthContext, FirebaseJwt, UserAgent}
 import madrileno.auth.repositories.RefreshTokenRepository
 import madrileno.auth.routers.dto.{AuthWithFirebaseRequest, AuthWithRefreshTokenRequest, AuthenticatedResponse, RefreshTokenDto}
 import madrileno.auth.services.JwtService
@@ -150,10 +150,10 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
       description = "Revoke sessions by user agent",
       summary = "Revoke all refresh tokens for a given user agent",
       securitySchemes = Seq(bearerScheme),
-      queryParameters = q[String]("user-agent"),
+      queryParameters = q[UserAgent]("user-agent"),
       tags = Seq("Auth")
     )(
-      onRequest(security = bearer.apply(validJwt(TestData.authContext())), queryParameters = "test-agent")
+      onRequest(security = bearer.apply(validJwt(TestData.authContext())), queryParameters = UserAgent("test-agent"))
         .respondsWith[EmptyBody](NoContent, description = "Sessions revoked")
         .assert { ctx =>
           ctx.performRequest(allRoutes)
@@ -167,10 +167,10 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
       description = "Revoke a specific session",
       summary = "Revoke a refresh token by its ID",
       securitySchemes = Seq(bearerScheme),
-      pathParameters = p[String]("sessionId"),
+      pathParameters = p[UUID]("sessionId"),
       tags = Seq("Auth")
     )(
-      onRequest(security = bearer.apply(validJwt(TestData.authContext())), pathParameters = UUID.randomUUID().toString)
+      onRequest(security = bearer.apply(validJwt(TestData.authContext())), pathParameters = UUID.randomUUID())
         .respondsWith[EmptyBody](NoContent, description = "Session revoked")
         .assert { ctx =>
           ctx.performRequest(allRoutes)

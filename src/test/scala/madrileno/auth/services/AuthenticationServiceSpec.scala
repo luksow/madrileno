@@ -100,7 +100,7 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
         .run(oneTimeTasks = List(mailer.sendMailTask))
         .use { _ =>
           for {
-            _        <- IO(clearMailpit())
+            _        <- clearMailpit()
             _        <- service.authenticateWithFirebase(command)
             messages <- waitForMail(_.exists(_.subject.contains("Welcome")))
           } yield messages

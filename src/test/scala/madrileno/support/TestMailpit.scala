@@ -39,11 +39,11 @@ trait TestMailpit extends BeforeAndAfterAll { self: Suite =>
 
   private def apiUrl: String = s"http://${mailpitContainer.host}:${mailpitContainer.mappedPort(8025)}/api/v1"
 
-  def clearMailpit(): Unit = {
+  def clearMailpit(): IO[Unit] = IO.blocking {
     val _ = quickRequest.delete(uri"$apiUrl/messages").send()
   }
 
-  def getMessages: Seq[MailpitMessage] = {
+  def getMessages: IO[Seq[MailpitMessage]] = IO.blocking {
     val response = quickRequest.get(uri"$apiUrl/messages").send()
     val json     = io.circe.parser.parse(response.body).getOrElse(Json.Null)
     json.hcursor
@@ -56,7 +56,7 @@ trait TestMailpit extends BeforeAndAfterAll { self: Suite =>
       }
   }
 
-  def getMessage(id: String): MailpitMessageDetail = {
+  def getMessage(id: String): IO[MailpitMessageDetail] = IO.blocking {
     val response = quickRequest.get(uri"$apiUrl/message/$id").send()
     val json     = io.circe.parser.parse(response.body).getOrElse(Json.Null)
     MailpitMessageDetail(
@@ -73,12 +73,12 @@ trait TestMailpit extends BeforeAndAfterAll { self: Suite =>
     timeout: FiniteDuration = 5.seconds,
     interval: FiniteDuration = 100.millis
   ): IO[Seq[MailpitMessage]] = {
-    def poll(remaining: FiniteDuration): IO[Seq[MailpitMessage]] = {
-      val messages = getMessages
-      if (condition(messages)) IO.pure(messages)
-      else if (remaining <= Duration.Zero) IO.raiseError(new RuntimeException("Timed out waiting for mail in Mailpit"))
-      else IO.sleep(interval) *> poll(remaining - interval)
-    }
+    def poll(remaining: FiniteDuration): IO[Seq[MailpitMessage]] =
+      getMessages.flatMap { messages =>
+        if (condition(messages)) IO.pure(messages)
+        else if (remaining <= Duration.Zero) IO.raiseError(new RuntimeException("Timed out waiting for mail in Mailpit"))
+        else IO.sleep(interval) *> poll(remaining - interval)
+      }
     poll(timeout)
   }
 }
