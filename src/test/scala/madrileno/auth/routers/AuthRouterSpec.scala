@@ -40,6 +40,12 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
       onRequest(body = AuthWithFirebaseRequest(FirebaseJwt("test-token")), headers = "127.0.0.1")
         .respondsWith[AuthenticatedResponse](Ok, description = "Authenticated existing user")
         .assert { ctx =>
+          // Ensure user exists before testing the "existing user" path
+          val setupRequest = Request[IO](Method.POST, Uri.unsafeFromString("/v1/auth/firebase"))
+            .withEntity(AuthWithFirebaseRequest(FirebaseJwt("test-token")))
+            .putHeaders("X-Forwarded-For" -> "127.0.0.1")
+          val _ = allRoutes.orNotFound.run(setupRequest).unsafeRunSync()
+
           val response = ctx.performRequest(allRoutes)
           response.body.jwt.toString should not be empty
           response.body.refreshToken.toString should not be empty
@@ -67,6 +73,13 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
 
           val response = ctx.performRequest(allRoutes)
           response.body.title shouldBe Some("User is blocked")
+
+          // Unblock the user so subsequent tests aren't poisoned
+          application.transactor
+            .inTransaction {
+              application.userRepository.update(userId, _.copy(blockedAt = None))
+            }
+            .unsafeRunSync()
         },
       onRequest(body = AuthWithFirebaseRequest(FirebaseJwt("invalid-token")), headers = "127.0.0.1")
         .respondsWith[Error[Unit]](Unauthorized, description = "Invalid Firebase token")

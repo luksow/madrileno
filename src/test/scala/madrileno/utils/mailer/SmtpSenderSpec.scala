@@ -16,9 +16,9 @@ class SmtpSenderSpec extends AsyncWordSpec with AsyncIOSpec with Matchers with T
         SerializedMail(to = List("user@example.com"), subject = "Plain text test", body = SerializedMailBody.Text("Hello, this is plain text."))
 
       sender.send(mail).map { _ =>
-        val messages = getMailpitMessages
-        messages.hcursor.get[Int]("messages_count").getOrElse(0) shouldBe 1
-        messages.hcursor.downField("messages").downArray.get[String]("Subject").toOption.get shouldBe "Plain text test"
+        val messages = getMessages
+        messages should have size 1
+        messages.head.subject shouldBe "Plain text test"
       }
     }
 
@@ -31,11 +31,9 @@ class SmtpSenderSpec extends AsyncWordSpec with AsyncIOSpec with Matchers with T
       )
 
       sender.send(mail).map { _ =>
-        val id     = getMailpitMessages.hcursor.downField("messages").downArray.get[String]("ID").toOption.get
-        val detail = getMailpitMessage(id)
-        val html   = detail.hcursor.get[String]("HTML").toOption.getOrElse("")
-        html should include("<h1>Hello</h1>")
-        html should include("<p>World</p>")
+        val detail = getMessage(getMessages.head.id)
+        detail.html should include("<h1>Hello</h1>")
+        detail.html should include("<p>World</p>")
       }
     }
 
@@ -48,10 +46,9 @@ class SmtpSenderSpec extends AsyncWordSpec with AsyncIOSpec with Matchers with T
       )
 
       sender.send(mail).map { _ =>
-        val id     = getMailpitMessages.hcursor.downField("messages").downArray.get[String]("ID").toOption.get
-        val detail = getMailpitMessage(id)
-        detail.hcursor.get[String]("HTML").toOption.getOrElse("") should include("<b>HTML version</b>")
-        detail.hcursor.get[String]("Text").toOption.getOrElse("") should include("Plain version")
+        val detail = getMessage(getMessages.head.id)
+        detail.html should include("<b>HTML version</b>")
+        detail.text should include("Plain version")
       }
     }
 
@@ -65,10 +62,8 @@ class SmtpSenderSpec extends AsyncWordSpec with AsyncIOSpec with Matchers with T
       )
 
       sender.send(mail).map { _ =>
-        val id          = getMailpitMessages.hcursor.downField("messages").downArray.get[String]("ID").toOption.get
-        val detail      = getMailpitMessage(id)
-        val attachments = detail.hcursor.downField("Attachments").focus.flatMap(_.asArray).map(_.size).getOrElse(0)
-        attachments shouldBe 1
+        val detail = getMessage(getMessages.head.id)
+        detail.attachmentCount shouldBe 1
       }
     }
 
@@ -83,12 +78,9 @@ class SmtpSenderSpec extends AsyncWordSpec with AsyncIOSpec with Matchers with T
       )
 
       sender.send(mail).map { _ =>
-        val id     = getMailpitMessages.hcursor.downField("messages").downArray.get[String]("ID").toOption.get
-        val detail = getMailpitMessage(id)
-        val html   = detail.hcursor.get[String]("HTML").toOption.getOrElse("")
-        html should include("cid:test-img")
-        val inlineCount = detail.hcursor.downField("Inline").focus.flatMap(_.asArray).map(_.size).getOrElse(0)
-        inlineCount shouldBe 1
+        val detail = getMessage(getMessages.head.id)
+        detail.html should include("cid:test-img")
+        detail.inlineCount shouldBe 1
       }
     }
 
@@ -102,7 +94,7 @@ class SmtpSenderSpec extends AsyncWordSpec with AsyncIOSpec with Matchers with T
       )
 
       sender.send(mail).map { _ =>
-        mailpitMessageCount shouldBe 1
+        getMessages should have size 1
       }
     }
   }

@@ -36,6 +36,7 @@ trait TestTransactor extends TestContainersForAll { self: Suite =>
       database = container.databaseName,
       password = Some(container.password)
     )
+    // Finalizer intentionally discarded — Testcontainers kills the PG container on JVM exit
     PgTransactor.resource(pgConfig).allocated.unsafeRunSync()._1
   }
 

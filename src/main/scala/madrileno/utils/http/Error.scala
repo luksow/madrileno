@@ -35,21 +35,31 @@ object Error {
     }
   }
 
+  private def decodeURI(s: String, field: String): Decoder.Result[URI] =
+    try Right(URI.create(s))
+    catch { case e: IllegalArgumentException => Left(io.circe.DecodingFailure(s"Invalid URI in '$field': ${e.getMessage}", Nil)) }
+
+  private def decodeStatus(code: Int): Decoder.Result[Status] =
+    Status.fromInt(code).left.map(e => io.circe.DecodingFailure(s"Invalid status code: ${e.message}", Nil))
+
+  private def traverseOpt[A, B](opt: Option[A])(f: A => Decoder.Result[B]): Decoder.Result[Option[B]] =
+    opt match {
+      case Some(a) => f(a).map(Some(_))
+      case None    => Right(None)
+    }
+
   given Decoder[Error[Unit]] = new Decoder[Error[Unit]] {
     def apply(c: io.circe.HCursor): Decoder.Result[Error[Unit]] = {
       for {
         tpe      <- c.downField("type").as[Option[String]]
+        tpeUri   <- traverseOpt(tpe)(decodeURI(_, "type"))
         status   <- c.downField("status").as[Option[Int]]
+        statusV  <- traverseOpt(status)(decodeStatus)
         title    <- c.downField("title").as[Option[String]]
         detail   <- c.downField("detail").as[Option[String]]
         instance <- c.downField("instance").as[Option[String]]
-      } yield Error[Unit](
-        `type` = tpe.map(URI.create),
-        status = status.map(Status.fromInt(_).toOption).flatten,
-        title = title,
-        detail = detail,
-        instance = instance.map(URI.create)
-      )
+        instUri  <- traverseOpt(instance)(decodeURI(_, "instance"))
+      } yield Error[Unit](`type` = tpeUri, status = statusV, title = title, detail = detail, instance = instUri)
     }
   }
 }

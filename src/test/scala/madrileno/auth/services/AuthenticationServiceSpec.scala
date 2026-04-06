@@ -100,14 +100,13 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
         .run(oneTimeTasks = List(mailer.sendMailTask))
         .use { _ =>
           for {
-            _ <- IO(clearMailpit())
-            _ <- service.authenticateWithFirebase(command)
-            _ <- IO.sleep(3.seconds)
-          } yield ()
+            _        <- IO(clearMailpit())
+            _        <- service.authenticateWithFirebase(command)
+            messages <- waitForMail(_.exists(_.subject.contains("Welcome")))
+          } yield messages
         }
-        .map { _ =>
-          val subject = getMailpitMessages.hcursor.downField("messages").downArray.get[String]("Subject").toOption.getOrElse("")
-          subject should include("Welcome")
+        .map { messages =>
+          messages.head.subject should include("Welcome")
         }
     }
   }

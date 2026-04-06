@@ -27,14 +27,18 @@ class JwtServiceSpec extends AnyWordSpec with Matchers {
     }
 
     "set expiration based on validFor config" in {
-      val now = Instant.now()
-      val jwt = service.encode(authContext, now)
+      val now         = Instant.now()
+      val jwt         = service.encode(authContext, now)
+      val expectedExp = now.plus(config.validFor).getEpochSecond
 
-      // Token should be valid at now + 4 minutes
-      service.decode[AuthContext](jwt.toString) match {
-        case JwtService.DecodingResult.Decoded(_) => succeed
-        case other                                => fail(s"Expected Decoded at now, got $other")
+      val parts       = jwt.toString.split('.')
+      val payloadJson = new String(java.util.Base64.getUrlDecoder.decode(parts(1)), java.nio.charset.StandardCharsets.UTF_8)
+      val exp = io.circe.parser.parse(payloadJson).flatMap(_.hcursor.get[Long]("exp")) match {
+        case Right(value) => value
+        case Left(error)  => fail(s"Failed to parse exp claim: $error")
       }
+
+      exp shouldBe expectedExp
     }
 
     "reject an expired token" in {

@@ -22,6 +22,7 @@ class TestClock(initial: Instant = Instant.now()) extends Clock[IO] {
   override def realTime: IO[FiniteDuration] =
     IO.pure(FiniteDuration(current.get().toEpochMilli, TimeUnit.MILLISECONDS))
 
+  // Note: aliases realTime — monotonic guarantee is violated if set() goes backwards
   override def monotonic: IO[FiniteDuration] = realTime
 
   override def applicative: cats.Applicative[IO] = cats.effect.IO.asyncForIO
@@ -34,7 +35,7 @@ class TestUUIDGen(uuids: UUID*) extends UUIDGen[IO] {
   override def randomUUID: IO[UUID] = IO {
     val i = index.getAndIncrement()
     if (i < uuids.length) uuids(i)
-    else UUID.nameUUIDFromBytes(s"test-uuid-$i".getBytes)
+    else UUID.nameUUIDFromBytes(s"test-uuid-$i".getBytes(java.nio.charset.StandardCharsets.UTF_8))
   }
 }
 

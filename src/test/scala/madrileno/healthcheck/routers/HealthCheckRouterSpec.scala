@@ -28,7 +28,7 @@ class HealthCheckRouterSpec extends BaseRouteSpec with TestApplicationLoader {
     supports(
       GET,
       description = "Health check endpoint (authenticated)",
-      summary = "Returns application info with DB and external connection status",
+      summary = "Returns application info with DB status",
       securitySchemes = Seq(bearerScheme),
       tags = Seq("Health Check")
     )(

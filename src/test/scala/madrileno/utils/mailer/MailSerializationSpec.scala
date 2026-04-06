@@ -41,28 +41,34 @@ class MailSerializationSpec extends AsyncWordSpec with AsyncIOSpec with Matchers
           body = MailBody.Html(html(body(h1("Hello"), p("World ", strong("bold")), stA(href := ctx.baseUrl.toString)("Link"))))
         )
 
-      for {
-        _ <- scheduler
-               .run(oneTimeTasks = List(mailer.sendMailTask))
-               .use { _ =>
-                 for {
-                   _ <- mailer.send(to = List("user@example.com"), template = template, lang = Language.En)
-                   _ <- IO.sleep(3.seconds)
-                 } yield ()
-               }
-      } yield {
-        val captured = Option(capturedMail.get()).getOrElse(fail("No mail was captured"))
-        captured.to shouldBe List("user@example.com")
-        captured.subject shouldBe "Test subject"
-        captured.body match {
-          case SerializedMailBody.Html(h) =>
-            h should include("<h1>")
-            h should include("Hello")
-            h should include("<strong>bold</strong>")
-            h should include("https://example.com")
-          case other => fail(s"Expected Html, got $other")
+      def waitForCapture(remaining: FiniteDuration = 5.seconds): IO[SerializedMail] =
+        IO(Option(capturedMail.get())).flatMap {
+          case Some(mail) => IO.pure(mail)
+          case None if remaining <= Duration.Zero =>
+            IO.raiseError(new RuntimeException("Timed out waiting for mail capture"))
+          case None => IO.sleep(100.millis) *> waitForCapture(remaining - 100.millis)
         }
-      }
+
+      scheduler
+        .run(oneTimeTasks = List(mailer.sendMailTask))
+        .use { _ =>
+          for {
+            _    <- mailer.send(to = List("user@example.com"), template = template, lang = Language.En)
+            mail <- waitForCapture()
+          } yield mail
+        }
+        .map { mail =>
+          mail.to shouldBe List("user@example.com")
+          mail.subject shouldBe "Test subject"
+          mail.body match {
+            case SerializedMailBody.Html(h) =>
+              h should include("<h1>")
+              h should include("Hello")
+              h should include("<strong>bold</strong>")
+              h should include("https://example.com")
+            case other => fail(s"Expected Html, got $other")
+          }
+        }
     }
   }
 }

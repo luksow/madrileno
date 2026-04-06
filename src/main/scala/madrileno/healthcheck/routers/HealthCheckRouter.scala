@@ -17,8 +17,8 @@ class HealthCheckRouter(healthCheckService: HealthCheckService) extends BaseRout
     (get & path("health-check") & pathEndOrSingleSlash) {
       complete {
         val command = GetHealthCheckCommand(auth.userId)
-        healthCheckService.healthCheck(command).map { case (appConfig, userId, rtt, externalConnectionResult) =>
-          Ok -> HealthCheckDto(appConfig, userId, rtt, externalConnectionResult)
+        healthCheckService.healthCheck(command).map { case (appConfig, userId, rtt) =>
+          Ok -> HealthCheckDto(appConfig, userId, rtt)
         }
       }
     }
