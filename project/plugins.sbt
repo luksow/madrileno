@@ -16,3 +16,5 @@ addSbtPlugin("nl.gn0s1s" % "sbt-dotenv" % "3.2.0")
 addSbtPlugin("com.timushev.sbt" % "sbt-rewarn" % "0.1.3")
 
 addSbtPlugin("com.timushev.sbt" % "sbt-updates" % "0.6.4")
+
+addSbtPlugin("pl.iterators" % "baklava-sbt-plugin" % "1.1.1")

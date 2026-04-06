@@ -22,7 +22,7 @@ class AuthenticationService(
   userAuthRepository: UserAuthRepository,
   refreshTokenRepository: RefreshTokenRepository,
   userRepository: UserRepository,
-  firebaseService: FirebaseService,
+  firebaseService: ExternalAuthVerifier,
   jwtService: JwtService,
   transactor: Transactor,
   mailer: Mailer

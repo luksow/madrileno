@@ -87,6 +87,12 @@ class UserRepository(using Clock[IO]) {
       repository.updateById(id, userRow => userRow.update(f(userRow.toUser), now))
     }
 
+  def softDelete(id: UserId): DB[Unit] =
+    repository.softDeleteById(id)
+
+  def findIncludingDeleted(id: UserId): DB[Option[User]] =
+    repository.findByIdWithDeleted(id).map(_.map(_.toUser))
+
   private val repository: IdRepository[UserRow, UserId] & SoftDeleteRepository[UserRow, UserId] & FilteringRepository[UserRow, UserRowFilter] =
     new IdRepository[UserRow, UserId](_.id) with SoftDeleteRepository[UserRow, UserId] with FilteringRepository[UserRow, UserRowFilter] {
       override val table: UserRowTable.type = UserRowTable

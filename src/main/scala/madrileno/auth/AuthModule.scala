@@ -32,18 +32,22 @@ trait AuthModule extends RouteProvider with AuthRouteProvider with RecurringTask
 
   val userAuthenticator: UserAuthenticator = wire[UserAuthenticator]
 
-  private val firebaseKey = config.at("firebase.key").loadOrThrow[String]
-  private val firebaseApp = Try {
-    val serviceAccount = new ByteArrayInputStream(firebaseKey.getBytes())
-    val options = FirebaseOptions
-      .builder()
-      .setCredentials(GoogleCredentials.fromStream(serviceAccount))
-      .build()
+  protected lazy val externalAuthVerifier: ExternalAuthVerifier = {
+    val firebaseKey = config.at("firebase.key").loadOrThrow[String]
+    val firebaseApp = Try {
+      val serviceAccount = new ByteArrayInputStream(firebaseKey.getBytes())
+      val options = FirebaseOptions
+        .builder()
+        .setCredentials(GoogleCredentials.fromStream(serviceAccount))
+        .build()
 
-    FirebaseApp.initializeApp(options)
-  }.fold(e => throw new RuntimeException("Failed to initialize Firebase", e), identity)
-  private val firebaseAuth    = FirebaseAuth.getInstance(firebaseApp)
-  private val firebaseService = wire[FirebaseService]
+      FirebaseApp.initializeApp(options)
+    }.recover { case _: IllegalStateException =>
+      FirebaseApp.getInstance()
+    }.fold(e => throw new RuntimeException("Failed to initialize Firebase", e), identity)
+    val firebaseAuth = FirebaseAuth.getInstance(firebaseApp)
+    new FirebaseService(firebaseAuth)
+  }
 
   private val userAuthRepository     = wire[UserAuthRepository]
   private val refreshTokenRepository = wire[RefreshTokenRepository]
