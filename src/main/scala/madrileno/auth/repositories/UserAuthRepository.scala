@@ -99,6 +99,9 @@ class UserAuthRepository(using Clock[IO]) {
       .updateById(userAuthId, (row: UserAuthRow) => row.copy(metadata = metadata))
   }
 
+  def softDelete(userAuthId: UserAuthId): DB[Unit] =
+    repository.softDeleteById(userAuthId)
+
   private val repository: IdRepository[UserAuthRow, UserAuthId] & SoftDeleteRepository[UserAuthRow, UserAuthId] & ForeignIdRepository[
     UserAuthRow,
     UserId

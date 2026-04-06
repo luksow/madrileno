@@ -3,14 +3,11 @@ package madrileno.auth.repositories
 import cats.effect.IO
 import cats.effect.testing.scalatest.AsyncIOSpec
 import madrileno.auth.domain.*
-import madrileno.support.{TestData, TestGivens, TestTransactor}
+import madrileno.support.{TestData, TestTransactor}
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AsyncWordSpec
 
 class UserAuthRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matchers with TestTransactor {
-
-  private val testClock       = TestGivens.fixedClock()
-  given cats.effect.Clock[IO] = testClock
 
   private lazy val repo     = new UserAuthRepository
   private lazy val userRepo = new madrileno.user.repositories.UserRepository
@@ -47,12 +44,14 @@ class UserAuthRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matcher
       val (user, auth, _) = createUserAuth()
       val updatedMetadata = Metadata(io.circe.Json.obj("updated" -> io.circe.Json.fromBoolean(true)))
       for {
-        _      <- userRepo.create(user)
-        first  <- repo.save(auth)
-        second <- repo.save(auth.copy(metadata = updatedMetadata))
+        _     <- userRepo.create(user)
+        _     <- repo.save(auth)
+        _     <- repo.save(auth.copy(metadata = updatedMetadata))
+        found <- repo.findForUpdate(auth.provider, auth.providerUserId)
       } yield {
-        first.id shouldBe second.id
-        first.providerUserId shouldBe second.providerUserId
+        found shouldBe defined
+        found.get.id shouldBe auth.id
+        found.get.metadata shouldBe updatedMetadata
       }
     }
 
@@ -71,20 +70,16 @@ class UserAuthRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matcher
       }
     }
 
-    "findForUpdate returns records for distinct provider user IDs" in withRollback {
-      val (user, auth1, _) = createUserAuth()
-      val token2           = TestData.verifiedExternalToken()
-      val auth2            = UserAuth(TestData.randomUserAuthId(), user.id, token2)
+    "findForUpdate returns None for soft-deleted records" in withRollback {
+      val (user, auth, _) = createUserAuth()
       for {
-        _      <- userRepo.create(user)
-        _      <- repo.save(auth1)
-        _      <- repo.save(auth2)
-        found1 <- repo.findForUpdate(auth1.provider, auth1.providerUserId)
-        found2 <- repo.findForUpdate(auth2.provider, auth2.providerUserId)
-      } yield {
-        found1.get.id shouldBe auth1.id
-        found2.get.id shouldBe auth2.id
-      }
+        _     <- userRepo.create(user)
+        _     <- repo.save(auth)
+        found <- repo.findForUpdate(auth.provider, auth.providerUserId)
+        _ = found shouldBe defined
+        _     <- repo.softDelete(auth.id)
+        after <- repo.findForUpdate(auth.provider, auth.providerUserId)
+      } yield after shouldBe None
     }
   }
 }

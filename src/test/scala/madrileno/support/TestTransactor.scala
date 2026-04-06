@@ -36,7 +36,9 @@ trait TestTransactor extends TestContainersForAll { self: Suite =>
       database = container.databaseName,
       password = Some(container.password)
     )
-    // Finalizer intentionally discarded — Testcontainers kills the PG container on JVM exit
+    // Finalizer discarded — pool lifetime is tied to the Testcontainers PG container.
+    // Releasing in afterAll causes broken-pipe errors because ScalaTest's afterAll ordering
+    // conflicts with TestContainersForAll's container lifecycle.
     PgTransactor.resource(pgConfig).allocated.unsafeRunSync()._1
   }
 

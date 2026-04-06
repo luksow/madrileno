@@ -39,6 +39,7 @@ class SchedulerIntegrationSpec extends AsyncWordSpec with AsyncIOSpec with Match
         recurringCounter <- Ref.of[IO, Int](0)
         retryCounter     <- Ref.of[IO, Int](0)
         payloadRef       <- Ref.of[IO, Int](0)
+        customPayloadRef <- Ref.of[IO, String]("")
         customCounter    <- Ref.of[IO, Int](0)
         txCounter        <- Ref.of[IO, Int](0)
 
@@ -60,12 +61,13 @@ class SchedulerIntegrationSpec extends AsyncWordSpec with AsyncIOSpec with Match
                       }
 
         customDescriptor = TaskDescriptor[String]("test-custom")
-        customTask = Task.custom(customDescriptor) { _ =>
-                       customCounter.updateAndGet(_ + 1).flatMap { count =>
-                         if (count < 3)
-                           IO.realTimeInstant.map(now => Schedule.NextAt(now.plusMillis(100), s"iteration-$count"))
-                         else IO.unit
-                       }
+        customTask = Task.custom(customDescriptor) { payload =>
+                       customPayloadRef.set(payload) *>
+                         customCounter.updateAndGet(_ + 1).flatMap { count =>
+                           if (count < 3)
+                             IO.realTimeInstant.map(now => Schedule.NextAt(now.plusMillis(100), s"iteration-$count"))
+                           else IO.unit
+                         }
                      }
 
         txDescriptor = TaskDescriptor[Unit]("test-tx")
@@ -74,7 +76,7 @@ class SchedulerIntegrationSpec extends AsyncWordSpec with AsyncIOSpec with Match
         scheduler = Scheduler(transactor, config)
         client    = scheduler.client
 
-        _ <-
+        results <-
           scheduler
             .run(recurringTasks = List(recurringTask, payloadTask), oneTimeTasks = List(onceTask, retryTask, txTask), customTasks = List(customTask))
             .use { _ =>
@@ -90,15 +92,18 @@ class SchedulerIntegrationSpec extends AsyncWordSpec with AsyncIOSpec with Match
                 payloadResult   <- waitFor(payloadRef, 3)
                 customResult    <- waitFor(customCounter, 3, timeout = 10.seconds)
                 txResult        <- waitFor(txCounter, 1)
-              } yield (onceResult, recurringResult, retryResult, payloadResult, customResult, txResult)
+                lastPayload     <- customPayloadRef.get
+              } yield (onceResult, recurringResult, retryResult, payloadResult, customResult, txResult, lastPayload)
             }
       } yield {
-        onceCounter.get.unsafeRunSync() shouldBe 1
-        recurringCounter.get.unsafeRunSync() should be >= 3
-        retryCounter.get.unsafeRunSync() shouldBe 3
-        payloadRef.get.unsafeRunSync() should be >= 3
-        customCounter.get.unsafeRunSync() shouldBe 3
-        txCounter.get.unsafeRunSync() shouldBe 1
+        val (onceResult, recurringResult, retryResult, payloadResult, customResult, txResult, lastCustomPayload) = results
+        onceResult shouldBe 1
+        recurringResult should be >= 3
+        retryResult shouldBe 3
+        payloadResult should be >= 3
+        customResult shouldBe 3
+        txResult shouldBe 1
+        lastCustomPayload shouldBe "iteration-2"
       }
     }
   }

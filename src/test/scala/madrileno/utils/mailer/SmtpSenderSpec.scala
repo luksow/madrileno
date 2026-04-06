@@ -17,7 +17,7 @@ class SmtpSenderSpec extends AsyncWordSpec with AsyncIOSpec with Matchers with T
       for {
         _        <- clearMailpit()
         _        <- sender.send(mail)
-        messages <- getMessages
+        messages <- waitForMail(_.exists(_.subject == "Plain text test"))
       } yield {
         messages should have size 1
         messages.head.subject shouldBe "Plain text test"
@@ -34,7 +34,7 @@ class SmtpSenderSpec extends AsyncWordSpec with AsyncIOSpec with Matchers with T
       for {
         _        <- clearMailpit()
         _        <- sender.send(mail)
-        messages <- getMessages
+        messages <- waitForMail(_.exists(_.subject == "HTML test"))
         detail   <- getMessage(messages.head.id)
       } yield {
         detail.html should include("<h1>Hello</h1>")
@@ -52,7 +52,7 @@ class SmtpSenderSpec extends AsyncWordSpec with AsyncIOSpec with Matchers with T
       for {
         _        <- clearMailpit()
         _        <- sender.send(mail)
-        messages <- getMessages
+        messages <- waitForMail(_.exists(_.subject == "Both test"))
         detail   <- getMessage(messages.head.id)
       } yield {
         detail.html should include("<b>HTML version</b>")
@@ -71,7 +71,7 @@ class SmtpSenderSpec extends AsyncWordSpec with AsyncIOSpec with Matchers with T
       for {
         _        <- clearMailpit()
         _        <- sender.send(mail)
-        messages <- getMessages
+        messages <- waitForMail(_.exists(_.subject == "Attachment test"))
         detail   <- getMessage(messages.head.id)
       } yield {
         detail.attachmentCount shouldBe 1
@@ -90,7 +90,7 @@ class SmtpSenderSpec extends AsyncWordSpec with AsyncIOSpec with Matchers with T
       for {
         _        <- clearMailpit()
         _        <- sender.send(mail)
-        messages <- getMessages
+        messages <- waitForMail(_.exists(_.subject == "Inline test"))
         detail   <- getMessage(messages.head.id)
       } yield {
         detail.html should include("cid:test-img")
@@ -109,7 +109,7 @@ class SmtpSenderSpec extends AsyncWordSpec with AsyncIOSpec with Matchers with T
       for {
         _        <- clearMailpit()
         _        <- sender.send(mail)
-        messages <- getMessages
+        messages <- waitForMail(_.exists(_.subject == "Multi-recipient"))
       } yield {
         messages should have size 1
       }
