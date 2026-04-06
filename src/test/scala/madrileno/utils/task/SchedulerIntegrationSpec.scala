@@ -1,7 +1,7 @@
 package madrileno.utils.task
 
 import cats.effect.testing.scalatest.AsyncIOSpec
-import cats.effect.{IO, Ref}
+import cats.effect.{Clock, IO, Ref}
 import madrileno.support.TestTransactor
 import madrileno.utils.observability.TelemetryContext
 import org.scalatest.matchers.should.Matchers
@@ -75,7 +75,7 @@ class SchedulerIntegrationSpec extends AsyncWordSpec with AsyncIOSpec with Match
                        customPayloadRef.set(payload) *>
                          customCounter.updateAndGet(_ + 1).flatMap { count =>
                            if (count < 3)
-                             IO.realTimeInstant.map(now => Schedule.NextAt(now.plusMillis(100), s"iteration-$count"))
+                             Clock[IO].realTimeInstant.map(now => Schedule.NextAt(now.plusMillis(100), s"iteration-$count"))
                            else IO.unit
                          }
                      }
@@ -95,10 +95,11 @@ class SchedulerIntegrationSpec extends AsyncWordSpec with AsyncIOSpec with Match
             )
             .use { _ =>
               for {
-                _ <- client.schedule(onceTask.instance("exec-once", ()))
-                _ <- client.schedule(retryTask.instance("exec-retry", ()))
-                _ <- client.schedule(customTask.instance("exec-custom", "initial", java.time.Instant.now()))
-                _ <- transactor.inTransaction(client.scheduleTransactionally(txTask.instance("exec-tx", ())))
+                _   <- client.schedule(onceTask.instance("exec-once", ()))
+                _   <- client.schedule(retryTask.instance("exec-retry", ()))
+                now <- Clock[IO].realTimeInstant
+                _   <- client.schedule(customTask.instance("exec-custom", "initial", now))
+                _   <- transactor.inTransaction(client.scheduleTransactionally(txTask.instance("exec-tx", ())))
 
                 onceResult      <- waitFor(onceCounter, 1)
                 recurringResult <- waitFor(recurringCounter, 3)

@@ -2,7 +2,7 @@ package madrileno.support
 
 import cats.effect.IO
 import com.dimafeng.testcontainers.GenericContainer
-import io.circe.Json
+import io.circe.parser
 import org.scalatest.{BeforeAndAfterAll, Suite}
 import org.testcontainers.containers.wait.strategy.Wait
 import sttp.client4.quick.*
@@ -39,13 +39,23 @@ trait TestMailpit extends BeforeAndAfterAll { self: Suite =>
 
   private def apiUrl: String = s"http://${mailpitContainer.host}:${mailpitContainer.mappedPort(8025)}/api/v1"
 
+  private def requireSuccess(response: sttp.client4.Response[String], context: String): io.circe.Json = {
+    if (!response.code.isSuccess)
+      throw new RuntimeException(s"Mailpit $context failed: ${response.code} ${response.body}")
+    parser.parse(response.body) match {
+      case Right(json) => json
+      case Left(error) => throw new RuntimeException(s"Mailpit $context returned invalid JSON: $error")
+    }
+  }
+
   def clearMailpit(): IO[Unit] = IO.blocking {
-    val _ = quickRequest.delete(uri"$apiUrl/messages").send()
+    val response = quickRequest.delete(uri"$apiUrl/messages").send()
+    if (!response.code.isSuccess)
+      throw new RuntimeException(s"Mailpit clear failed: ${response.code} ${response.body}")
   }
 
   def getMessages: IO[Seq[MailpitMessage]] = IO.blocking {
-    val response = quickRequest.get(uri"$apiUrl/messages").send()
-    val json     = io.circe.parser.parse(response.body).getOrElse(Json.Null)
+    val json = requireSuccess(quickRequest.get(uri"$apiUrl/messages").send(), "GET /messages")
     json.hcursor
       .downField("messages")
       .focus
@@ -57,8 +67,7 @@ trait TestMailpit extends BeforeAndAfterAll { self: Suite =>
   }
 
   def getMessage(id: String): IO[MailpitMessageDetail] = IO.blocking {
-    val response = quickRequest.get(uri"$apiUrl/message/$id").send()
-    val json     = io.circe.parser.parse(response.body).getOrElse(Json.Null)
+    val json = requireSuccess(quickRequest.get(uri"$apiUrl/message/$id").send(), s"GET /message/$id")
     MailpitMessageDetail(
       subject = json.hcursor.get[String]("Subject").getOrElse(""),
       text = json.hcursor.get[String]("Text").getOrElse(""),
