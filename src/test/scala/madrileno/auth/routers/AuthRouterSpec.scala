@@ -65,9 +65,10 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
             case JwtService.DecodingResult.Decoded(ctx) => ctx.userId
             case other                                  => fail(s"Failed to decode JWT: $other")
           }
+          val blockAt = Instant.now()
           application.transactor
             .inTransaction {
-              application.userRepository.update(userId, _.copy(blockedAt = Some(Instant.now())), Instant.now())
+              application.userRepository.update(userId, _.copy(blockedAt = Some(blockAt)), blockAt)
             }
             .unsafeRunSync()
 
