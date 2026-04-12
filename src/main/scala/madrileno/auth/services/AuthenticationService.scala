@@ -16,7 +16,7 @@ import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
 import madrileno.utils.task.{CronExpression, Schedule, Task}
 import pl.iterators.sealedmonad.syntax.*
 
-import java.time.Duration
+import java.time.{Duration, Instant}
 
 class AuthenticationService(
   userAuthRepository: UserAuthRepository,
@@ -41,34 +41,36 @@ class AuthenticationService(
             .as(AuthenticationResult.InvalidToken)
         case Right(verifiedToken) =>
           transactor.inTransaction {
-            userAuthRepository
-              .findForUpdate(verifiedToken.provider, verifiedToken.providerUserId)
-              .flatMap {
-                case Some(userAuth) =>
-                  val userUpdater: User => User = _.withUpdatedProfile(verifiedToken.profile)
-                  userAuthRepository.updateMetadata(userAuth.id, verifiedToken.metadata) *>
-                    userRepository.update(userAuth.userId, userUpdater) *>
-                    generateTokens(userAuth.userId, command.userAgent, command.ipAddress, AuthenticationResult.Authenticated.apply)
-                case _ =>
-                  for {
-                    user <- IdGenerator.generateId(UserId).map(id => User(id, verifiedToken))
-                    userAuth <-
-                      IdGenerator
-                        .generateId(UserAuthId)
-                        .map(id => UserAuth(id, user.id, verifiedToken))
-                    _ <- userRepository.create(user)
-                    _ <- userAuthRepository.save(userAuth)
-                    _ <- logger.info(s"Created new user: $user with Firebase UID: ${verifiedToken.providerUserId}")
-                    _ <- user.emailAddress.fold(IO.unit) { email =>
-                           mailer
-                             .sendTransactionally(to = List(email.toString), template = WelcomeEmailTemplate(user.fullName), lang = Language.En)
-                             .void
-                         }
-                    tokens <- generateTokens(user.id, command.userAgent, command.ipAddress, AuthenticationResult.UserCreated.apply)
-                  } yield {
-                    tokens
-                  }
-              }
+            Clock[IO].realTimeInstant.flatMap { now =>
+              userAuthRepository
+                .findForUpdate(verifiedToken.provider, verifiedToken.providerUserId)
+                .flatMap {
+                  case Some(userAuth) =>
+                    val userUpdater: User => User = _.withUpdatedProfile(verifiedToken.profile)
+                    userAuthRepository.updateMetadata(userAuth.id, verifiedToken.metadata) *>
+                      userRepository.update(userAuth.userId, userUpdater, now) *>
+                      generateTokens(userAuth.userId, command.userAgent, command.ipAddress, now, AuthenticationResult.Authenticated.apply)
+                  case _ =>
+                    for {
+                      user <- IdGenerator.generateId(UserId).map(id => User(id, verifiedToken))
+                      userAuth <-
+                        IdGenerator
+                          .generateId(UserAuthId)
+                          .map(id => UserAuth(id, user.id, verifiedToken))
+                      _ <- userRepository.create(user, now)
+                      _ <- userAuthRepository.save(userAuth, now)
+                      _ <- logger.info(s"Created new user: $user with Firebase UID: ${verifiedToken.providerUserId}")
+                      _ <- user.emailAddress.fold(IO.unit) { email =>
+                             mailer
+                               .sendTransactionally(to = List(email.toString), template = WelcomeEmailTemplate(user.fullName), lang = Language.En)
+                               .void
+                           }
+                      tokens <- generateTokens(user.id, command.userAgent, command.ipAddress, now, AuthenticationResult.UserCreated.apply)
+                    } yield {
+                      tokens
+                    }
+                }
+            }
           }
       }
   }
@@ -81,7 +83,7 @@ class AuthenticationService(
           .flatMap {
             case Some(refreshToken) if refreshToken.isValid =>
               refreshTokenRepository.update(refreshToken.id, _.usedAt(now)) *>
-                generateTokens(refreshToken.userId, command.userAgent, command.ipAddress, AuthenticationResult.Authenticated.apply)
+                generateTokens(refreshToken.userId, command.userAgent, command.ipAddress, now, AuthenticationResult.Authenticated.apply)
             case Some(refreshToken) =>
               logger.warn(s"Refresh token $refreshToken is already used or deleted").as(AuthenticationResult.InvalidToken)
             case None =>
@@ -154,13 +156,13 @@ class AuthenticationService(
     userId: UserId,
     userAgent: UserAgent,
     ipAddress: IpAddress,
+    now: Instant,
     success: (InternalJwt, RefreshToken) => AuthenticationResult
   ): DB[AuthenticationResult] = {
     (for {
       user <- userRepository
                 .get(userId)
                 .ensure(_.isActive, AuthenticationResult.UserBlocked)
-      now <- Clock[IO].realTimeInstant.seal
       jwt = jwtService.encode(AuthContext(user), now)
       refreshToken <- IdGenerator.generateId(RefreshTokenId).map(id => RefreshToken.mint(id, now, user.id, userAgent, ipAddress)).seal
       _            <- refreshTokenRepository.save(refreshToken).seal

@@ -18,7 +18,7 @@ object TestData {
   def user(
     id: UserId = randomUserId(),
     fullName: Option[FullName] = Some(FullName("Test User")),
-    emailAddress: Option[EmailAddress] = Some(EmailAddress("test@example.com")),
+    emailAddress: Option[EmailAddress] = Some(EmailAddress(s"test-${UUID.randomUUID()}@example.com")),
     emailVerified: Boolean = true,
     avatarUrl: Option[java.net.URI] = None,
     blockedAt: Option[Instant] = None
@@ -39,7 +39,7 @@ object TestData {
     providerUserId: ProviderUserId = ProviderUserId(s"firebase-${UUID.randomUUID()}"),
     credential: Credential = Credential("test-credential"),
     fullName: Option[FullName] = Some(FullName("Test User")),
-    emailAddress: Option[EmailAddress] = Some(EmailAddress("test@example.com")),
+    emailAddress: Option[EmailAddress] = Some(EmailAddress(s"test-${UUID.randomUUID()}@example.com")),
     emailVerified: Boolean = true
   ): VerifiedExternalToken = VerifiedExternalToken(
     provider,

@@ -1,11 +1,12 @@
 package madrileno.auth.repositories
 
-import cats.effect.IO
 import cats.effect.testing.scalatest.AsyncIOSpec
 import madrileno.auth.domain.*
 import madrileno.support.{TestData, TestTransactor}
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AsyncWordSpec
+
+import java.time.Instant
 
 class UserAuthRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matchers with TestTransactor {
 
@@ -23,8 +24,8 @@ class UserAuthRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matcher
     "save and find a user auth record" in withRollback {
       val (user, auth, _) = createUserAuth()
       for {
-        _     <- userRepo.create(user)
-        saved <- repo.save(auth)
+        _     <- userRepo.create(user, Instant.now())
+        saved <- repo.save(auth, Instant.now())
         found <- repo.findForUpdate(auth.provider, auth.providerUserId)
       } yield {
         saved.id shouldBe auth.id
@@ -44,9 +45,9 @@ class UserAuthRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matcher
       val (user, auth, _) = createUserAuth()
       val updatedMetadata = Metadata(io.circe.Json.obj("updated" -> io.circe.Json.fromBoolean(true)))
       for {
-        _     <- userRepo.create(user)
-        _     <- repo.save(auth)
-        _     <- repo.save(auth.copy(metadata = updatedMetadata))
+        _     <- userRepo.create(user, Instant.now())
+        _     <- repo.save(auth, Instant.now())
+        _     <- repo.save(auth.copy(metadata = updatedMetadata), Instant.now())
         found <- repo.findForUpdate(auth.provider, auth.providerUserId)
       } yield {
         found shouldBe defined
@@ -59,8 +60,8 @@ class UserAuthRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matcher
       val (user, auth, _) = createUserAuth()
       val newMetadata     = Metadata(io.circe.Json.obj("key" -> io.circe.Json.fromString("value")))
       for {
-        _     <- userRepo.create(user)
-        _     <- repo.save(auth)
+        _     <- userRepo.create(user, Instant.now())
+        _     <- repo.save(auth, Instant.now())
         _     <- repo.updateMetadata(auth.id, newMetadata)
         found <- repo.findForUpdate(auth.provider, auth.providerUserId)
       } yield {
@@ -73,11 +74,11 @@ class UserAuthRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matcher
     "findForUpdate returns None for soft-deleted records" in withRollback {
       val (user, auth, _) = createUserAuth()
       for {
-        _     <- userRepo.create(user)
-        _     <- repo.save(auth)
+        _     <- userRepo.create(user, Instant.now())
+        _     <- repo.save(auth, Instant.now())
         found <- repo.findForUpdate(auth.provider, auth.providerUserId)
         _ = found shouldBe defined
-        _     <- repo.softDelete(auth.id)
+        _     <- repo.softDelete(auth.id, Instant.now())
         after <- repo.findForUpdate(auth.provider, auth.providerUserId)
       } yield after shouldBe None
     }

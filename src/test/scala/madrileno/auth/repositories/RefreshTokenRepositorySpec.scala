@@ -21,7 +21,7 @@ class RefreshTokenRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Mat
     val user  = TestData.user()
     val token = TestData.refreshToken(userId = user.id, usedAt = usedAt, deletedAt = deletedAt)
     for {
-      _     <- userRepo.create(user)
+      _     <- userRepo.create(user, Instant.now())
       saved <- tokenRepo.save(token)
     } yield (user.id, saved)
   }

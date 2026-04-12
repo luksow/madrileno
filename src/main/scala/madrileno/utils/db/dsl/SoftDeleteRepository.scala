@@ -1,6 +1,6 @@
 package madrileno.utils.db.dsl
 
-import cats.effect.{Clock, IO}
+import cats.effect.IO
 import skunk.*
 import skunk.codec.all.*
 import skunk.implicits.*
@@ -11,19 +11,16 @@ trait SoftDeleteTable {
   def deletedAt: Column[Option[Instant]]
 }
 
-trait SoftDeleteRepository[A, Id](using Clock[IO]) extends IdRepository[A, Id] {
-  def now: IO[Instant] = Clock[IO].realTimeInstant
+trait SoftDeleteRepository[A, Id] extends IdRepository[A, Id] {
 
   override def baseFilter: Fragment[Void] = sql"${super.baseFilter} AND ${table.deletedAt.n} IS NULL"
 
-  def softDeleteById(id: Id)(using session: Session[IO]): IO[Unit] = {
-    now.flatMap { instant =>
-      session
-        .execute(sql"UPDATE ${table.n} SET ${table.deletedAt.n} = ${table.deletedAt.c} WHERE ${table.id.n} = ${table.id.c}".command)(
-          (Some(instant), id)
-        )
-        .void
-    }
+  def softDeleteById(id: Id, deletedAt: Instant)(using session: Session[IO]): IO[Unit] = {
+    session
+      .execute(sql"UPDATE ${table.n} SET ${table.deletedAt.n} = ${table.deletedAt.c} WHERE ${table.id.n} = ${table.id.c}".command)(
+        (Some(deletedAt), id)
+      )
+      .void
   }
 
   def restoreById(id: Id)(using session: Session[IO]): IO[Unit] = {
@@ -32,23 +29,19 @@ trait SoftDeleteRepository[A, Id](using Clock[IO]) extends IdRepository[A, Id] {
       .void
   }
 
-  def softDeleteByIds(ids: List[Id])(using session: Session[IO]): IO[Unit] =
+  def softDeleteByIds(ids: List[Id], deletedAt: Instant)(using session: Session[IO]): IO[Unit] =
     if (ids.isEmpty) IO.unit
     else
-      now.flatMap { instant =>
-        session
-          .execute(sql"UPDATE ${table.n} SET ${table.deletedAt.n} = ${table.deletedAt.c} WHERE ${table.id.n} IN (${table.id.c.list(ids)})".command)(
-            (Some(instant), ids)
-          )
-          .void
-      }
-
-  def softDeleteAll(using session: Session[IO]): IO[Unit] = {
-    now.flatMap { instant =>
       session
-        .execute(sql"UPDATE ${table.n} SET ${table.deletedAt.n} = ${table.deletedAt.c}".command)(Some(instant))
+        .execute(sql"UPDATE ${table.n} SET ${table.deletedAt.n} = ${table.deletedAt.c} WHERE ${table.id.n} IN (${table.id.c.list(ids)})".command)(
+          (Some(deletedAt), ids)
+        )
         .void
-    }
+
+  def softDeleteAll(deletedAt: Instant)(using session: Session[IO]): IO[Unit] = {
+    session
+      .execute(sql"UPDATE ${table.n} SET ${table.deletedAt.n} = ${table.deletedAt.c}".command)(Some(deletedAt))
+      .void
   }
 
   def restoreByIds(ids: List[Id])(using session: Session[IO]): IO[Unit] =
