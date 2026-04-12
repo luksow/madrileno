@@ -41,34 +41,36 @@ class AuthenticationService(
             .as(AuthenticationResult.InvalidToken)
         case Right(verifiedToken) =>
           transactor.inTransaction {
-            userAuthRepository
-              .findForUpdate(verifiedToken.provider, verifiedToken.providerUserId)
-              .flatMap {
-                case Some(userAuth) =>
-                  val userUpdater: User => User = _.withUpdatedProfile(verifiedToken.profile)
-                  userAuthRepository.updateMetadata(userAuth.id, verifiedToken.metadata) *>
-                    userRepository.update(userAuth.userId, userUpdater) *>
-                    generateTokens(userAuth.userId, command.userAgent, command.ipAddress, AuthenticationResult.Authenticated.apply)
-                case _ =>
-                  for {
-                    user <- IdGenerator.generateId(UserId).map(id => User(id, verifiedToken))
-                    userAuth <-
-                      IdGenerator
-                        .generateId(UserAuthId)
-                        .map(id => UserAuth(id, user.id, verifiedToken))
-                    _ <- userRepository.create(user)
-                    _ <- userAuthRepository.save(userAuth)
-                    _ <- logger.info(s"Created new user: $user with Firebase UID: ${verifiedToken.providerUserId}")
-                    _ <- user.emailAddress.fold(IO.unit) { email =>
-                           mailer
-                             .sendTransactionally(to = List(email.toString), template = WelcomeEmailTemplate(user.fullName), lang = Language.En)
-                             .void
-                         }
-                    tokens <- generateTokens(user.id, command.userAgent, command.ipAddress, AuthenticationResult.UserCreated.apply)
-                  } yield {
-                    tokens
-                  }
-              }
+            Clock[IO].realTimeInstant.flatMap { now =>
+              userAuthRepository
+                .findForUpdate(verifiedToken.provider, verifiedToken.providerUserId)
+                .flatMap {
+                  case Some(userAuth) =>
+                    val userUpdater: User => User = _.withUpdatedProfile(verifiedToken.profile)
+                    userAuthRepository.updateMetadata(userAuth.id, verifiedToken.metadata) *>
+                      userRepository.update(userAuth.userId, userUpdater, now) *>
+                      generateTokens(userAuth.userId, command.userAgent, command.ipAddress, AuthenticationResult.Authenticated.apply)
+                  case _ =>
+                    for {
+                      user <- IdGenerator.generateId(UserId).map(id => User(id, verifiedToken))
+                      userAuth <-
+                        IdGenerator
+                          .generateId(UserAuthId)
+                          .map(id => UserAuth(id, user.id, verifiedToken))
+                      _ <- userRepository.create(user, now)
+                      _ <- userAuthRepository.save(userAuth, now)
+                      _ <- logger.info(s"Created new user: $user with Firebase UID: ${verifiedToken.providerUserId}")
+                      _ <- user.emailAddress.fold(IO.unit) { email =>
+                             mailer
+                               .sendTransactionally(to = List(email.toString), template = WelcomeEmailTemplate(user.fullName), lang = Language.En)
+                               .void
+                           }
+                      tokens <- generateTokens(user.id, command.userAgent, command.ipAddress, AuthenticationResult.UserCreated.apply)
+                    } yield {
+                      tokens
+                    }
+                }
+            }
           }
       }
   }

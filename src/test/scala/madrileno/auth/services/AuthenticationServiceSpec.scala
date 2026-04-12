@@ -1,8 +1,8 @@
 package madrileno.auth.services
 
-import cats.effect.IO
 import cats.effect.std.UUIDGen
 import cats.effect.testing.scalatest.AsyncIOSpec
+import cats.effect.{Clock, IO}
 import madrileno.auth.domain.*
 import madrileno.auth.repositories.*
 import madrileno.support.{FakeAuthVerifier, TestData, TestGivens, TestMailpit, TestTransactor}
@@ -22,11 +22,11 @@ import scala.concurrent.duration.*
 
 class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers with TestTransactor with TestMailpit {
 
-  private val testClock       = TestGivens.fixedClock()
-  private val testUUIDGen     = TestGivens.deterministicUUIDs()
-  given cats.effect.Clock[IO] = testClock
-  given UUIDGen[IO]           = testUUIDGen
-  given TelemetryContext      = TelemetryContext(Meter.noop[IO], Tracer.noop[IO], io.opentelemetry.api.OpenTelemetry.noop())
+  private val testClock   = TestGivens.fixedClock()
+  private val testUUIDGen = TestGivens.deterministicUUIDs()
+  given Clock[IO]         = testClock
+  given UUIDGen[IO]       = testUUIDGen
+  given TelemetryContext  = TelemetryContext(Meter.noop[IO], Tracer.noop[IO], io.opentelemetry.api.OpenTelemetry.noop())
 
   private val jwtConfig  = JwtService.Config(secret = "test-secret-at-least-256-bits-long-for-hs256!!", validFor = Duration.ofMinutes(5))
   private val jwtService = JwtService(jwtConfig)

@@ -67,7 +67,7 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
           }
           application.transactor
             .inTransaction {
-              application.userRepository.update(userId, _.copy(blockedAt = Some(Instant.now())))
+              application.userRepository.update(userId, _.copy(blockedAt = Some(Instant.now())), Instant.now())
             }
             .unsafeRunSync()
 
@@ -77,7 +77,7 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
           // Unblock the user so subsequent tests aren't poisoned
           application.transactor
             .inTransaction {
-              application.userRepository.update(userId, _.copy(blockedAt = None))
+              application.userRepository.update(userId, _.copy(blockedAt = None), Instant.now())
             }
             .unsafeRunSync()
         },
@@ -113,7 +113,7 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
           val refreshToken = TestData.refreshToken(id = TestData.knownRefreshTokenId, userId = user.id)
           val _ = application.transactor
             .inTransaction {
-              application.userRepository.create(user) *>
+              application.userRepository.create(user, Instant.now()) *>
                 new RefreshTokenRepository().save(refreshToken)
             }
             .unsafeRunSync()

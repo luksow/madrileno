@@ -1,6 +1,5 @@
 package madrileno.auth.repositories
 
-import cats.effect.{Clock, IO}
 import madrileno.auth.domain.*
 import madrileno.user.domain.*
 import madrileno.utils.db.dsl.*
@@ -81,12 +80,11 @@ case class UserAuthRowFilter(
   )
 }
 
-class UserAuthRepository(using Clock[IO]) {
-  def save(userAuth: UserAuth): DB[UserAuth] = {
-    Clock[IO].realTimeInstant.flatMap { now =>
-      val row = UserAuthRow(userAuth, now)
-      repository.upsert(row).as(row.toUserAuth)
-    }
+/** Timestamps are owned by the caller — repository does not read the clock. */
+class UserAuthRepository {
+  def save(userAuth: UserAuth, now: Instant): DB[UserAuth] = {
+    val row = UserAuthRow(userAuth, now)
+    repository.upsert(row).as(row.toUserAuth)
   }
 
   def findForUpdate(provider: Provider, pid: ProviderUserId): DBInTransaction[Option[UserAuth]] = {
@@ -99,8 +97,8 @@ class UserAuthRepository(using Clock[IO]) {
       .updateById(userAuthId, (row: UserAuthRow) => row.copy(metadata = metadata))
   }
 
-  def softDelete(userAuthId: UserAuthId): DB[Unit] =
-    repository.softDeleteById(userAuthId)
+  def softDelete(userAuthId: UserAuthId, now: Instant): DB[Unit] =
+    repository.softDeleteById(userAuthId, now)
 
   private val repository: IdRepository[UserAuthRow, UserAuthId] & SoftDeleteRepository[UserAuthRow, UserAuthId] & ForeignIdRepository[
     UserAuthRow,

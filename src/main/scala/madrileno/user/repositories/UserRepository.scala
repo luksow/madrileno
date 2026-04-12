@@ -1,6 +1,5 @@
 package madrileno.user.repositories
 
-import cats.effect.{Clock, IO}
 import madrileno.user.domain.*
 import madrileno.utils.db.dsl.*
 import madrileno.utils.db.transactor.DB
@@ -68,12 +67,11 @@ case class UserRowFilter(
     SqlFilterDerivation.filterFragment(this, (UserRowTable.id, UserRowTable.emailAddress, UserRowTable.emailVerified, UserRowTable.deletedAt))
 }
 
-class UserRepository(using Clock[IO]) {
-  def create(user: User): DB[User] = {
-    Clock[IO].realTimeInstant.flatMap { now =>
-      val row = UserRow(user, now)
-      repository.create(row).as(row.toUser)
-    }
+/** Timestamps are owned by the caller — repository does not read the clock. */
+class UserRepository {
+  def create(user: User, now: Instant): DB[User] = {
+    val row = UserRow(user, now)
+    repository.create(row).as(row.toUser)
   }
 
   def find(id: UserId): DB[Option[User]] =
@@ -82,13 +80,15 @@ class UserRepository(using Clock[IO]) {
   def get(id: UserId): DB[User] =
     repository.getById(id).map(_.toUser)
 
-  def update(id: UserId, f: User => User): DB[Unit] =
-    Clock[IO].realTimeInstant.flatMap { now =>
-      repository.updateById(id, userRow => userRow.update(f(userRow.toUser), now))
-    }
+  def update(
+    id: UserId,
+    f: User => User,
+    now: Instant
+  ): DB[Unit] =
+    repository.updateById(id, userRow => userRow.update(f(userRow.toUser), now))
 
-  def softDelete(id: UserId): DB[Unit] =
-    repository.softDeleteById(id)
+  def softDelete(id: UserId, now: Instant): DB[Unit] =
+    repository.softDeleteById(id, now)
 
   def findIncludingDeleted(id: UserId): DB[Option[User]] =
     repository.findByIdWithDeleted(id).map(_.map(_.toUser))
