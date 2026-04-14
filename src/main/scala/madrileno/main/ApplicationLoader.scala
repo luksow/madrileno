@@ -2,6 +2,7 @@ package madrileno.main
 
 import cats.effect.{Clock, IO}
 import com.comcast.ip4s.{Ipv4Address, Port}
+import madrileno.auction.AuctionModule
 import madrileno.auth.AuthModule
 import madrileno.healthcheck.HealthCheckModule
 import madrileno.user.UserModule
@@ -50,6 +51,7 @@ class ApplicationLoader(
     with Handlers
     with AuthModule
     with UserModule
+    with AuctionModule
     with HealthCheckModule {
   lazy val httpConfig: HttpConfig             = config.at("http").loadOrThrow[HttpConfig]
   lazy val appConfig: AppConfig               = config.at("app").loadOrThrow[AppConfig]
