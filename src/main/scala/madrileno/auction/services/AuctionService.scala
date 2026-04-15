@@ -249,7 +249,7 @@ case class ListAuctionsFilter(
   def toRowFilter: AuctionRowFilter = AuctionRowFilter(
     status = status.fold(p.any[AuctionStatus])(p.equal),
     sellerId = sellerId.fold(p.any[UserId])(p.equal),
-    endsAt = endsBefore.fold(p.any[Instant])(p.lessThan)
+    endsAt = endsBefore.fold(p.any[Instant])(p.lessThanOrEqual)
   )
 }
 
