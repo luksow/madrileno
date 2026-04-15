@@ -66,7 +66,7 @@ class AuctionService(
   }
 
   def getAuction(auctionId: AuctionId): IO[Option[AuctionView]] = {
-    transactor.inTransaction {
+    transactor.inSession {
       auctionRepository.find(auctionId).flatMap {
         case Some(row) => resolveCurrentPrice(row).map(price => Some(AuctionView(row.toAuction, price)))
         case None      => IO.pure(None)
@@ -98,9 +98,10 @@ class AuctionService(
                  .map {
                    case BidRejection.AuctionNotOpen        => PlaceBidResult.AuctionNotOpen
                    case BidRejection.AuctionNotStarted     => PlaceBidResult.AuctionNotStarted
+                   case BidRejection.AuctionEnded          => PlaceBidResult.AuctionEnded
                    case BidRejection.CannotBidOnOwnAuction => PlaceBidResult.CannotBidOnOwnAuction
                    case BidRejection.AlreadyHighestBidder  => PlaceBidResult.AlreadyHighestBidder
-                   case BidRejection.BidTooLow(min)        => PlaceBidResult.BidTooLow(min)
+                   case BidRejection.BidTooLow(highest)    => PlaceBidResult.BidTooLow(highest)
                  }
                  .rethrow[IO]
         saved <- bidRepository.save(bid).seal
@@ -123,6 +124,7 @@ class AuctionService(
                        .map {
                          case CancellationRejection.NotOwner       => CancelAuctionResult.NotOwner
                          case CancellationRejection.AuctionNotOpen => CancelAuctionResult.AuctionNotOpen
+                         case CancellationRejection.AuctionEnded   => CancelAuctionResult.AuctionEnded
                        }
                        .rethrow[IO]
         _ <- auctionRepository.update(cancelled).seal
@@ -167,7 +169,12 @@ class AuctionService(
         now     <- Clock[IO].realTimeInstant
         _       <- logger.info(s"Checking for expired auctions at $now")
         expired <- findExpired(now)
-        _       <- expired.traverse(closeOne(_, now))
+        _ <- expired.traverse_ { auctionId =>
+               closeOne(auctionId, now).attempt.flatMap {
+                 case Left(err) => logger.warn(err)(s"Failed to close auction $auctionId — skipping")
+                 case Right(_)  => IO.unit
+               }
+             }
       } yield ()
     }
   }
@@ -274,9 +281,10 @@ enum PlaceBidResult {
   case AuctionNotFound
   case AuctionNotOpen
   case AuctionNotStarted
+  case AuctionEnded
   case CannotBidOnOwnAuction
   case AlreadyHighestBidder
-  case BidTooLow(minimumBid: Price)
+  case BidTooLow(currentHighest: Price)
 }
 
 enum CreateAuctionResult {
@@ -289,4 +297,5 @@ enum CancelAuctionResult {
   case AuctionNotFound
   case NotOwner
   case AuctionNotOpen
+  case AuctionEnded
 }

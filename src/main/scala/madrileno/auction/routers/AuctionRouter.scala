@@ -52,7 +52,8 @@ class AuctionRouter(auctionService: AuctionService)(using TelemetryContext) exte
         )
         auctionService.createAuction(command).map[ToResponseMarshallable] {
           case CreateAuctionResult.Created(view) => Created -> AuctionDto(view)
-          case CreateAuctionResult.InvalidWindow => error(BadRequest, "invalid-window", "endsAt must be strictly after startsAt")
+          case CreateAuctionResult.InvalidWindow =>
+            error(BadRequest, "invalid-window", "Auction window is invalid: endsAt must be strictly after startsAt and in the future")
         }
       }
     } ~
@@ -64,6 +65,7 @@ class AuctionRouter(auctionService: AuctionService)(using TelemetryContext) exte
             case CancelAuctionResult.AuctionNotFound => error(NotFound, "auction-not-found", "Auction not found")
             case CancelAuctionResult.NotOwner        => error(Forbidden, "not-owner", "Only the seller can cancel this auction")
             case CancelAuctionResult.AuctionNotOpen  => error(Conflict, "auction-not-open", "Auction is not open")
+            case CancelAuctionResult.AuctionEnded    => error(Conflict, "auction-ended", "Auction has already ended")
           }
         }
       } ~
@@ -75,10 +77,11 @@ class AuctionRouter(auctionService: AuctionService)(using TelemetryContext) exte
             case PlaceBidResult.AuctionNotFound       => error(NotFound, "auction-not-found", "Auction not found")
             case PlaceBidResult.AuctionNotOpen        => error(Conflict, "auction-not-open", "Auction is not open")
             case PlaceBidResult.AuctionNotStarted     => error(Conflict, "auction-not-started", "Auction has not started yet")
+            case PlaceBidResult.AuctionEnded          => error(Conflict, "auction-ended", "Auction has already ended")
             case PlaceBidResult.CannotBidOnOwnAuction => error(Forbidden, "cannot-bid-on-own-auction", "Cannot bid on your own auction")
             case PlaceBidResult.AlreadyHighestBidder  => error(Conflict, "already-highest-bidder", "You already have the highest bid")
-            case PlaceBidResult.BidTooLow(minimumBid) =>
-              error(Conflict, "bid-too-low", s"Bid must be strictly greater than $minimumBid")
+            case PlaceBidResult.BidTooLow(currentHighest) =>
+              error(Conflict, "bid-too-low", s"Bid must be strictly greater than $currentHighest")
           }
         }
       }

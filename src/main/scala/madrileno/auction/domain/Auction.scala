@@ -91,14 +91,16 @@ enum AuctionStatus {
 enum BidRejection {
   case AuctionNotOpen
   case AuctionNotStarted
+  case AuctionEnded
   case CannotBidOnOwnAuction
   case AlreadyHighestBidder
-  case BidTooLow(minimumBid: Price)
+  case BidTooLow(currentHighest: Price)
 }
 
 enum CancellationRejection {
   case NotOwner
   case AuctionNotOpen
+  case AuctionEnded
 }
 
 enum CloseRejection {
@@ -137,18 +139,20 @@ final case class Auction(
     now: Instant,
     currentHighest: Option[Bid]
   ): Either[BidRejection, Bid] = {
-    val minimumBid = currentHighest.map(_.amount).getOrElse(startingPrice)
+    val floor = currentHighest.map(_.amount).getOrElse(startingPrice)
     if (status != AuctionStatus.Open) Left(BidRejection.AuctionNotOpen)
     else if (now.isBefore(startsAt)) Left(BidRejection.AuctionNotStarted)
+    else if (!now.isBefore(endsAt)) Left(BidRejection.AuctionEnded)
     else if (bidderId == sellerId) Left(BidRejection.CannotBidOnOwnAuction)
     else if (currentHighest.exists(_.bidderId == bidderId)) Left(BidRejection.AlreadyHighestBidder)
-    else if (amount <= minimumBid) Left(BidRejection.BidTooLow(minimumBid))
+    else if (amount <= floor) Left(BidRejection.BidTooLow(floor))
     else Right(Bid(bidId, id, bidderId, amount, now))
   }
 
   def cancel(requesterId: UserId, now: Instant): Either[CancellationRejection, Auction] = {
     if (requesterId != sellerId) Left(CancellationRejection.NotOwner)
     else if (status != AuctionStatus.Open) Left(CancellationRejection.AuctionNotOpen)
+    else if (!now.isBefore(endsAt)) Left(CancellationRejection.AuctionEnded)
     else Right(copy(status = AuctionStatus.Cancelled, updatedAt = now))
   }
 
@@ -177,7 +181,7 @@ object Auction {
     endsAt: Instant,
     now: Instant
   ): Either[AuctionCreationError, Auction] = {
-    if (!endsAt.isAfter(startsAt)) Left(AuctionCreationError.InvalidWindow)
+    if (!endsAt.isAfter(startsAt) || !endsAt.isAfter(now)) Left(AuctionCreationError.InvalidWindow)
     else
       Right(
         Auction(

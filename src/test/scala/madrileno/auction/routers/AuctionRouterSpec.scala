@@ -113,7 +113,7 @@ class AuctionRouterSpec extends BaseRouteSpec with TestApplicationLoader {
       ).respondsWith[Error[Unit]](BadRequest, description = "Invalid auction window")
         .assert { ctx =>
           val response = ctx.performRequest(allRoutes)
-          response.body.title shouldBe Some("endsAt must be strictly after startsAt")
+          response.body.title.exists(_.startsWith("Auction window is invalid")) shouldBe true
         }
     ),
     supports(

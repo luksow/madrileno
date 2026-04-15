@@ -100,12 +100,13 @@ class AuctionDomainSpec extends AnyWordSpec with Matchers {
   }
 
   "Auction.placeBid" should {
-    val seller  = TestData.randomUserId()
-    val bidder  = TestData.randomUserId()
-    val other   = TestData.randomUserId()
-    val now     = Instant.now()
-    val auction = TestData.auction(sellerId = seller, startingPrice = Price(BigDecimal(100)), startsAt = now.minusSeconds(60))
-    val bidId   = TestData.randomBidId()
+    val seller = TestData.randomUserId()
+    val bidder = TestData.randomUserId()
+    val other  = TestData.randomUserId()
+    val now    = Instant.now()
+    val auction =
+      TestData.auction(sellerId = seller, startingPrice = Price(BigDecimal(100)), startsAt = now.minusSeconds(60), endsAt = now.plusSeconds(3600))
+    val bidId = TestData.randomBidId()
 
     def highestBidFrom(userId: UserId, amount: Price): Option[Bid] =
       Some(TestData.bid(auctionId = auction.id, bidderId = userId, amount = amount))
@@ -133,6 +134,14 @@ class AuctionDomainSpec extends AnyWordSpec with Matchers {
     "reject bid before auction starts" in {
       val notYetStarted = auction.copy(startsAt = now.plusSeconds(60))
       notYetStarted.placeBid(bidder, Price(BigDecimal(150)), bidId, now, None) shouldBe Left(BidRejection.AuctionNotStarted)
+    }
+
+    "reject bid at or after endsAt" in {
+      val ended = auction.copy(endsAt = now.minusSeconds(1))
+      ended.placeBid(bidder, Price(BigDecimal(150)), bidId, now, None) shouldBe Left(BidRejection.AuctionEnded)
+
+      val atBoundary = auction.copy(endsAt = now)
+      atBoundary.placeBid(bidder, Price(BigDecimal(150)), bidId, now, None) shouldBe Left(BidRejection.AuctionEnded)
     }
 
     "reject bid from seller" in {
@@ -200,13 +209,22 @@ class AuctionDomainSpec extends AnyWordSpec with Matchers {
     "reject endsAt before startsAt" in {
       openAt(now.plusSeconds(60), now) shouldBe Left(AuctionCreationError.InvalidWindow)
     }
+
+    "reject endsAt in the past" in {
+      openAt(now.minusSeconds(120), now.minusSeconds(60)) shouldBe Left(AuctionCreationError.InvalidWindow)
+    }
+
+    "reject endsAt equal to now" in {
+      openAt(now.minusSeconds(60), now) shouldBe Left(AuctionCreationError.InvalidWindow)
+    }
   }
 
   "Auction.cancel" should {
-    val seller  = TestData.randomUserId()
-    val other   = TestData.randomUserId()
-    val now     = Instant.now()
-    val auction = TestData.auction(sellerId = seller, updatedAt = now.minusSeconds(60))
+    val seller = TestData.randomUserId()
+    val other  = TestData.randomUserId()
+    val now    = Instant.now()
+    val auction =
+      TestData.auction(sellerId = seller, startsAt = now.minusSeconds(60), endsAt = now.plusSeconds(3600), updatedAt = now.minusSeconds(60))
 
     "cancel an open auction by the seller and bump updatedAt" in {
       val result = auction.cancel(seller, now)
@@ -228,6 +246,14 @@ class AuctionDomainSpec extends AnyWordSpec with Matchers {
     "reject cancel of already cancelled auction" in {
       val cancelled = auction.copy(status = AuctionStatus.Cancelled)
       cancelled.cancel(seller, now) shouldBe Left(CancellationRejection.AuctionNotOpen)
+    }
+
+    "reject cancel of auction past endsAt" in {
+      val ended = auction.copy(endsAt = now.minusSeconds(1))
+      ended.cancel(seller, now) shouldBe Left(CancellationRejection.AuctionEnded)
+
+      val atBoundary = auction.copy(endsAt = now)
+      atBoundary.cancel(seller, now) shouldBe Left(CancellationRejection.AuctionEnded)
     }
   }
 
