@@ -221,16 +221,17 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
             seller  <- seedUser()
             bidder1 <- seedUser()
             bidder2 <- seedUser()
+            bidder1Email = bidder1.emailAddress.get.toString
             auction <- createAuctionOrFail(createCommand(seller.id))
             _       <- service.placeBid(PlaceBidCommand(auction.id, bidder1.id, Price(BigDecimal(150))))
             _       <- service.placeBid(PlaceBidCommand(auction.id, bidder2.id, Price(BigDecimal(250))))
-            mails   <- waitForMail(_.exists(_.subject.contains("outbid")))
-          } yield mails
+            mails   <- waitForMail(_.exists(m => m.to.exists(_.address == bidder1Email) && m.subject.contains("outbid")))
+          } yield (mails, bidder1Email)
         }
-        .map { messages =>
-          val outbidMails = messages.filter(_.subject.contains("outbid"))
-          outbidMails.size shouldBe 1
-          outbidMails.head.subject should include("Château Margaux")
+        .map { case (messages, bidder1Email) =>
+          val forBidder1 = messages.filter(_.to.exists(_.address == bidder1Email))
+          forBidder1.size shouldBe 1
+          forBidder1.head.subject should (include("outbid") and include("Château Margaux"))
         }
     }
 
@@ -335,16 +336,24 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
             _      <- clearMailpit()
             seller <- seedUser()
             winner <- seedUser()
-            past = testClock.now.minusSeconds(60)
+            sellerEmail = seller.emailAddress.get.toString
+            winnerEmail = winner.emailAddress.get.toString
+            past        = testClock.now.minusSeconds(60)
             auction <- seedAuction(TestData.auction(sellerId = seller.id, startsAt = past.minusSeconds(120), endsAt = past))
             _ <- transactor.inSession { bidRepo.save(TestData.bid(auctionId = auction.id, bidderId = winner.id, amount = Price(BigDecimal(200)))) }
             _ <- task.execution(task)
-            mails <- waitForMail(_.count(_.subject.contains("Auction closed")) >= 2)
-          } yield mails
+            mails <- waitForMail { ms =>
+                       ms.exists(_.to.exists(_.address == sellerEmail)) && ms.exists(_.to.exists(_.address == winnerEmail))
+                     }
+          } yield (mails, sellerEmail, winnerEmail)
         }
-        .map { messages =>
-          val closedSubjects = messages.map(_.subject).filter(_.contains("Auction closed"))
-          closedSubjects.size should be >= 2
+        .map { case (messages, sellerEmail, winnerEmail) =>
+          val forSeller = messages.filter(_.to.exists(_.address == sellerEmail))
+          val forWinner = messages.filter(_.to.exists(_.address == winnerEmail))
+          forSeller.size shouldBe 1
+          forSeller.head.subject should include("Auction closed")
+          forWinner.size shouldBe 1
+          forWinner.head.subject should include("Auction closed")
         }
     }
 
@@ -355,17 +364,18 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
           for {
             _      <- clearMailpit()
             seller <- seedUser()
-            past = testClock.now.minusSeconds(60)
+            sellerEmail = seller.emailAddress.get.toString
+            past        = testClock.now.minusSeconds(60)
             auction <- seedAuction(TestData.auction(sellerId = seller.id, startsAt = past.minusSeconds(120), endsAt = past))
             _       <- task.execution(task)
-            mails   <- waitForMail(_.exists(_.subject.contains("Auction closed")))
+            mails   <- waitForMail(_.exists(m => m.to.exists(_.address == sellerEmail)))
             _       <- service.getAuction(auction.id)
-          } yield mails
+          } yield (mails, sellerEmail)
         }
-        .map { messages =>
-          // At least one "Auction closed" email — we can't assert exactly 1 because the recurring
-          // task-under-test may pick up auctions left Open by other specs in the same suite.
-          messages.exists(_.subject.contains("Auction closed")) shouldBe true
+        .map { case (messages, sellerEmail) =>
+          val forThisSeller = messages.filter(_.to.exists(_.address == sellerEmail))
+          forThisSeller.size shouldBe 1
+          forThisSeller.head.subject should include("Auction closed")
         }
     }
 
