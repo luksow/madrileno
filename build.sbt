@@ -33,6 +33,7 @@ libraryDependencies ++= {
   val jakartaMailV       = "2.1.3"
   val angusMailV         = "2.0.3"
   val scalatagsV         = "0.13.1"
+  val scaffeineV         = "5.3.0"
   val testcontainersV    = "0.44.1"
   val baklavaV           = "1.1.1"
   val flywayV            = "12.0.1"
@@ -78,6 +79,7 @@ libraryDependencies ++= {
     "jakarta.mail"                     % "jakarta.mail-api"                          % jakartaMailV,
     "org.eclipse.angus"                % "angus-mail"                                % angusMailV         % Runtime,
     "com.lihaoyi"                     %% "scalatags"                                 % scalatagsV,
+    "com.github.blemale"              %% "scaffeine"                                 % scaffeineV,
     "com.google.firebase"              % "firebase-admin"                            % firebaseV,
     "pl.iterators"                    %% "http4s-stir-testkit"                       % http4sStirV        % "test",
     "pl.iterators"                    %% "baklava-http4s"                            % baklavaV           % "test",
