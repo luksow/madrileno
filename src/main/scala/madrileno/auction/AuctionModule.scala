@@ -38,6 +38,6 @@ trait AuctionModule extends RouteProvider with AuthRouteProvider with RecurringT
   }
 
   override abstract def mailPreviews: List[MailPreview] = {
-    super.mailPreviews :+ OutbidEmailTemplate.preview :+ AuctionClosedEmailTemplate.preview
+    super.mailPreviews :+ OutbidEmailTemplate.preview :+ AuctionClosedEmailTemplate.sellerPreview :+ AuctionClosedEmailTemplate.winnerPreview
   }
 }

@@ -64,7 +64,9 @@ object AuctionClosedEmailTemplate {
     AuctionClosedEmailTemplate(wineName, message, "View Your Wins")
   }
 
-  val preview: MailPreview =
+  val sellerPreview: MailPreview =
     MailPreview("auction-closed-seller", forSeller(WineName("Romanée-Conti 1945"), Some(Price(BigDecimal(25000))), Currency.getInstance("EUR")))
 
+  val winnerPreview: MailPreview =
+    MailPreview("auction-closed-winner", forWinner(WineName("Romanée-Conti 1945"), Price(BigDecimal(25000)), Currency.getInstance("EUR")))
 }
