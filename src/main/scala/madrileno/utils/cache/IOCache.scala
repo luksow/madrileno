@@ -5,6 +5,8 @@ import cats.effect.std.Supervisor
 import cats.effect.{Deferred, IO, Ref, Resource}
 import cats.syntax.all.*
 import com.github.blemale.scaffeine.{Cache, Scaffeine}
+import org.typelevel.log4cats.Logger
+import org.typelevel.log4cats.slf4j.Slf4jLogger
 import org.typelevel.otel4s.metrics.Meter
 
 import java.util.concurrent.CancellationException
@@ -22,6 +24,8 @@ trait IOCache[K, V] {
 }
 
 object IOCache {
+
+  private val logger: Logger[IO] = Slf4jLogger.getLogger[IO]
 
   /** Combines Caffeine's native stats (hits, misses, evictions) with load counters we track ourselves — Caffeine doesn't see our IO loader. */
   final case class CacheStats(
@@ -70,24 +74,32 @@ object IOCache {
           case None    => dedupLoad(key, load)
         }
 
+      // `IO.uncancelable` seals the transition from "Deferred registered in inFlight" to
+      // "action with cleanup finalizer attached is being run." Without it, a cancellation
+      // between the two would orphan the Deferred: never completed, never removed, with
+      // later callers blocking forever. The `poll(...)` holes re-enable cancellation for
+      // the actual wait/load so a Ctrl-C still works.
       private def dedupLoad(key: K, load: IO[V]): IO[V] =
-        Deferred[IO, Either[Throwable, V]].flatMap { fresh =>
-          inFlight.modify { state =>
-            state.get(key) match {
-              case Some(existing) =>
-                state -> existing.get.flatMap(IO.fromEither)
+        IO.uncancelable { poll =>
+          Deferred[IO, Either[Throwable, V]].flatMap { fresh =>
+            inFlight.modify { state =>
+              state.get(key) match {
+                case Some(existing) =>
+                  state -> poll(existing.get.flatMap(IO.fromEither))
 
-              case None =>
-                val action =
-                  runLoad(key, load, fresh).guarantee(inFlight.update(_ - key))
-                state.updated(key, fresh) -> action
-            }
-          }.flatten
+                case None =>
+                  val action =
+                    poll(runLoad(key, load, fresh)).guarantee(inFlight.update(_ - key))
+                  state.updated(key, fresh) -> action
+              }
+            }.flatten
+          }
         }
 
-      // Ordering invariant: signal.complete fires before storage.put.
-      // A racing caller arriving between those two steps still finds the in-flight entry
-      // (cleanup runs last via `guarantee`) and waits on the Deferred — no value is lost.
+      // Ordering invariant: signal.complete fires before storage.put (via
+      // publishIfStillOwned). A racing caller arriving between those two steps still finds
+      // the in-flight entry (cleanup runs last via `guarantee`) and waits on the Deferred —
+      // no value is lost.
       private def runLoad(
         key: K,
         load: IO[V],
@@ -99,7 +111,7 @@ object IOCache {
               case Right(v) =>
                 IO.delay(loadSuccessCount.incrementAndGet()).void *>
                   signal.complete(Right(v)).attempt.void *>
-                  IO.delay(storage.put(key, v)).attempt.void
+                  publishIfStillOwned(key, v, signal)
 
               case Left(e) =>
                 IO.delay(loadFailureCount.incrementAndGet()).void *>
@@ -117,17 +129,43 @@ object IOCache {
               .void
         }
 
+      // Only write to storage if this load is still the registered owner of the in-flight
+      // slot. A concurrent `invalidate` or `put` clears the slot first; this check ensures
+      // a stale loader can't resurrect cleared data or overwrite a newer explicit put.
+      // (A narrow race remains between the check and the actual put, but the common case
+      // — invalidate/put issued while a load is outstanding — is handled correctly.)
+      private def publishIfStillOwned(
+        key: K,
+        value: V,
+        signal: Deferred[IO, Either[Throwable, V]]
+      ): IO[Unit] =
+        inFlight.get.flatMap { state =>
+          state.get(key) match {
+            case Some(d) if d eq signal =>
+              IO.delay(storage.put(key, value)).attempt.flatMap {
+                case Right(_) => IO.unit
+                case Left(t)  => logger.warn(t)(s"IOCache: storage.put failed for key $key")
+              }
+            case _ =>
+              IO.unit
+          }
+        }
+
       override def get(key: K): IO[Option[V]] =
         IO.delay(storage.getIfPresent(key))
 
+      // Explicit put supersedes any outstanding load for the same key — clear the
+      // in-flight slot so a stale loader's eventual publishIfStillOwned is a no-op.
       override def put(key: K, value: V): IO[Unit] =
-        IO.delay(storage.put(key, value))
+        inFlight.update(_ - key) *> IO.delay(storage.put(key, value))
 
+      // Same reason as `put`: remove the in-flight slot first so stale loaders skip their
+      // publish step when they complete.
       override def invalidate(key: K): IO[Unit] =
-        IO.delay(storage.invalidate(key))
+        inFlight.update(_ - key) *> IO.delay(storage.invalidate(key))
 
       override def invalidateAll: IO[Unit] =
-        IO.delay(storage.invalidateAll())
+        inFlight.set(Map.empty) *> IO.delay(storage.invalidateAll())
 
       override def estimatedSize: IO[Long] =
         IO.delay(storage.estimatedSize())

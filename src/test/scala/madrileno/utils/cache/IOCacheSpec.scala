@@ -52,7 +52,6 @@ class IOCacheSpec extends AsyncWordSpec with AsyncIOSpec with Matchers {
         fiber1 <- cache.getOrLoad("k")(load).start
         fiber2 <- cache.getOrLoad("k")(load).start
         fiber3 <- cache.getOrLoad("k")(load).start
-        _      <- IO.sleep(50.millis) // let all three enter dedupLoad before completing
         _      <- gate.complete(())
         r1     <- fiber1.joinWithNever
         r2     <- fiber2.joinWithNever
@@ -92,7 +91,6 @@ class IOCacheSpec extends AsyncWordSpec with AsyncIOSpec with Matchers {
         load = gate.get *> IO.raiseError[Int](boom)
         fiber1 <- cache.getOrLoad("k")(load).attempt.start
         fiber2 <- cache.getOrLoad("k")(load).attempt.start
-        _      <- IO.sleep(50.millis)
         _      <- gate.complete(())
         r1     <- fiber1.joinWithNever
         r2     <- fiber2.joinWithNever
@@ -111,9 +109,9 @@ class IOCacheSpec extends AsyncWordSpec with AsyncIOSpec with Matchers {
         fastLoad = IO.pure(99)
         fiber <- cache.getOrLoad("k")(slowLoad).start
         _     <- started.get
+        // Fiber.cancel returns only after finalizers (including our `guarantee` cleanup)
+        // have run, so a subsequent getOrLoad is guaranteed to see an empty in-flight slot.
         _     <- fiber.cancel
-        // Waiting for the cancel to propagate through the guaranteeCase handlers.
-        _     <- IO.sleep(50.millis)
         retry <- cache.getOrLoad("k")(fastLoad)
         total <- attempts.get
       } yield {
@@ -197,6 +195,54 @@ class IOCacheSpec extends AsyncWordSpec with AsyncIOSpec with Matchers {
         after shouldBe 0L
         got shouldBe None
       }
+    }
+
+    "invalidate during an in-flight load prevents the stale loader from repopulating" in {
+      val cache = IOCache[String, Int](longTtl, maximumSize = 128)
+      for {
+        gate    <- Deferred[IO, Unit]
+        started <- Deferred[IO, Unit]
+        load = started.complete(()).attempt *> gate.get *> IO.pure(42)
+        fiber  <- cache.getOrLoad("k")(load).start
+        _      <- started.get
+        _      <- cache.invalidate("k")
+        _      <- gate.complete(())
+        result <- fiber.joinWithNever
+        got    <- cache.get("k")
+      } yield {
+        result shouldBe 42 // the originating caller still receives the loaded value
+        got shouldBe None // but the cache is not repopulated
+      }
+    }
+
+    "invalidateAll during an in-flight load prevents repopulation" in {
+      val cache = IOCache[String, Int](longTtl, maximumSize = 128)
+      for {
+        gate    <- Deferred[IO, Unit]
+        started <- Deferred[IO, Unit]
+        load = started.complete(()).attempt *> gate.get *> IO.pure(7)
+        fiber <- cache.getOrLoad("k")(load).start
+        _     <- started.get
+        _     <- cache.invalidateAll
+        _     <- gate.complete(())
+        _     <- fiber.joinWithNever
+        got   <- cache.get("k")
+      } yield got shouldBe None
+    }
+
+    "explicit put during an in-flight load wins over the stale loader" in {
+      val cache = IOCache[String, Int](longTtl, maximumSize = 128)
+      for {
+        gate    <- Deferred[IO, Unit]
+        started <- Deferred[IO, Unit]
+        load = started.complete(()).attempt *> gate.get *> IO.pure(1)
+        fiber <- cache.getOrLoad("k")(load).start
+        _     <- started.get
+        _     <- cache.put("k", 999)
+        _     <- gate.complete(())
+        _     <- fiber.joinWithNever
+        got   <- cache.get("k")
+      } yield got shouldBe Some(999)
     }
   }
 }
