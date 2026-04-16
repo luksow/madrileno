@@ -1,10 +1,14 @@
 package madrileno.utils.cache
 
 import cats.effect.kernel.Outcome
-import cats.effect.{Deferred, IO, Ref}
+import cats.effect.std.Supervisor
+import cats.effect.{Deferred, IO, Ref, Resource}
+import cats.syntax.all.*
 import com.github.blemale.scaffeine.{Cache, Scaffeine}
+import org.typelevel.otel4s.metrics.Meter
 
 import java.util.concurrent.CancellationException
+import java.util.concurrent.atomic.AtomicLong
 import scala.concurrent.duration.FiniteDuration
 
 trait IOCache[K, V] {
@@ -12,9 +16,24 @@ trait IOCache[K, V] {
   def get(key: K): IO[Option[V]]
   def put(key: K, value: V): IO[Unit]
   def invalidate(key: K): IO[Unit]
+  def invalidateAll: IO[Unit]
+  def estimatedSize: IO[Long]
+  def stats: IO[IOCache.CacheStats]
 }
 
 object IOCache {
+
+  /** Combines Caffeine's native stats (hits, misses, evictions) with load counters we track ourselves — Caffeine doesn't see our IO loader. */
+  final case class CacheStats(
+    hitCount: Long,
+    missCount: Long,
+    requestCount: Long,
+    hitRate: Double,
+    missRate: Double,
+    evictionCount: Long,
+    loadSuccessCount: Long,
+    loadFailureCount: Long,
+    loadFailureRate: Double)
 
   def apply[K, V](expireAfter: V => FiniteDuration, maximumSize: Long): IOCache[K, V] = {
     val storage: Cache[K, V] =
@@ -33,10 +52,15 @@ object IOCache {
             currentDuration
           ) => currentDuration
         )
+        .recordStats()
         .build[K, V]()
 
     val inFlight: Ref[IO, Map[K, Deferred[IO, Either[Throwable, V]]]] =
       Ref.unsafe(Map.empty)
+
+    // Caffeine never sees our IO loader, so we count success/failure ourselves.
+    val loadSuccessCount = new AtomicLong(0L)
+    val loadFailureCount = new AtomicLong(0L)
 
     new IOCache[K, V] {
 
@@ -73,15 +97,18 @@ object IOCache {
           case Outcome.Succeeded(fa) =>
             fa.attempt.flatMap {
               case Right(v) =>
-                signal.complete(Right(v)).attempt.void *>
+                IO.delay(loadSuccessCount.incrementAndGet()).void *>
+                  signal.complete(Right(v)).attempt.void *>
                   IO.delay(storage.put(key, v)).attempt.void
 
               case Left(e) =>
-                signal.complete(Left(e)).attempt.void
+                IO.delay(loadFailureCount.incrementAndGet()).void *>
+                  signal.complete(Left(e)).attempt.void
             }
 
           case Outcome.Errored(e) =>
-            signal.complete(Left(e)).attempt.void
+            IO.delay(loadFailureCount.incrementAndGet()).void *>
+              signal.complete(Left(e)).attempt.void
 
           case Outcome.Canceled() =>
             signal
@@ -98,6 +125,63 @@ object IOCache {
 
       override def invalidate(key: K): IO[Unit] =
         IO.delay(storage.invalidate(key))
+
+      override def invalidateAll: IO[Unit] =
+        IO.delay(storage.invalidateAll())
+
+      override def estimatedSize: IO[Long] =
+        IO.delay(storage.estimatedSize())
+
+      override def stats: IO[CacheStats] =
+        IO.delay {
+          val s           = storage.stats()
+          val loadSuccess = loadSuccessCount.get()
+          val loadFailure = loadFailureCount.get()
+          val loadTotal   = loadSuccess + loadFailure
+          val hits        = s.hitCount()
+          val misses      = s.missCount()
+          val requests    = hits + misses
+          CacheStats(
+            hitCount = hits,
+            missCount = misses,
+            requestCount = requests,
+            hitRate = if (requests == 0L) 1.0 else hits.toDouble / requests,
+            missRate = if (requests == 0L) 0.0 else misses.toDouble / requests,
+            evictionCount = s.evictionCount(),
+            loadSuccessCount = loadSuccess,
+            loadFailureCount = loadFailure,
+            loadFailureRate = if (loadTotal == 0L) 0.0 else loadFailure.toDouble / loadTotal
+          )
+        }
     }
+  }
+
+  /** Registers otel4s observable counters/gauges for the cache's stats and size. The registration stays alive for the lifetime of the ambient
+    * Supervisor[IO].
+    */
+  def registerMetrics[K, V](name: String, cache: IOCache[K, V])(using supervisor: Supervisor[IO], meter: Meter[IO]): IO[Unit] =
+    supervisor.supervise(metricResource(name, cache).useForever).void
+
+  private def metricResource[K, V](name: String, cache: IOCache[K, V])(using meter: Meter[IO]): Resource[IO, Unit] = {
+    def counter(suffix: String, extract: CacheStats => Long): Resource[IO, Unit] =
+      meter
+        .observableCounter[Long](s"$name.$suffix")
+        .createWithCallback(cb => cache.stats.flatMap(s => cb.record(extract(s))))
+        .void
+
+    val sizeGauge: Resource[IO, Unit] =
+      meter
+        .observableGauge[Long](s"$name.size")
+        .createWithCallback(cb => cache.estimatedSize.flatMap(cb.record(_)))
+        .void
+
+    for {
+      _ <- counter("hits", _.hitCount)
+      _ <- counter("misses", _.missCount)
+      _ <- counter("evictions", _.evictionCount)
+      _ <- counter("load.success", _.loadSuccessCount)
+      _ <- counter("load.failure", _.loadFailureCount)
+      _ <- sizeGauge
+    } yield ()
   }
 }

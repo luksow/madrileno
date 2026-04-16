@@ -152,5 +152,51 @@ class IOCacheSpec extends AsyncWordSpec with AsyncIOSpec with Matchers {
         survivors should be <= 10
       }
     }
+
+    "report accurate stats for hits, misses, and loads" in {
+      val cache = IOCache[String, Int](longTtl, maximumSize = 128)
+      for {
+        _        <- cache.get("absent")
+        _        <- cache.getOrLoad("k")(IO.pure(1))
+        _        <- cache.getOrLoad("k")(IO.pure(1))
+        _        <- cache.getOrLoad("k")(IO.pure(1))
+        failures <- cache.getOrLoad("bad")(IO.raiseError[Int](new RuntimeException("nope"))).attempt
+        stats    <- cache.stats
+      } yield {
+        failures.isLeft shouldBe true
+        stats.missCount should be >= 2L // "absent" + first "k"
+        stats.hitCount should be >= 2L // second and third "k"
+        stats.loadSuccessCount shouldBe 1L
+        stats.loadFailureCount shouldBe 1L
+        stats.requestCount shouldBe (stats.hitCount + stats.missCount)
+      }
+    }
+
+    "estimatedSize reflects current entry count" in {
+      val cache = IOCache[Int, String](longTtl, maximumSize = 128)
+      for {
+        empty <- cache.estimatedSize
+        _     <- (1 to 5).toList.traverse_(i => cache.put(i, s"v$i"))
+        after <- cache.estimatedSize
+      } yield {
+        empty shouldBe 0L
+        after shouldBe 5L
+      }
+    }
+
+    "invalidateAll removes every entry" in {
+      val cache = IOCache[Int, String](longTtl, maximumSize = 128)
+      for {
+        _      <- (1 to 5).toList.traverse_(i => cache.put(i, s"v$i"))
+        before <- cache.estimatedSize
+        _      <- cache.invalidateAll
+        after  <- cache.estimatedSize
+        got    <- cache.get(3)
+      } yield {
+        before shouldBe 5L
+        after shouldBe 0L
+        got shouldBe None
+      }
+    }
   }
 }
