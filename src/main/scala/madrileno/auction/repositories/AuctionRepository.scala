@@ -17,7 +17,7 @@ case class AuctionRow(
   id: AuctionId,
   sellerId: UserId,
   wineName: WineName,
-  vintage: Vintage,
+  vintage: Option[Vintage],
   color: WineColor,
   region: Region,
   appellation: Appellation,
@@ -52,7 +52,7 @@ object AuctionRowTable extends Table[AuctionRow]("auction") with IdTable[Auction
   override val id: Column[AuctionId]              = column("id", uuid.as[AuctionId])
   val sellerId: Column[UserId]                    = column("seller_id", uuid.as[UserId])
   val wineName: Column[WineName]                  = column("wine_name", text.as[WineName])
-  val vintage: Column[Vintage]                    = column("vintage", int4.as[Vintage])
+  val vintage: Column[Option[Vintage]]            = column("vintage", int4.as[Vintage].opt)
   val color: Column[WineColor]                    = column("color", text.asEnum[WineColor])
   val region: Column[Region]                      = column("region", text.as[Region])
   val appellation: Column[Appellation]            = column("appellation", text.as[Appellation])

@@ -5,6 +5,7 @@ import cats.effect.{Clock, IO}
 import cats.syntax.all.*
 import madrileno.auction.domain.*
 import madrileno.auction.emails.{AuctionClosedEmailTemplate, OutbidEmailTemplate}
+import madrileno.auction.gateways.VivinoGateway
 import madrileno.auction.repositories.*
 import madrileno.user.domain.*
 import madrileno.user.repositories.UserRepository
@@ -23,6 +24,7 @@ class AuctionService(
   auctionRepository: AuctionRepository,
   bidRepository: BidRepository,
   userRepository: UserRepository,
+  vivinoGateway: VivinoGateway,
   transactor: Transactor,
   mailer: Mailer
 )(using
@@ -66,12 +68,17 @@ class AuctionService(
   }
 
   def getAuction(auctionId: AuctionId): IO[Option[AuctionView]] = {
-    transactor.inSession {
-      auctionRepository.find(auctionId).flatMap {
-        case Some(row) => resolveCurrentPrice(row).map(price => Some(AuctionView(row.toAuction, price)))
-        case None      => IO.pure(None)
+    transactor
+      .inSession {
+        auctionRepository.find(auctionId).flatMap {
+          case Some(row) => resolveCurrentPrice(row).map(price => Some(AuctionView(row.toAuction, price)))
+          case None      => IO.pure(None)
+        }
       }
-    }
+      .flatMap {
+        case Some(view) => vivinoGateway.findRating(view.wineName, view.vintage).map(r => Some(view.copy(rating = r)))
+        case None       => IO.pure(None)
+      }
   }
 
   def listAuctions(filter: ListAuctionsFilter): IO[List[AuctionView]] = {
@@ -256,7 +263,7 @@ case class ListAuctionsFilter(
 case class CreateAuctionCommand(
   sellerId: UserId,
   wineName: WineName,
-  vintage: Vintage,
+  vintage: Option[Vintage],
   color: WineColor,
   region: Region,
   appellation: Appellation,

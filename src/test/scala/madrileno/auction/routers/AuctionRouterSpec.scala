@@ -76,7 +76,7 @@ class AuctionRouterSpec extends BaseRouteSpec with TestApplicationLoader {
   private def sampleCreateRequest(startsAt: Instant = Instant.now().minusSeconds(60), endsAt: Instant = Instant.now().plusSeconds(3600)) =
     CreateAuctionRequest(
       wineName = WineName("Château Margaux"),
-      vintage = Vintage(2015),
+      vintage = Some(Vintage(2015)),
       color = WineColor.Red,
       region = Region("Bordeaux"),
       appellation = Appellation("Margaux"),

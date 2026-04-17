@@ -11,7 +11,7 @@ case class AuctionDto(
   id: AuctionId,
   sellerId: UserId,
   wineName: WineName,
-  vintage: Vintage,
+  vintage: Option[Vintage],
   color: WineColor,
   region: Region,
   appellation: Appellation,
@@ -24,7 +24,8 @@ case class AuctionDto(
   currency: Currency,
   status: AuctionStatus,
   startsAt: Instant,
-  endsAt: Instant)
+  endsAt: Instant,
+  rating: Option[VivinoRatingDto])
     derives Encoder.AsObject,
       Decoder
 
@@ -34,6 +35,13 @@ object AuctionDto {
     view.auction
       .into[AuctionDto]
       .withFieldConst(_.currentPrice, view.currentPrice)
+      .withFieldConst(_.rating, view.rating.map(VivinoRatingDto.apply))
       .transform
   }
+}
+
+case class VivinoRatingDto(rating: Rating, ratingsCount: RatingsCount) derives Encoder.AsObject, Decoder
+
+object VivinoRatingDto {
+  def apply(rating: VivinoRating): VivinoRatingDto = VivinoRatingDto(rating.rating, rating.ratingsCount)
 }

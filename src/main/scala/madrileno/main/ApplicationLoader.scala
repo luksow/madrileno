@@ -6,6 +6,7 @@ import madrileno.auction.AuctionModule
 import madrileno.auth.AuthModule
 import madrileno.healthcheck.HealthCheckModule
 import madrileno.user.UserModule
+import madrileno.utils.cache.CacheRuntime
 import madrileno.utils.db.transactor.Transactor
 import madrileno.utils.http.{ApplicationRouteProvider, Handlers}
 import madrileno.utils.mailer.{MailContext, MailPreviewProvider, MailPreviewRouter, Mailer, MailerConfig, SmtpSender}
@@ -42,7 +43,8 @@ class ApplicationLoader(
   httpBackend: WebSocketStreamBackend[IO, Fs2Streams[IO]],
   val transactor: Transactor,
   val clock: Clock[IO],
-  val schedulerClient: SchedulerClient
+  val schedulerClient: SchedulerClient,
+  val cacheRuntime: CacheRuntime
 )(using TelemetryContext)
     extends ApplicationRouteProvider
     with ApplicationTaskProvider

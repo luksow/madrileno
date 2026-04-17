@@ -4,6 +4,7 @@ import cats.effect.unsafe.implicits.global
 import cats.effect.{Clock, IO}
 import com.dimafeng.testcontainers.PostgreSQLContainer
 import com.dimafeng.testcontainers.scalatest.TestContainersForAll
+import madrileno.auction.gateways.VivinoGateway
 import madrileno.auth.domain.AuthContext
 import madrileno.auth.services.{ExternalAuthVerifier, JwtService}
 import madrileno.main.ApplicationLoader
@@ -49,9 +50,10 @@ trait TestApplicationLoader extends TestContainersForAll with TestMailpit { self
     val config          = ConfigSource.default
     val schedulerConfig = SchedulerConfig()
     val scheduler       = Scheduler(transactor, schedulerConfig)
-    new ApplicationLoader(config, httpClient, transactor, Clock[IO], scheduler.client) {
+    new ApplicationLoader(config, httpClient, transactor, Clock[IO], scheduler.client, TestCacheRuntime.unbounded) {
       override protected lazy val externalAuthVerifier: ExternalAuthVerifier =
         FakeAuthVerifier(TestData.verifiedExternalToken())
+      override protected lazy val vivinoGateway: VivinoGateway = (_, _) => IO.pure(None)
     }
   }
 

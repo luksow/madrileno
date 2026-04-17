@@ -5,6 +5,7 @@ import cats.effect.testing.scalatest.AsyncIOSpec
 import cats.effect.{Clock, IO}
 import io.opentelemetry.api.OpenTelemetry
 import madrileno.auction.domain.*
+import madrileno.auction.gateways.VivinoGateway
 import madrileno.auction.repositories.{AuctionRepository, BidRepository}
 import madrileno.support.{TestData, TestGivens, TestMailpit, TestTransactor}
 import madrileno.user.domain.{User, UserId}
@@ -38,7 +39,8 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
   private lazy val scheduler  = Scheduler(transactor, SchedulerConfig(pollingInterval = 1.second))
   private lazy val client     = scheduler.client
   private lazy val mailer     = new Mailer(smtpSender, client, MailContext(baseUrl = URI("https://example.com")))
-  private lazy val service    = new AuctionService(auctionRepo, bidRepo, userRepo, transactor, mailer)
+  private val vivinoGateway: VivinoGateway = (_, _) => IO.pure(None)
+  private lazy val service                 = new AuctionService(auctionRepo, bidRepo, userRepo, vivinoGateway, transactor, mailer)
 
   private val eur = Currency.getInstance("EUR")
 
@@ -69,7 +71,7 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
   ) = CreateAuctionCommand(
     sellerId = sellerId,
     wineName = WineName("Château Margaux"),
-    vintage = Vintage(2015),
+    vintage = Some(Vintage(2015)),
     color = WineColor.Red,
     region = Region("Bordeaux"),
     appellation = Appellation("Margaux"),

@@ -8,7 +8,7 @@ import java.util.Currency
 
 case class CreateAuctionRequest(
   wineName: WineName,
-  vintage: Vintage,
+  vintage: Option[Vintage],
   color: WineColor,
   region: Region,
   appellation: Appellation,

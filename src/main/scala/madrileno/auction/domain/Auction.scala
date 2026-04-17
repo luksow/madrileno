@@ -115,7 +115,7 @@ final case class Auction(
   id: AuctionId,
   sellerId: UserId,
   wineName: WineName,
-  vintage: Vintage,
+  vintage: Option[Vintage],
   color: WineColor,
   region: Region,
   appellation: Appellation,
@@ -167,7 +167,7 @@ object Auction {
     id: AuctionId,
     sellerId: UserId,
     wineName: WineName,
-    vintage: Vintage,
+    vintage: Option[Vintage],
     color: WineColor,
     region: Region,
     appellation: Appellation,
@@ -209,6 +209,9 @@ object Auction {
   }
 }
 
-final case class AuctionView(auction: Auction, currentPrice: Price) {
+final case class AuctionView(
+  auction: Auction,
+  currentPrice: Price,
+  rating: Option[VivinoRating] = None) {
   export auction.*
 }

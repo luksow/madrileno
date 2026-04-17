@@ -58,7 +58,7 @@ object TestData {
     id: AuctionId = randomAuctionId(),
     sellerId: UserId = randomUserId(),
     wineName: WineName = WineName("Château Margaux"),
-    vintage: Vintage = Vintage(2015),
+    vintage: Option[Vintage] = Some(Vintage(2015)),
     color: WineColor = WineColor.Red,
     region: Region = Region("Bordeaux"),
     appellation: Appellation = Appellation("Margaux"),

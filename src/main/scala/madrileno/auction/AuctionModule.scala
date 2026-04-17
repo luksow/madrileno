@@ -1,24 +1,33 @@
 package madrileno.auction
 
+import cats.effect.IO
 import com.softwaremill.macwire.*
 import madrileno.auction.emails.{AuctionClosedEmailTemplate, OutbidEmailTemplate}
+import madrileno.auction.gateways.VivinoGateway
 import madrileno.auction.repositories.{AuctionRepository, BidRepository}
 import madrileno.auction.routers.AuctionRouter
 import madrileno.auction.services.AuctionService
 import madrileno.auth.domain.AuthContext
 import madrileno.user.repositories.UserRepository
+import madrileno.utils.cache.CacheRuntime
 import madrileno.utils.db.transactor.Transactor
 import madrileno.utils.http.{AuthRouteProvider, RouteProvider}
 import madrileno.utils.mailer.{MailPreview, MailPreviewProvider, Mailer}
 import madrileno.utils.observability.TelemetryContext
 import madrileno.utils.task.{RecurringTaskProvider, Task}
 import pl.iterators.stir.server.Route
+import sttp.capabilities.fs2.Fs2Streams
+import sttp.client4.WebSocketStreamBackend
 
 trait AuctionModule extends RouteProvider with AuthRouteProvider with RecurringTaskProvider with MailPreviewProvider {
   given telemetryContext: TelemetryContext
   val transactor: Transactor
+  val cacheRuntime: CacheRuntime
+  lazy val httpClient: WebSocketStreamBackend[IO, Fs2Streams[IO]]
   lazy val userRepository: UserRepository
   lazy val mailer: Mailer
+
+  protected lazy val vivinoGateway: VivinoGateway = VivinoGateway.live(httpClient, cacheRuntime)
 
   private val auctionRepository = wire[AuctionRepository]
   private val bidRepository     = wire[BidRepository]

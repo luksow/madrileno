@@ -2,7 +2,7 @@ CREATE TABLE auction(
     id UUID PRIMARY KEY,
     seller_id UUID NOT NULL REFERENCES "user" (id),
     wine_name TEXT NOT NULL,
-    vintage INT NOT NULL,
+    vintage INT,
     color TEXT NOT NULL,
     region TEXT NOT NULL,
     appellation TEXT NOT NULL,

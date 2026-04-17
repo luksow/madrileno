@@ -109,7 +109,7 @@ class AuctionRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matchers
       val auction = TestData.auction(
         sellerId = seller.id,
         wineName = WineName("Romanée-Conti"),
-        vintage = Vintage(1945),
+        vintage = Some(Vintage(1945)),
         color = WineColor.Red,
         region = Region("Bourgogne"),
         appellation = Appellation("Vosne-Romanée"),
@@ -126,7 +126,7 @@ class AuctionRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matchers
       } yield {
         val row = found.get
         row.wineName shouldBe WineName("Romanée-Conti")
-        row.vintage shouldBe Vintage(1945)
+        row.vintage shouldBe Some(Vintage(1945))
         row.color shouldBe WineColor.Red
         row.region shouldBe Region("Bourgogne")
         row.appellation shouldBe Appellation("Vosne-Romanée")

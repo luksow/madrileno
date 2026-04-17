@@ -183,7 +183,7 @@ class AuctionDomainSpec extends AnyWordSpec with Matchers {
         id = AuctionId(UUID.randomUUID()),
         sellerId = seller,
         wineName = WineName("Test"),
-        vintage = Vintage(2020),
+        vintage = Some(Vintage(2020)),
         color = WineColor.Red,
         region = Region("Test"),
         appellation = Appellation("Test"),
