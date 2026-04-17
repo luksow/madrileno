@@ -244,5 +244,33 @@ class IOCacheSpec extends AsyncWordSpec with AsyncIOSpec with Matchers {
         got   <- cache.get("k")
       } yield got shouldBe Some(999)
     }
+
+    // Regression for the `guarantee` identity-safety fix. Without it, load A's finalizer
+    // would unconditionally remove the in-flight slot, evicting load B's registration and
+    // causing B's publishIfStillOwned to see no ownership — so B's value would never land
+    // in the cache even after a successful load.
+    "a stale load finalizer does not evict a later load's in-flight slot" in {
+      val cache = IOCache[String, Int](longTtl, maximumSize = 128)
+      for {
+        gateA    <- Deferred[IO, Unit]
+        gateB    <- Deferred[IO, Unit]
+        startedA <- Deferred[IO, Unit]
+        startedB <- Deferred[IO, Unit]
+        loadA = startedA.complete(()).attempt *> gateA.get *> IO.pure(1)
+        loadB = startedB.complete(()).attempt *> gateB.get *> IO.pure(2)
+        fiberA <- cache.getOrLoad("k")(loadA).start
+        _      <- startedA.get
+        _      <- cache.invalidate("k")
+        fiberB <- cache.getOrLoad("k")(loadB).start
+        _      <- startedB.get
+        // Let A finish first — its finalizer must leave B's fresh slot intact.
+        _ <- gateA.complete(())
+        _ <- fiberA.joinWithNever
+        // B finishes and must still be able to publish successfully.
+        _   <- gateB.complete(())
+        _   <- fiberB.joinWithNever
+        got <- cache.get("k")
+      } yield got shouldBe Some(2)
+    }
   }
 }

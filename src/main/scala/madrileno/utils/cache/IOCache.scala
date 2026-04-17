@@ -2,7 +2,7 @@ package madrileno.utils.cache
 
 import cats.effect.kernel.Outcome
 import cats.effect.std.Supervisor
-import cats.effect.{Deferred, IO, Ref, Resource}
+import cats.effect.{Deferred, IO, Resource}
 import cats.syntax.all.*
 import com.github.blemale.scaffeine.{Cache, Scaffeine}
 import org.typelevel.log4cats.Logger
@@ -10,7 +10,8 @@ import org.typelevel.log4cats.slf4j.Slf4jLogger
 import org.typelevel.otel4s.metrics.Meter
 
 import java.util.concurrent.CancellationException
-import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
+import scala.annotation.tailrec
 import scala.concurrent.duration.FiniteDuration
 
 trait IOCache[K, V] {
@@ -59,8 +60,14 @@ object IOCache {
         .recordStats()
         .build[K, V]()
 
-    val inFlight: Ref[IO, Map[K, Deferred[IO, Either[Throwable, V]]]] =
-      Ref.unsafe(Map.empty)
+    // In-flight loads, deduplicated per key. Kept as a plain AtomicReference rather than a
+    // Ref[IO, _] so that `asMap.compute(...)` (which runs inside Caffeine's per-key lock)
+    // can synchronously read and update it — that's what makes publishIfStillOwned,
+    // invalidate, and put atomic with respect to each other.
+    val inFlight: AtomicReference[Map[K, Deferred[IO, Either[Throwable, V]]]] =
+      new AtomicReference(Map.empty)
+
+    val underlying = storage.underlying
 
     // Caffeine never sees our IO loader, so we count success/failure ourselves.
     val loadSuccessCount = new AtomicLong(0L)
@@ -82,24 +89,33 @@ object IOCache {
       private def dedupLoad(key: K, load: IO[V]): IO[V] =
         IO.uncancelable { poll =>
           Deferred[IO, Either[Throwable, V]].flatMap { fresh =>
-            inFlight.modify { state =>
-              state.get(key) match {
-                case Some(existing) =>
-                  state -> poll(existing.get.flatMap(IO.fromEither))
-
-                case None =>
-                  val action =
-                    poll(runLoad(key, load, fresh)).guarantee(inFlight.update(_ - key))
-                  state.updated(key, fresh) -> action
-              }
-            }.flatten
+            IO.delay(registerOrWait(key, fresh)).flatMap {
+              case Left(existing) =>
+                poll(existing.get.flatMap(IO.fromEither))
+              case Right(_) =>
+                // The finalizer must be identity-safe: if invalidate/put cleared the slot
+                // and a new loader took over, we must not evict the new loader's Deferred.
+                poll(runLoad(key, load, fresh))
+                  .guarantee(IO.delay(dropIfOwned(key, fresh)).void)
+            }
           }
         }
 
-      // Ordering invariant: signal.complete fires before storage.put (via
-      // publishIfStillOwned). A racing caller arriving between those two steps still finds
-      // the in-flight entry (cleanup runs last via `guarantee`) and waits on the Deferred —
-      // no value is lost.
+      // Atomic "check, register if absent" on the inFlight AtomicReference. Returns Left if
+      // another loader already owns the slot, Right(()) if we successfully registered.
+      @tailrec private def registerOrWait(key: K, fresh: Deferred[IO, Either[Throwable, V]]): Either[Deferred[IO, Either[Throwable, V]], Unit] = {
+        val cur = inFlight.get()
+        cur.get(key) match {
+          case Some(existing) => Left(existing)
+          case None =>
+            if (inFlight.compareAndSet(cur, cur.updated(key, fresh))) Right(())
+            else registerOrWait(key, fresh)
+        }
+      }
+
+      private def dropIfOwned(key: K, owner: Deferred[IO, Either[Throwable, V]]): Unit =
+        inFlight.updateAndGet(m => if (m.get(key).exists(_ eq owner)) m - key else m)
+
       private def runLoad(
         key: K,
         load: IO[V],
@@ -129,43 +145,58 @@ object IOCache {
               .void
         }
 
-      // Only write to storage if this load is still the registered owner of the in-flight
-      // slot. A concurrent `invalidate` or `put` clears the slot first; this check ensures
-      // a stale loader can't resurrect cleared data or overwrite a newer explicit put.
-      // (A narrow race remains between the check and the actual put, but the common case
-      // — invalidate/put issued while a load is outstanding — is handled correctly.)
+      // Atomic publish: inside Caffeine's per-key lock, read inFlight and either write the
+      // value (if we still own the slot) or leave the existing entry untouched. Because
+      // `put`, `invalidate`, and this method all coordinate through `asMap.compute` for the
+      // same key, they serialise with each other — a concurrent invalidate arriving during
+      // our publish is either fully before or fully after. Any storage.put failure is
+      // logged rather than swallowed.
       private def publishIfStillOwned(
         key: K,
         value: V,
         signal: Deferred[IO, Either[Throwable, V]]
       ): IO[Unit] =
-        inFlight.get.flatMap { state =>
-          state.get(key) match {
-            case Some(d) if d eq signal =>
-              IO.delay(storage.put(key, value)).attempt.flatMap {
-                case Right(_) => IO.unit
-                case Left(t)  => logger.warn(t)(s"IOCache: storage.put failed for key $key")
+        IO.delay {
+          underlying.asMap.compute(
+            key,
+            (_: K, existing: V) =>
+              if (inFlight.get().get(key).exists(_ eq signal)) {
+                inFlight.updateAndGet(m => if (m.get(key).exists(_ eq signal)) m - key else m)
+                value
+              } else {
+                existing
               }
-            case _ =>
-              IO.unit
-          }
-        }
+          )
+          ()
+        }.handleErrorWith(t => logger.warn(t)(s"IOCache: publish failed for key $key"))
 
       override def get(key: K): IO[Option[V]] =
-        IO.delay(storage.getIfPresent(key))
+        IO.delay(Option(underlying.getIfPresent(key)))
 
-      // Explicit put supersedes any outstanding load for the same key — clear the
-      // in-flight slot so a stale loader's eventual publishIfStillOwned is a no-op.
+      // Always update inFlight BEFORE the Caffeine write. Caffeine's put/invalidate and the
+      // `asMap.compute` in publishIfStillOwned all serialise through the same per-key lock,
+      // so by the time a concurrent publish acquires the lock the inFlight slot is already
+      // cleared and its ownership check short-circuits.
       override def put(key: K, value: V): IO[Unit] =
-        inFlight.update(_ - key) *> IO.delay(storage.put(key, value))
+        IO.delay {
+          inFlight.updateAndGet(_ - key)
+          underlying.put(key, value)
+        }
 
-      // Same reason as `put`: remove the in-flight slot first so stale loaders skip their
-      // publish step when they complete.
       override def invalidate(key: K): IO[Unit] =
-        inFlight.update(_ - key) *> IO.delay(storage.invalidate(key))
+        IO.delay {
+          inFlight.updateAndGet(_ - key)
+          underlying.invalidate(key)
+        }
 
+      // invalidateAll has coarser atomicity than `invalidate` — Caffeine's invalidateAll
+      // doesn't take per-key locks in bulk. Clearing inFlight first ensures any currently
+      // in-flight loader's publishIfStillOwned finds no ownership and skips its put.
       override def invalidateAll: IO[Unit] =
-        inFlight.set(Map.empty) *> IO.delay(storage.invalidateAll())
+        IO.delay {
+          inFlight.set(Map.empty)
+          underlying.invalidateAll()
+        }
 
       override def estimatedSize: IO[Long] =
         IO.delay(storage.estimatedSize())
