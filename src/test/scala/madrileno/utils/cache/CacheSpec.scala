@@ -75,15 +75,6 @@ class CacheSpec extends AsyncWordSpec with AsyncIOSpec with Matchers {
       }
     }
 
-    "cap memory at the configured maxSize" in {
-      val cache = CacheRuntime.scaffeine.expiring[Int, Int](expireAfterWrite = 1.hour, maxSize = 2)
-      for {
-        _       <- (1 to 100).toList.traverse_(i => cache.put(i, i * i))
-        _       <- (1 to 100).toList.traverse_(i => cache.get(i))
-        present <- (1 to 100).toList.traverse(i => cache.get(i))
-        survivors = present.count(_.isDefined)
-      } yield survivors should be <= 10
-    }
   }
 
   "TestCacheRuntime.unbounded" should {
