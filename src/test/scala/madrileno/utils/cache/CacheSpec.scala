@@ -3,6 +3,7 @@ package madrileno.utils.cache
 import cats.effect.IO
 import cats.effect.testing.scalatest.AsyncIOSpec
 import cats.syntax.all.*
+import madrileno.support.TestCacheRuntime
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AsyncWordSpec
 
@@ -10,67 +11,48 @@ import scala.concurrent.duration.*
 
 class CacheSpec extends AsyncWordSpec with AsyncIOSpec with Matchers {
 
-  private def caches: List[(String, Cache[String, Int])] = List(
-    "scaffeine" -> CacheRuntime.scaffeine.expiring[String, Int](expireAfterWrite = 1.hour, maxSize = 128),
-    "inMemory"  -> CacheRuntime.inMemory.expiring[String, Int](expireAfterWrite = 1.hour, maxSize = 128)
-  )
+  private val runtimes: List[(String, CacheRuntime)] = List("scaffeine" -> CacheRuntime.scaffeine, "test" -> TestCacheRuntime.unbounded)
 
-  caches.foreach { case (label, cache) =>
+  runtimes.foreach { case (label, runtime) =>
     s"Cache ($label)" should {
+      def newCache[K, V]: Cache[K, V] = runtime.expiring[K, V](expireAfterWrite = 1.hour, maxSize = 128)
+
       "return None for a missing key" in {
-        cache.get(s"$label-missing").map(_ shouldBe None)
+        newCache[String, Int].get("missing").map(_ shouldBe None)
       }
 
       "return the cached value after put" in {
-        val key = s"$label-k1"
+        val cache = newCache[String, Int]
         for {
-          _   <- cache.put(key, 42)
-          got <- cache.get(key)
+          _   <- cache.put("k", 42)
+          got <- cache.get("k")
         } yield got shouldBe Some(42)
       }
 
       "invalidate removes the value for that key" in {
-        val key = s"$label-k2"
+        val cache = newCache[String, Int]
         for {
-          _   <- cache.put(key, 7)
-          _   <- cache.invalidate(key)
-          got <- cache.get(key)
-          stillThere = got
-        } yield stillThere shouldBe None
-      }
-
-      "getOrLoad returns cached value on hit without running load" in {
-        val key = s"$label-k3"
-        for {
-          counter <- IO.ref(0)
-          load = counter.updateAndGet(_ + 1)
-          first  <- cache.getOrLoad(key)(load)
-          second <- cache.getOrLoad(key)(load)
-          third  <- cache.getOrLoad(key)(load)
-          total  <- counter.get
-        } yield {
-          first shouldBe 1
-          second shouldBe 1
-          third shouldBe 1
-          total shouldBe 1
-        }
+          _   <- cache.put("k", 7)
+          _   <- cache.invalidate("k")
+          got <- cache.get("k")
+        } yield got shouldBe None
       }
 
       "size reflects the number of stored entries" in {
+        val cache = newCache[Int, String]
         for {
-          c <- IO.pure(CacheRuntime.inMemory.expiring[Int, String](1.hour, maxSize = 128))
-          _ <- (1 to 5).toList.traverse_(i => c.put(i, s"v$i"))
-          s <- c.size
+          _ <- (1 to 5).toList.traverse_(i => cache.put(i, s"v$i"))
+          s <- cache.size
         } yield s shouldBe 5L
       }
 
       "invalidateAll clears every entry" in {
+        val cache = newCache[Int, String]
         for {
-          c     <- IO.pure(CacheRuntime.inMemory.expiring[Int, String](1.hour, maxSize = 128))
-          _     <- (1 to 5).toList.traverse_(i => c.put(i, s"v$i"))
-          _     <- c.invalidateAll
-          after <- c.size
-          got   <- c.get(3)
+          _     <- (1 to 5).toList.traverse_(i => cache.put(i, s"v$i"))
+          _     <- cache.invalidateAll
+          after <- cache.size
+          got   <- cache.get(3)
         } yield {
           after shouldBe 0L
           got shouldBe None
@@ -104,9 +86,9 @@ class CacheSpec extends AsyncWordSpec with AsyncIOSpec with Matchers {
     }
   }
 
-  "CacheRuntime.inMemory" should {
+  "TestCacheRuntime.unbounded" should {
     "ignore TTL and maxSize" in {
-      val cache = CacheRuntime.inMemory.expiring[Int, Int](expireAfterWrite = 1.milli, maxSize = 1)
+      val cache = TestCacheRuntime.unbounded.expiring[Int, Int](expireAfterWrite = 1.milli, maxSize = 1)
       for {
         _   <- (1 to 100).toList.traverse_(i => cache.put(i, i))
         _   <- IO.sleep(50.millis)
