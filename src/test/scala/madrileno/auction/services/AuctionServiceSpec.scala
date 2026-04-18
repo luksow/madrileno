@@ -114,6 +114,30 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
       service.getAuction(TestData.randomAuctionId()).map(_ shouldBe None)
     }
 
+    "get an NV auction (vintage = None) round-trip" in {
+      for {
+        seller  <- seedUser()
+        created <- createAuctionOrFail(createCommand(seller.id).copy(vintage = None))
+        found   <- service.getAuction(created.id)
+      } yield {
+        found shouldBe defined
+        found.get.vintage shouldBe None
+      }
+    }
+
+    "populate the auction with a rating when the gateway returns one" in {
+      val ratedGateway: VivinoGateway = (_, _) => IO.pure(Some(VivinoRating(Rating(BigDecimal(4.7)), RatingsCount(12345))))
+      val ratedService                = new AuctionService(auctionRepo, bidRepo, userRepo, ratedGateway, transactor, mailer)
+      for {
+        seller  <- seedUser()
+        created <- createAuctionOrFail(createCommand(seller.id))
+        found   <- ratedService.getAuction(created.id)
+      } yield {
+        found.flatMap(_.rating).map(_.rating.unwrap) shouldBe Some(BigDecimal(4.7))
+        found.flatMap(_.rating).map(_.ratingsCount.unwrap) shouldBe Some(12345)
+      }
+    }
+
     "list auctions with filter" in {
       for {
         seller <- seedUser()

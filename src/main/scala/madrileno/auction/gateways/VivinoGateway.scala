@@ -30,10 +30,13 @@ object VivinoGateway {
       override def findRating(wineName: WineName, vintage: Option[Vintage]): IO[Option[VivinoRating]] =
         cache.get((wineName, vintage)).flatMap {
           case Some(cached) => IO.pure(cached)
-          case None =>
+          case None         =>
+            // Only cache successful fetches. A transient upstream failure must not poison the
+            // entry for the full TTL — it would suppress ratings for that wine long after the
+            // outage is resolved.
             fetch(wineName, vintage)
-              .handleErrorWith(t => logger.warn(t)(s"Vivino lookup failed for $wineName ${vintage.map(_.unwrap)}").as(None))
               .flatTap(result => cache.put((wineName, vintage), result))
+              .handleErrorWith(t => logger.warn(t)(s"Vivino lookup failed for $wineName ${vintage.map(_.unwrap)}").as(None))
         }
 
       private def fetch(wineName: WineName, vintage: Option[Vintage]): IO[Option[VivinoRating]] = {
@@ -80,7 +83,7 @@ object VivinoGateway {
                }
       status  <- stats.status.toList if status == "Normal"
       avg     <- stats.ratingsAverage.toList
-      count   <- stats.ratingsCount.toList
+      count   <- stats.ratingsCount.toList if count > 0
       rating  <- Rating.validate(avg).toOption.toList
       ratings <- RatingsCount.validate(count).toOption.toList
       similarity = Similarity.jaroWinkler(normalizedTarget, Similarity.normalize(hitName))
@@ -124,7 +127,7 @@ private[gateways] object Similarity {
     if (s1.isEmpty && s2.isEmpty) 1.0
     else if (s1.isEmpty || s2.isEmpty) 0.0
     else {
-      val window = math.max(s1.length, s2.length) / 2 - 1
+      val window = math.max(0, math.max(s1.length, s2.length) / 2 - 1)
 
       @tailrec
       def matchLoop(

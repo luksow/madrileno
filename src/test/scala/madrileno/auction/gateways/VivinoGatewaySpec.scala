@@ -19,6 +19,10 @@ class VivinoGatewaySpec extends AnyWordSpec with Matchers {
       Similarity.jaroWinkler("chateau margaux", "chateau margaux") shouldBe 1.0
     }
 
+    "return 1.0 for identical single-character strings" in {
+      Similarity.jaroWinkler("a", "a") shouldBe 1.0
+    }
+
     "return 0.0 for entirely disjoint strings" in {
       Similarity.jaroWinkler("abc", "xyz") shouldBe 0.0
     }
@@ -89,6 +93,11 @@ class VivinoGatewaySpec extends AnyWordSpec with Matchers {
 
     "skip ratings outside the 0-5 range" in {
       val hits = List(hit("Chateau Margaux", 2020, stats(BigDecimal(7), 1000)))
+      VivinoGateway.pickBestMatch(target, year, hits) shouldBe None
+    }
+
+    "skip wines with zero ratings" in {
+      val hits = List(hit("Chateau Margaux", 2020, stats(BigDecimal(0), 0)))
       VivinoGateway.pickBestMatch(target, year, hits) shouldBe None
     }
 
