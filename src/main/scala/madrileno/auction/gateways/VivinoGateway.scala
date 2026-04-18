@@ -23,6 +23,7 @@ object VivinoGateway {
   private val applicationId       = "9TAKGWJUXL"
   private val apiKey              = "60c11b2f1068885161d95ca068d3a6ae"
   private val similarityThreshold = 0.85
+  private val requestTimeout      = 3.seconds
 
   def live(http: WebSocketStreamBackend[IO, Fs2Streams[IO]], cacheRuntime: CacheRuntime)(using TelemetryContext): VivinoGateway = {
     val cache = cacheRuntime.expiring[(WineName, Option[Vintage]), Option[VivinoRating]](expireAfterWrite = 24.hours, maxSize = 10_000)
@@ -31,10 +32,11 @@ object VivinoGateway {
         cache.get((wineName, vintage)).flatMap {
           case Some(cached) => IO.pure(cached)
           case None         =>
-            // Only cache successful fetches. A transient upstream failure must not poison the
-            // entry for the full TTL — it would suppress ratings for that wine long after the
-            // outage is resolved.
+            // Only cache successful fetches. Failures (network, timeout, parse) raise so
+            // flatTap is skipped and handleErrorWith returns None uncached; a transient
+            // upstream failure must not poison the entry for the full TTL.
             fetch(wineName, vintage)
+              .timeout(requestTimeout)
               .flatTap(result => cache.put((wineName, vintage), result))
               .handleErrorWith(t => logger.warn(t)(s"Vivino lookup failed for $wineName ${vintage.map(_.unwrap)}").as(None))
         }
@@ -53,7 +55,7 @@ object VivinoGateway {
         request.send(http).flatMap { response =>
           response.body match {
             case Right(parsed) => IO.pure(pickBestMatch(wineName, vintage, parsed.hits))
-            case Left(error)   => logger.warn(error)(s"Vivino response parse failed for $wineName ${vintage.map(_.unwrap)}").as(None)
+            case Left(error)   => IO.raiseError(error)
           }
         }
       }
