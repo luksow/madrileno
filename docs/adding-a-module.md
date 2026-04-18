@@ -15,6 +15,7 @@ src/main/scala/madrileno/<module>/
   services/      # use cases, commands, results, recurring tasks
   routers/       # http4s-stir routes
   routers/dto/   # request/response DTOs
+  gateways/      # upstream HTTP integrations (optional)
   emails/        # transactional email templates (optional)
   <Module>Module.scala       # wires it all together
 src/main/resources/db/migration/V<next>__<module>.sql
@@ -529,6 +530,80 @@ class ApplicationLoader(...)
     with AuctionModule
     with ProductModule  // <-- add this
     with HealthCheckModule { ... }
+```
+
+## Step 7.5 — If your module calls an upstream or needs a cache
+
+Two app-wide dependencies are already constructed by `ApplicationLoader` and available to any module that asks for them:
+
+- `val httpClient: WebSocketStreamBackend[IO, Fs2Streams[IO]]` — shared sttp backend (tracing, metrics, request logging already wired).
+- `val cacheRuntime: CacheRuntime` — Transactor-shaped factory. Modules call `cacheRuntime.expiring(ttl, maxSize)` to mint their own typed `Cache[K, V]`.
+
+Gateways live under `<module>/gateways/`. Keep the trait domain-shaped; the live factory owns its cache internally so the rest of the module never sees `Cache[...]` in a signature. `VivinoGateway` is the reference:
+
+```scala
+package madrileno.product.gateways
+
+import cats.effect.IO
+import madrileno.product.domain.*
+import madrileno.utils.cache.CacheRuntime
+import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
+import sttp.capabilities.fs2.Fs2Streams
+import sttp.client4.WebSocketStreamBackend
+import scala.concurrent.duration.*
+
+trait CatalogGateway {
+  def lookup(sku: Sku): IO[Option[CatalogEntry]]
+}
+
+object CatalogGateway {
+  def live(http: WebSocketStreamBackend[IO, Fs2Streams[IO]], cacheRuntime: CacheRuntime)(using TelemetryContext): CatalogGateway = {
+    val cache = cacheRuntime.expiring[Sku, Option[CatalogEntry]](expireAfterWrite = 12.hours, maxSize = 10_000)
+    new CatalogGateway with LoggingSupport {
+      override def lookup(sku: Sku): IO[Option[CatalogEntry]] =
+        cache.get(sku).flatMap {
+          case Some(cached) => IO.pure(cached)
+          case None =>
+            fetch(sku)
+              .timeout(3.seconds)
+              .flatTap(result => cache.put(sku, result))
+              .handleErrorWith(t => logger.warn(t)(s"Catalog lookup failed for $sku").as(None))
+        }
+
+      private def fetch(sku: Sku): IO[Option[CatalogEntry]] = ???
+    }
+  }
+}
+```
+
+Two invariants worth keeping:
+
+1. **`flatTap(cache.put)` runs before `handleErrorWith`**, so only successful fetches reach the cache. Failures (network, timeout, parse) raise, skip the `flatTap`, and return `None` uncached — a transient upstream outage must not poison the entry for the full TTL. Legitimate "not found" results (a successful fetch that returned no match) still cache as `None`, which is what you want.
+2. **Raise on decode failure** instead of logging-and-returning `None`. `IO.pure(None)` is a successful `IO`, which `flatTap` will happily cache.
+
+In the module, expose the gateway as `protected lazy val` so tests can stub it:
+
+```scala
+trait ProductModule extends RouteProvider with AuthRouteProvider {
+  given telemetryContext: TelemetryContext
+  val transactor: Transactor
+  val cacheRuntime: CacheRuntime
+  lazy val httpClient: WebSocketStreamBackend[IO, Fs2Streams[IO]]
+
+  protected lazy val catalogGateway: CatalogGateway = CatalogGateway.live(httpClient, cacheRuntime)
+
+  private val productRepository = wire[ProductRepository]
+  private val productService    = wire[ProductService]
+  ...
+}
+```
+
+And in `TestApplicationLoader`, override with a stub so specs never make real HTTP calls:
+
+```scala
+new ApplicationLoader(...) {
+  override protected lazy val catalogGateway: CatalogGateway = _ => IO.pure(None)
+}
 ```
 
 ## Step 8 — Router spec (Baklava), also your OpenAPI source
