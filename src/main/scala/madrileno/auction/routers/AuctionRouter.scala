@@ -16,11 +16,8 @@ import pl.iterators.stir.marshalling.ToResponseMarshallable
 import pl.iterators.stir.server.Route
 import pl.iterators.stir.server.directives.WebSocketDirectives
 
-class AuctionRouter(
-  auctionService: AuctionService,
-  eventBus: EventBus[AuctionEvent]
-)(using TelemetryContext
-) extends BaseRouter
+class AuctionRouter(auctionService: AuctionService, eventBus: EventBus[AuctionEvent])(using TelemetryContext)
+    extends BaseRouter
     with WebSocketDirectives {
 
   val routes: Route = {

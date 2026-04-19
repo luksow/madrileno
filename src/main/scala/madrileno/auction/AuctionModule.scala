@@ -31,8 +31,9 @@ trait AuctionModule extends RouteProvider with AuthRouteProvider with WebSocketR
   lazy val userRepository: UserRepository
   lazy val mailer: Mailer
 
-  protected lazy val vivinoGateway: VivinoGateway                = VivinoGateway.live(httpClient, cacheRuntime)
-  protected lazy val auctionEventBus: EventBus[AuctionEvent]     = eventBusRuntime.topic[AuctionEvent]("auction.events")
+  protected lazy val vivinoGateway: VivinoGateway = VivinoGateway.live(httpClient, cacheRuntime)
+  protected lazy val auctionEventBus: EventBus[AuctionEvent] =
+    eventBusRuntime.topic[AuctionEvent]("auction.events")
 
   private val auctionRepository = wire[AuctionRepository]
   private val bidRepository     = wire[BidRepository]

@@ -5,7 +5,7 @@ import org.typelevel.otel4s.trace.Tracer
 import skunk.*
 import skunk.Session.Credentials
 
-class PgTransactor(sessions: Resource[IO, Session[IO]]) extends Transactor {
+class PgTransactor(override val sessions: Resource[IO, Session[IO]]) extends Transactor {
   override def inTransaction[A](f: DBInTransaction[A]): IO[A] = {
     sessions.use { session =>
       session.transaction.use { transaction =>

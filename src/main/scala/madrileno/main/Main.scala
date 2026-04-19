@@ -1,5 +1,6 @@
 package madrileno.main
 
+import cats.effect.std.Supervisor
 import cats.effect.{Clock, IO, IOApp, Resource}
 import io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppender
 import madrileno.utils.cache.CacheRuntime
@@ -38,9 +39,10 @@ object Main extends IOApp.Simple {
       transactor <- PgTransactor.resource(pgConfig)
       clock = Clock[IO]
       schedulerConfig <- Resource.eval(IO.delay(config.at("scheduler").loadOrThrow[SchedulerConfig]))
-      scheduler       = Scheduler(transactor, schedulerConfig)
-      cacheRuntime    = CacheRuntime.scaffeine
-      eventBusRuntime = EventBusRuntime.local
+      scheduler    = Scheduler(transactor, schedulerConfig)
+      cacheRuntime = CacheRuntime.scaffeine
+      given Supervisor[IO] <- Supervisor[IO]
+      eventBusRuntime = EventBusRuntime.postgres(transactor)
       application     = ApplicationLoader(config, httpClient, transactor, clock, scheduler.client, cacheRuntime, eventBusRuntime)
       _ <- scheduler.run(recurringTasks = application.recurringTasks, oneTimeTasks = application.oneTimeTasks, customTasks = application.customTasks)
       metricsOps <- OtelMetrics.serverMetricsOps[IO]().toResource
