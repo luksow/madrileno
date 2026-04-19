@@ -9,11 +9,26 @@ import sttp.client4.quick.*
 
 import scala.concurrent.duration.*
 
-case class MailpitMessage(id: String, subject: String)
+case class MailpitAddress(name: String, address: String)
+case class MailpitMessage(
+  id: String,
+  subject: String,
+  from: Option[MailpitAddress],
+  to: List[MailpitAddress],
+  cc: List[MailpitAddress],
+  bcc: List[MailpitAddress],
+  snippet: String,
+  size: Long,
+  attachmentCount: Int)
 case class MailpitMessageDetail(
   subject: String,
   text: String,
   html: String,
+  from: Option[MailpitAddress],
+  to: List[MailpitAddress],
+  cc: List[MailpitAddress],
+  bcc: List[MailpitAddress],
+  replyTo: List[MailpitAddress],
   attachmentCount: Int,
   inlineCount: Int)
 
@@ -54,6 +69,15 @@ trait TestMailpit extends BeforeAndAfterAll { self: Suite =>
       throw new RuntimeException(s"Mailpit clear failed: ${response.code} ${response.body}")
   }
 
+  private def parseAddress(json: io.circe.Json): MailpitAddress =
+    MailpitAddress(name = json.hcursor.get[String]("Name").getOrElse(""), address = json.hcursor.get[String]("Address").getOrElse(""))
+
+  private def parseAddressList(cursor: io.circe.ACursor): List[MailpitAddress] =
+    cursor.focus.flatMap(_.asArray).getOrElse(Vector.empty).map(parseAddress).toList
+
+  private def parseAddressOpt(cursor: io.circe.ACursor): Option[MailpitAddress] =
+    cursor.focus.filterNot(_.isNull).map(parseAddress)
+
   def getMessages: IO[Seq[MailpitMessage]] = IO.blocking {
     val json = requireSuccess(quickRequest.get(uri"$apiUrl/messages").send(), "GET /messages")
     json.hcursor
@@ -62,18 +86,35 @@ trait TestMailpit extends BeforeAndAfterAll { self: Suite =>
       .flatMap(_.asArray)
       .getOrElse(Vector.empty)
       .map { msg =>
-        MailpitMessage(id = msg.hcursor.get[String]("ID").getOrElse(""), subject = msg.hcursor.get[String]("Subject").getOrElse(""))
+        val c = msg.hcursor
+        MailpitMessage(
+          id = c.get[String]("ID").getOrElse(""),
+          subject = c.get[String]("Subject").getOrElse(""),
+          from = parseAddressOpt(c.downField("From")),
+          to = parseAddressList(c.downField("To")),
+          cc = parseAddressList(c.downField("Cc")),
+          bcc = parseAddressList(c.downField("Bcc")),
+          snippet = c.get[String]("Snippet").getOrElse(""),
+          size = c.get[Long]("Size").getOrElse(0L),
+          attachmentCount = c.get[Int]("Attachments").getOrElse(0)
+        )
       }
   }
 
   def getMessage(id: String): IO[MailpitMessageDetail] = IO.blocking {
     val json = requireSuccess(quickRequest.get(uri"$apiUrl/message/$id").send(), s"GET /message/$id")
+    val c    = json.hcursor
     MailpitMessageDetail(
-      subject = json.hcursor.get[String]("Subject").getOrElse(""),
-      text = json.hcursor.get[String]("Text").getOrElse(""),
-      html = json.hcursor.get[String]("HTML").getOrElse(""),
-      attachmentCount = json.hcursor.downField("Attachments").focus.flatMap(_.asArray).map(_.size).getOrElse(0),
-      inlineCount = json.hcursor.downField("Inline").focus.flatMap(_.asArray).map(_.size).getOrElse(0)
+      subject = c.get[String]("Subject").getOrElse(""),
+      text = c.get[String]("Text").getOrElse(""),
+      html = c.get[String]("HTML").getOrElse(""),
+      from = parseAddressOpt(c.downField("From")),
+      to = parseAddressList(c.downField("To")),
+      cc = parseAddressList(c.downField("Cc")),
+      bcc = parseAddressList(c.downField("Bcc")),
+      replyTo = parseAddressList(c.downField("ReplyTo")),
+      attachmentCount = c.downField("Attachments").focus.flatMap(_.asArray).map(_.size).getOrElse(0),
+      inlineCount = c.downField("Inline").focus.flatMap(_.asArray).map(_.size).getOrElse(0)
     )
   }
 

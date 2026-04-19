@@ -2,6 +2,7 @@ package madrileno.main
 
 import cats.effect.{Clock, IO, IOApp, Resource}
 import io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppender
+import madrileno.utils.cache.CacheRuntime
 import madrileno.utils.db.transactor.{PgConfig, PgTransactor}
 import madrileno.utils.observability.TelemetryContext
 import madrileno.utils.task.{Scheduler, SchedulerConfig}
@@ -36,8 +37,9 @@ object Main extends IOApp.Simple {
       transactor <- PgTransactor.resource(pgConfig)
       clock = Clock[IO]
       schedulerConfig <- Resource.eval(IO.delay(config.at("scheduler").loadOrThrow[SchedulerConfig]))
-      scheduler   = Scheduler(transactor, schedulerConfig)
-      application = ApplicationLoader(config, httpClient, transactor, clock, scheduler.client)
+      scheduler    = Scheduler(transactor, schedulerConfig)
+      cacheRuntime = CacheRuntime.scaffeine
+      application  = ApplicationLoader(config, httpClient, transactor, clock, scheduler.client, cacheRuntime)
       _ <- scheduler.run(recurringTasks = application.recurringTasks, oneTimeTasks = application.oneTimeTasks, customTasks = application.customTasks)
       metricsOps <- OtelMetrics.serverMetricsOps[IO]().toResource
       redactor = new QueryRedactor.NeverRedact with PathRedactor.NeverRedact
