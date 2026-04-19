@@ -1,6 +1,6 @@
 package madrileno.utils.db.transactor
 
-import cats.effect.{IO, Resource}
+import cats.effect.IO
 import skunk.*
 import skunk.util.Origin
 
@@ -23,9 +23,4 @@ trait Transactor {
     * Use `inTransaction` for atomicity.
     */
   def inSession[A](f: DB[A]): IO[A]
-
-  /** Raw session resource for callers that need to hold a session open beyond the scope of a single block — e.g. Postgres LISTEN, which requires a
-    * dedicated long-lived session. Prefer `inSession` / `inTransaction` for anything else.
-    */
-  def sessions: Resource[IO, Session[IO]]
 }

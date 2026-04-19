@@ -5,7 +5,7 @@ import org.typelevel.otel4s.trace.Tracer
 import skunk.*
 import skunk.Session.Credentials
 
-class PgTransactor(override val sessions: Resource[IO, Session[IO]]) extends Transactor {
+class PgTransactor(sessions: Resource[IO, Session[IO]]) extends Transactor {
   override def inTransaction[A](f: DBInTransaction[A]): IO[A] = {
     sessions.use { session =>
       session.transaction.use { transaction =>
@@ -22,8 +22,8 @@ class PgTransactor(override val sessions: Resource[IO, Session[IO]]) extends Tra
 }
 
 object PgTransactor {
-  def resource(pgConfig: PgConfig)(using Tracer[IO]): Resource[IO, PgTransactor] = {
-    val session = Session
+  def resource(pgConfig: PgConfig)(using Tracer[IO]): Resource[IO, (PgTransactor, Resource[IO, Session[IO]])] = {
+    val sessions = Session
       .Builder[IO]
       .withHost(pgConfig.host)
       .withPort(pgConfig.port)
@@ -43,6 +43,6 @@ object PgTransactor {
       .withRedactionStrategy(RedactionStrategy.OptIn)
       .withSocketOptions(Session.DefaultSocketOptions)
       .pooled(pgConfig.max)
-    session.map(new PgTransactor(_))
+    sessions.map(pool => (new PgTransactor(pool), pool))
   }
 }

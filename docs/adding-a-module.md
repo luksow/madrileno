@@ -17,7 +17,6 @@ src/main/scala/madrileno/<module>/
   routers/dto/   # request/response DTOs
   gateways/      # upstream HTTP integrations (optional)
   emails/        # transactional email templates (optional)
-  domain/<Event>.scala       # pub/sub event ADT (optional)
   <Module>Module.scala       # wires it all together
 src/main/resources/db/migration/V<next>__<module>.sql
 src/test/scala/madrileno/<module>/
@@ -607,44 +606,37 @@ new ApplicationLoader(...) {
 }
 ```
 
-### Pub/sub: publishing and streaming events
+### Pub/sub and WebSocket streaming
 
-Same shape as the cache: `EventBusRuntime` is the Transactor-analogue for publish/subscribe. Module declares `val eventBusRuntime: EventBusRuntime` and mints its typed topic:
+`EventBusRuntime` is the Transactor analogue for publish/subscribe. Module declares `val eventBusRuntime: EventBusRuntime` and mints its typed topic:
 
 ```scala
 protected lazy val productEventBus: EventBus[ProductEvent] =
   eventBusRuntime.topic[ProductEvent]("product.events")
 ```
 
-The `name` becomes the Postgres `LISTEN` / `NOTIFY` channel when running with the Postgres backend — pick something unique per module.
+The `name` becomes the Postgres `LISTEN` / `NOTIFY` channel under the Postgres backend.
 
-`ProductEvent` is a sealed ADT in `domain/`, `derives Codec.AsObject`. The service publishes after state-change commits land (best-effort broadcast: publish failures are logged, never raised):
-
-```scala
-def register(cmd: RegisterProductCommand): IO[RegisterResult] =
-  transactor.inTransaction { … }
-    .flatTap {
-      case RegisterResult.Registered(p) => eventBus.publish(ProductEvent.Registered(p.id, p.name, now))
-      case _                            => IO.unit
-    }
-```
-
-Streaming to WebSocket clients lives in a `wsRoutes(wsb: WebSocketBuilder2[IO]): Route` method on the router. The module's `WebSocketRouteProvider` mixin composes it into the app:
+Service publishes after the commit lands — failures are logged, never raised:
 
 ```scala
-def wsRoutes(wsb: WebSocketBuilder2[IO]): Route =
-  (get & path("products" / "stream") & pathEndOrSingleSlash) {
-    val send = eventBus.subscribe.map(e => WebSocketFrame.Text(e.asJson.noSpaces))
-    handleWebSocketMessages(wsb, send, _.drain)
+def register(cmd): IO[RegisterResult] =
+  transactor.inTransaction { … }.flatTap {
+    case RegisterResult.Registered(p) => eventBus.publish(ProductEvent.Registered(p.id, p.name, now))
+    case _                            => IO.unit
   }
 ```
 
-**Backend choice is Main's concern:**
+WebSocket endpoints sit in the module's regular `routes: Route`. The router takes `wsBuilder: () => WebSocketBuilder2[IO]` via macwire; `handleWebSocketMessages` comes from `BaseRouter`:
 
-- `EventBusRuntime.local` — fs2.Topic, single-process. Fine for dev and all tests.
-- `EventBusRuntime.postgres(transactor)` — `LISTEN` / `NOTIFY` backed, multi-instance. Production default. Requires a `Supervisor[IO]` for the long-lived LISTEN fiber. NOTIFY payload is capped at ~8 KB; messages are transient (no replay after reconnect). Don't use it for durable jobs — that's what the scheduler is for.
+```scala
+(get & path("products" / "stream") & pathEndOrSingleSlash) {
+  val send = eventBus.subscribe.map(e => WebSocketFrame.Text(e.asJson.noSpaces))
+  handleWebSocketMessages(wsBuilder(), send, _.drain)
+}
+```
 
-Tests override the module's `protected lazy val productEventBus` directly if they want to observe publishes, or use `EventBusRuntime.local` and `subscribe` in the spec.
+Backend choice is Main's concern: `EventBusRuntime.local` (fs2.Topic, single-process) for dev/tests; `EventBusRuntime.postgres(pgSessions)` for production. Postgres variant requires a shared `Supervisor[IO]` and reconnects the LISTEN session on failure. NOTIFY payloads are capped at ~8 KB, messages are transient — not a replacement for the scheduler when you need durability.
 
 ## Step 8 — Router spec (Baklava), also your OpenAPI source
 

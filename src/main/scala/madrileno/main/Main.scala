@@ -34,15 +34,15 @@ object Main extends IOApp.Simple {
       given Meter[IO] <- Resource.eval(summon[MeterProvider[IO]].get(appConfig.name))
       given TelemetryContext = TelemetryContext(Meter[IO], Tracer[IO], otel.underlying)
       _                      = OpenTelemetryAppender.install(otel.underlying)
-      httpClient <- HttpClientFs2Backend.resource[IO]()
-      pgConfig   <- Resource.eval(IO.delay(config.at("pg").loadOrThrow[PgConfig]))
-      transactor <- PgTransactor.resource(pgConfig)
+      httpClient               <- HttpClientFs2Backend.resource[IO]()
+      pgConfig                 <- Resource.eval(IO.delay(config.at("pg").loadOrThrow[PgConfig]))
+      (transactor, pgSessions) <- PgTransactor.resource(pgConfig)
       clock = Clock[IO]
       schedulerConfig <- Resource.eval(IO.delay(config.at("scheduler").loadOrThrow[SchedulerConfig]))
       scheduler    = Scheduler(transactor, schedulerConfig)
       cacheRuntime = CacheRuntime.scaffeine
       given Supervisor[IO] <- Supervisor[IO]
-      eventBusRuntime = EventBusRuntime.postgres(transactor)
+      eventBusRuntime = EventBusRuntime.postgres(pgSessions)
       application     = ApplicationLoader(config, httpClient, transactor, clock, scheduler.client, cacheRuntime, eventBusRuntime)
       _ <- scheduler.run(recurringTasks = application.recurringTasks, oneTimeTasks = application.oneTimeTasks, customTasks = application.customTasks)
       metricsOps <- OtelMetrics.serverMetricsOps[IO]().toResource
@@ -74,9 +74,9 @@ object Main extends IOApp.Simple {
              .withHost(application.httpConfig.host)
              .withPort(application.httpConfig.port)
              .withHttpWebSocketApp { wsb =>
+               application.setWebSocketBuilder(wsb)
                serverMiddleware.wrapHttpApp(
-                 EntityLimiter
-                   .httpApp(Metrics(metricsOps)(application.routesWithWs(wsb).toHttpRoutes).orNotFound, application.httpConfig.maxRequestSize)
+                 EntityLimiter.httpApp(Metrics(metricsOps)(application.routes.toHttpRoutes).orNotFound, application.httpConfig.maxRequestSize)
                )
              }
              .build

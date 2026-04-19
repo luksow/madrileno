@@ -10,12 +10,14 @@ import pl.iterators.kebs.http4sstir.matchers.KebsHttp4sStirMatchers
 import pl.iterators.kebs.http4sstir.unmarshallers.{KebsHttp4sStirEnumUnmarshallers, KebsHttp4sStirUnmarshallers, KebsHttp4sStirValueEnumUnmarshallers}
 import pl.iterators.stir.marshalling.ToResponseMarshallable
 import pl.iterators.stir.server.Directives
+import pl.iterators.stir.server.directives.WebSocketDirectives
 
 import java.net.URI
 
 trait BaseRouter
     extends JsonProtocol
     with Directives
+    with WebSocketDirectives
     with KebsHttp4sStirMatchers
     with KebsHttp4sStirUnmarshallers
     with KebsHttp4sStirEnumUnmarshallers

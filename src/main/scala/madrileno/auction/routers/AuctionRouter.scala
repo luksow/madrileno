@@ -14,11 +14,13 @@ import org.http4s.server.websocket.WebSocketBuilder2
 import org.http4s.websocket.WebSocketFrame
 import pl.iterators.stir.marshalling.ToResponseMarshallable
 import pl.iterators.stir.server.Route
-import pl.iterators.stir.server.directives.WebSocketDirectives
 
-class AuctionRouter(auctionService: AuctionService, eventBus: EventBus[AuctionEvent])(using TelemetryContext)
-    extends BaseRouter
-    with WebSocketDirectives {
+class AuctionRouter(
+  auctionService: AuctionService,
+  eventBus: EventBus[AuctionEvent],
+  wsBuilder: () => WebSocketBuilder2[IO]
+)(using TelemetryContext)
+    extends BaseRouter {
 
   val routes: Route = {
     (get & path("auctions") & parameters("status".as[AuctionStatus].?, "seller-id".as[UserId].?) & pathEndOrSingleSlash) { (status, sellerId) =>
@@ -36,14 +38,11 @@ class AuctionRouter(auctionService: AuctionService, eventBus: EventBus[AuctionEv
             case None       => error(NotFound, "auction-not-found", "Auction not found")
           }
         }
+      } ~
+      (get & path("auctions" / "stream") & pathEndOrSingleSlash) {
+        val send = eventBus.subscribe.map(e => WebSocketFrame.Text(e.asJson.noSpaces))
+        handleWebSocketMessages(wsBuilder(), send, _.drain)
       }
-  }
-
-  def wsRoutes(wsb: WebSocketBuilder2[IO]): Route = {
-    (get & path("auctions" / "stream") & pathEndOrSingleSlash) {
-      val send = eventBus.subscribe.map(e => WebSocketFrame.Text(e.asJson.noSpaces))
-      handleWebSocketMessages(wsb, send, _.drain)
-    }
   }
 
   def authedRoutes(authContext: AuthContext): Route = {

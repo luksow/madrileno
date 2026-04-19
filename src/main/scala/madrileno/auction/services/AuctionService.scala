@@ -36,8 +36,6 @@ class AuctionService(
   Clock[IO])
     extends LoggingSupport {
 
-  // Publish after the transaction has committed. Failures are logged, never raised —
-  // the state transition is already durable; the event is best-effort broadcast.
   private def publish(event: AuctionEvent): IO[Unit] =
     eventBus.publish(event).handleErrorWith(t => logger.warn(t)(s"Failed to publish $event"))
 

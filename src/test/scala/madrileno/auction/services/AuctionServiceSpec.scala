@@ -46,6 +46,14 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
 
   private val eur = Currency.getInstance("EUR")
 
+  private def withObservedEvent[A](action: IO[A]): IO[(AuctionEvent, A)] =
+    for {
+      subFiber <- eventBus.subscribe.take(1).compile.lastOrError.start
+      _        <- IO.sleep(100.millis)
+      result   <- action
+      event    <- subFiber.joinWithNever
+    } yield (event, result)
+
   // Service manages its own sessions/transactions, so we seed data via the transactor directly
   private def seedUser(user: User = TestData.user()): IO[User] = {
     transactor.inSession { userRepo.create(user, Instant.now()) }
@@ -141,44 +149,32 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
     }
 
     "publish AuctionCreated when createAuction succeeds" in {
-      for {
-        seller     <- seedUser()
-        subscribed <- eventBus.subscribe.take(1).compile.toList.start
-        _          <- IO.sleep(50.millis)
-        auction    <- createAuctionOrFail(createCommand(seller.id))
-        events     <- subscribed.joinWithNever
-      } yield {
-        events.head shouldBe a[AuctionEvent.AuctionCreated]
-        events.head.auctionId shouldBe auction.id
+      withObservedEvent(seedUser().flatMap(seller => createAuctionOrFail(createCommand(seller.id)))).map { case (event, auction) =>
+        event shouldBe a[AuctionEvent.AuctionCreated]
+        event.auctionId shouldBe auction.id
       }
     }
 
     "publish BidPlaced when a bid is accepted" in {
       for {
-        seller     <- seedUser()
-        bidder     <- seedUser()
-        auction    <- createAuctionOrFail(createCommand(seller.id))
-        subscribed <- eventBus.subscribe.take(1).compile.toList.start
-        _          <- IO.sleep(50.millis)
-        _          <- service.placeBid(PlaceBidCommand(auction.id, bidder.id, Price(BigDecimal(150))))
-        events     <- subscribed.joinWithNever
+        seller  <- seedUser()
+        bidder  <- seedUser()
+        auction <- createAuctionOrFail(createCommand(seller.id))
+        out     <- withObservedEvent(service.placeBid(PlaceBidCommand(auction.id, bidder.id, Price(BigDecimal(150)))))
       } yield {
-        events.head shouldBe a[AuctionEvent.BidPlaced]
-        events.head.auctionId shouldBe auction.id
+        out._1 shouldBe a[AuctionEvent.BidPlaced]
+        out._1.auctionId shouldBe auction.id
       }
     }
 
     "publish AuctionCancelled when the seller cancels" in {
       for {
-        seller     <- seedUser()
-        auction    <- createAuctionOrFail(createCommand(seller.id))
-        subscribed <- eventBus.subscribe.take(1).compile.toList.start
-        _          <- IO.sleep(50.millis)
-        _          <- service.cancelAuction(CancelAuctionCommand(auction.id, seller.id))
-        events     <- subscribed.joinWithNever
+        seller  <- seedUser()
+        auction <- createAuctionOrFail(createCommand(seller.id))
+        out     <- withObservedEvent(service.cancelAuction(CancelAuctionCommand(auction.id, seller.id)))
       } yield {
-        events.head shouldBe a[AuctionEvent.AuctionCancelled]
-        events.head.auctionId shouldBe auction.id
+        out._1 shouldBe a[AuctionEvent.AuctionCancelled]
+        out._1.auctionId shouldBe auction.id
       }
     }
 

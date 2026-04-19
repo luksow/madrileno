@@ -16,8 +16,11 @@ import madrileno.utils.task.{ApplicationTaskProvider, OneTimeTask, SchedulerClie
 import org.http4s.Headers
 import org.http4s.otel4s.middleware.instances.all.*
 import org.http4s.server.websocket.WebSocketBuilder2
+
+import java.util.concurrent.atomic.AtomicReference
 import org.typelevel.otel4s.Attribute
 import pl.iterators.stir.server.{PathMatcher, Route}
+import pl.iterators.stir.server.directives.RouteDirectives
 import pureconfig.*
 import pureconfig.module.ip4s.*
 import sttp.capabilities.fs2.Fs2Streams
@@ -107,9 +110,17 @@ class ApplicationLoader(
   private val apiVersion: String                   = appConfig.apiVersion
   private val pathPrefixMatcher: PathMatcher[Unit] = Slash ~ apiVersion
 
-  // The HTTP routes — authenticated + public + mail-preview. WebSocket endpoints live in
-  // `routesWithWs` because they need a WebSocketBuilder2 that only exists once the server builds.
-  private def httpRoutes(extra: Route): Route =
+  private val wsBuilderRef: AtomicReference[WebSocketBuilder2[IO]] = new AtomicReference(null)
+
+  private[main] def setWebSocketBuilder(wsb: WebSocketBuilder2[IO]): Unit = wsBuilderRef.set(wsb)
+
+  override def webSocketBuilder: WebSocketBuilder2[IO] = {
+    val wsb = wsBuilderRef.get()
+    if (wsb == null) sys.error("WebSocketBuilder2 not initialised — setWebSocketBuilder must run before a WS request lands")
+    else wsb
+  }
+
+  val routes: Route =
     onSuccess(telemetryContext.tracer.propagate(Map.empty)) { initialCtx =>
       logRequest(logAction = Some(logAction(initialCtx))) {
         handleExceptions(exceptionHandler(logResult(logAction = Some(logAction(initialCtx))))) {
@@ -122,7 +133,7 @@ class ApplicationLoader(
                       logResult(logAction = Some(logAction(initialCtx))) {
                         onSuccess(telemetryContext.tracer.propagate(Headers.empty)) { newHeaders =>
                           mapResponseHeaders(_ ++ newHeaders) {
-                            route(auth) ~ route ~ extra
+                            route(auth) ~ route
                           }
                         }
                       }
@@ -133,19 +144,13 @@ class ApplicationLoader(
                 logResult(logAction = Some(logAction(initialCtx))) {
                   onSuccess(telemetryContext.tracer.propagate(Headers.empty)) { newHeaders =>
                     mapResponseHeaders(_ ++ newHeaders) {
-                      route ~ extra
+                      route
                     }
                   }
                 }
-            } ~ (if (appConfig.environment == "dev") new MailPreviewRouter(mailPreviews, mailContext).routes else reject)
+            } ~ (if (appConfig.environment == "dev") new MailPreviewRouter(mailPreviews, mailContext).routes else RouteDirectives.reject)
           }
         }
       }
     }
-
-  /** Plain HTTP routes — used by router specs that don't care about WebSocket endpoints. */
-  val routes: Route = httpRoutes(reject)
-
-  /** Full routes including WebSocket endpoints — called from Main once the server's WebSocketBuilder2 is available. */
-  def routesWithWs(wsb: WebSocketBuilder2[IO]): Route = httpRoutes(wsRoutes(wsb))
 }
