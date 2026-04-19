@@ -107,7 +107,9 @@ class ApplicationLoader(
   private val apiVersion: String                   = appConfig.apiVersion
   private val pathPrefixMatcher: PathMatcher[Unit] = Slash ~ apiVersion
 
-  def buildRoutes(wsb: WebSocketBuilder2[IO]): Route =
+  // The HTTP routes — authenticated + public + mail-preview. WebSocket endpoints live in
+  // `routesWithWs` because they need a WebSocketBuilder2 that only exists once the server builds.
+  private def httpRoutes(extra: Route): Route =
     onSuccess(telemetryContext.tracer.propagate(Map.empty)) { initialCtx =>
       logRequest(logAction = Some(logAction(initialCtx))) {
         handleExceptions(exceptionHandler(logResult(logAction = Some(logAction(initialCtx))))) {
@@ -120,7 +122,7 @@ class ApplicationLoader(
                       logResult(logAction = Some(logAction(initialCtx))) {
                         onSuccess(telemetryContext.tracer.propagate(Headers.empty)) { newHeaders =>
                           mapResponseHeaders(_ ++ newHeaders) {
-                            route(auth) ~ route ~ wsRoutes(wsb)
+                            route(auth) ~ route ~ extra
                           }
                         }
                       }
@@ -131,7 +133,7 @@ class ApplicationLoader(
                 logResult(logAction = Some(logAction(initialCtx))) {
                   onSuccess(telemetryContext.tracer.propagate(Headers.empty)) { newHeaders =>
                     mapResponseHeaders(_ ++ newHeaders) {
-                      route ~ wsRoutes(wsb)
+                      route ~ extra
                     }
                   }
                 }
@@ -140,4 +142,10 @@ class ApplicationLoader(
         }
       }
     }
+
+  /** Plain HTTP routes — used by router specs that don't care about WebSocket endpoints. */
+  val routes: Route = httpRoutes(reject)
+
+  /** Full routes including WebSocket endpoints — called from Main once the server's WebSocketBuilder2 is available. */
+  def routesWithWs(wsb: WebSocketBuilder2[IO]): Route = httpRoutes(wsRoutes(wsb))
 }

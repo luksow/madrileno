@@ -8,12 +8,12 @@ import madrileno.auction.domain.AuctionEvent.*
 import madrileno.auction.emails.{AuctionClosedEmailTemplate, OutbidEmailTemplate}
 import madrileno.auction.gateways.VivinoGateway
 import madrileno.auction.repositories.*
-import madrileno.utils.events.EventBus
 import madrileno.user.domain.*
 import madrileno.user.repositories.UserRepository
 import madrileno.utils.crypto.IdGenerator
 import madrileno.utils.db.dsl.p
 import madrileno.utils.db.transactor.{DB, DBInTransaction, Transactor}
+import madrileno.utils.events.EventBus
 import madrileno.utils.mailer.{Language, Mailer}
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
 import madrileno.utils.task.{CronExpression, Schedule, Task}

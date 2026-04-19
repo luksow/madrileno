@@ -76,7 +76,7 @@ object Main extends IOApp.Simple {
              .withHttpWebSocketApp { wsb =>
                serverMiddleware.wrapHttpApp(
                  EntityLimiter
-                   .httpApp(Metrics(metricsOps)(application.buildRoutes(wsb).toHttpRoutes).orNotFound, application.httpConfig.maxRequestSize)
+                   .httpApp(Metrics(metricsOps)(application.routesWithWs(wsb).toHttpRoutes).orNotFound, application.httpConfig.maxRequestSize)
                )
              }
              .build
