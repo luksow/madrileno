@@ -8,9 +8,9 @@ import madrileno.auction.domain.*
 import madrileno.auction.gateways.VivinoGateway
 import madrileno.auction.repositories.{AuctionRepository, BidRepository}
 import madrileno.support.{TestData, TestGivens, TestMailpit, TestTransactor}
-import madrileno.utils.events.{EventBus, EventBusRuntime}
 import madrileno.user.domain.{User, UserId}
 import madrileno.user.repositories.UserRepository
+import madrileno.utils.events.{EventBus, EventBusRuntime}
 import madrileno.utils.mailer.*
 import madrileno.utils.observability.TelemetryContext
 import madrileno.utils.task.*
