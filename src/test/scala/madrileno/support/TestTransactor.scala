@@ -39,7 +39,7 @@ trait TestTransactor extends TestContainersForAll { self: Suite =>
     // Finalizer discarded — pool lifetime is tied to the Testcontainers PG container.
     // Releasing in afterAll causes broken-pipe errors because ScalaTest's afterAll ordering
     // conflicts with TestContainersForAll's container lifecycle.
-    PgTransactor.resource(pgConfig).allocated.unsafeRunSync()._1
+    PgTransactor.resource(pgConfig).allocated.unsafeRunSync()._1._1
   }
 
   lazy val transactor: Transactor = pgTransactor
