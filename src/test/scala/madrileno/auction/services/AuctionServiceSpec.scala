@@ -140,6 +140,48 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
       }
     }
 
+    "publish AuctionCreated when createAuction succeeds" in {
+      for {
+        seller     <- seedUser()
+        subscribed <- eventBus.subscribe.take(1).compile.toList.start
+        _          <- IO.sleep(50.millis)
+        auction    <- createAuctionOrFail(createCommand(seller.id))
+        events     <- subscribed.joinWithNever
+      } yield {
+        events.head shouldBe a[AuctionEvent.AuctionCreated]
+        events.head.auctionId shouldBe auction.id
+      }
+    }
+
+    "publish BidPlaced when a bid is accepted" in {
+      for {
+        seller     <- seedUser()
+        bidder     <- seedUser()
+        auction    <- createAuctionOrFail(createCommand(seller.id))
+        subscribed <- eventBus.subscribe.take(1).compile.toList.start
+        _          <- IO.sleep(50.millis)
+        _          <- service.placeBid(PlaceBidCommand(auction.id, bidder.id, Price(BigDecimal(150))))
+        events     <- subscribed.joinWithNever
+      } yield {
+        events.head shouldBe a[AuctionEvent.BidPlaced]
+        events.head.auctionId shouldBe auction.id
+      }
+    }
+
+    "publish AuctionCancelled when the seller cancels" in {
+      for {
+        seller     <- seedUser()
+        auction    <- createAuctionOrFail(createCommand(seller.id))
+        subscribed <- eventBus.subscribe.take(1).compile.toList.start
+        _          <- IO.sleep(50.millis)
+        _          <- service.cancelAuction(CancelAuctionCommand(auction.id, seller.id))
+        events     <- subscribed.joinWithNever
+      } yield {
+        events.head shouldBe a[AuctionEvent.AuctionCancelled]
+        events.head.auctionId shouldBe auction.id
+      }
+    }
+
     "list auctions with filter" in {
       for {
         seller <- seedUser()
