@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Firebase Auth</title>
+
+    <!-- Firebase UMD (Compatibility mode) -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 400px;
+            margin: 30px auto;
+            text-align: center;
+            background-color: #f4f4f4;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
+        }
+        h2, h3 {
+            color: #333;
+        }
+        input {
+            width: 90%;
+            padding: 10px;
+            margin: 8px 0;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            display: block;
+        }
+        button {
+            width: 95%;
+            padding: 10px;
+            margin: 10px 0;
+            border: none;
+            background-color: #007BFF;
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .token-container {
+            margin-top: 15px;
+            background: #fff;
+            padding: 10px;
+            border-radius: 5px;
+            word-wrap: break-word;
+            max-height: 200px;
+            overflow-y: auto;
+            text-align: left;
+        }
+        .copy-btn {
+            background-color: #28a745;
+        }
+        .copy-btn:hover {
+            background-color: #1e7e34;
+        }
+        .message {
+            margin-top: 8px;
+            font-size: 14px;
+            display: block;
+        }
+        .success {
+            color: #28a745;
+        }
+        .error {
+            color: #dc3545;
+        }
+    </style>
+</head>
+<body>
+<h2>Firebase Authentication</h2>
+
+<h3>Email & Password Login</h3>
+<input type="email" id="email" placeholder="Enter email">
+<input type="password" id="password" placeholder="Enter password">
+<button onclick="signUpWithEmail()">Sign Up</button>
+<button onclick="signInWithEmail()">Sign In</button>
+<button onclick="resetPassword()" style="background-color: #ffc107; color: black;">Forgot Password?</button>
+<span id="email-msg" class="message"></span>
+
+<h3>Passwordless (Email Link) Login</h3>
+<input type="email" id="passwordless-email" placeholder="Enter email for sign-in link">
+<button onclick="sendSignInLink()">Send Sign-in Link</button>
+<span id="link-msg" class="message"></span>
+
+<h3>Google Login</h3>
+<button onclick="signInWithGoogle()">Sign in with Google</button>
+<span id="google-msg" class="message"></span>
+
+<h3>Anonymous Login</h3>
+<button onclick="signInAnonymously()">Sign in Anonymously</button>
+<span id="anonymous-msg" class="message"></span>
+
+<h3>JWT Token:</h3>
+<div class="token-container">
+    <pre id="token-output"></pre>
+</div>
+<button class="copy-btn" onclick="copyToken()">Copy to Clipboard</button>
+<span id="copy-msg" class="message"></span>
+
+<script>
+    // Firebase configuration
+    const firebaseConfig = {
+        apiKey: "AIzaSyAXXCg6jVLiBtDGMs2_Va6a17T5EUT0vL8",
+        authDomain: "auctions-madrileno.firebaseapp.com",
+        projectId: "auctions-madrileno",
+        storageBucket: "auctions-madrileno.firebasestorage.app",
+        messagingSenderId: "820632721663",
+        appId: "1:820632721663:web:2c681617bbcf7e13acd4ca"
+    };
+
+    // Initialize Firebase (compat mode)
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+
+    function showMessage(id, message, isSuccess) {
+        const element = document.getElementById(id);
+        element.textContent = message;
+        element.className = `message ${isSuccess ? "success" : "error"}`;
+    }
+
+    // Sign Up with Email/Password
+    function signUpWithEmail() {
+        const email = document.getElementById("email").value;
+        const password = document.getElementById("password").value;
+
+        auth.createUserWithEmailAndPassword(email, password)
+            .then(userCredential => userCredential.user.getIdToken())
+            .then(token => {
+                document.getElementById("token-output").innerText = token;
+                showMessage("email-msg", "Account created & logged in!", true);
+            })
+            .catch(error => showMessage("email-msg", error.message, false));
+    }
+
+    // Sign In with Email/Password
+    function signInWithEmail() {
+        const email = document.getElementById("email").value;
+        const password = document.getElementById("password").value;
+
+        auth.signInWithEmailAndPassword(email, password)
+            .then(userCredential => userCredential.user.getIdToken())
+            .then(token => {
+                document.getElementById("token-output").innerText = token;
+                showMessage("email-msg", "Successfully signed in!", true);
+            })
+            .catch(error => showMessage("email-msg", error.message, false));
+    }
+
+    // Send sign-in link for passwordless login
+    function sendSignInLink() {
+        const email = document.getElementById("passwordless-email").value;
+        const actionCodeSettings = {
+            url: window.location.href,
+            handleCodeInApp: true
+        };
+
+        auth.sendSignInLinkToEmail(email, actionCodeSettings)
+            .then(() => {
+                localStorage.setItem("emailForSignIn", email);
+                showMessage("link-msg", "Sign-in link sent to your email!", true);
+            })
+            .catch(error => showMessage("link-msg", error.message, false));
+    }
+
+    // Handle sign-in link login
+    if (auth.isSignInWithEmailLink(window.location.href)) {
+        let email = localStorage.getItem("emailForSignIn");
+        if (!email) {
+            email = prompt("Please provide your email for confirmation");
+        }
+
+        auth.signInWithEmailLink(email, window.location.href)
+            .then(userCredential => {
+                localStorage.removeItem("emailForSignIn");
+                return userCredential.user.getIdToken();
+            })
+            .then(token => document.getElementById("token-output").innerText = token)
+            .catch(error => showMessage("link-msg", error.message, false));
+    }
+
+    // Sign in with Google
+    function signInWithGoogle() {
+        const provider = new firebase.auth.GoogleAuthProvider();
+        auth.signInWithPopup(provider)
+            .then(userCredential => userCredential.user.getIdToken())
+            .then(token => {
+                document.getElementById("token-output").innerText = token;
+                showMessage("google-msg", "Signed in with Google!", true);
+            })
+            .catch(error => showMessage("google-msg", error.message, false));
+    }
+
+    // Sign in anonymously
+    function signInAnonymously() {
+        auth.signInAnonymously()
+            .then(userCredential => userCredential.user.getIdToken())
+            .then(token => {
+                document.getElementById("token-output").innerText = token;
+                showMessage("anonymous-msg", "Signed in anonymously!", true);
+            })
+            .catch(error => showMessage("anonymous-msg", error.message, false));
+    }
+
+    // Copy JWT Token to clipboard
+    function copyToken() {
+        const tokenText = document.getElementById("token-output").innerText;
+        if (!tokenText) {
+            showMessage("copy-msg", "No token available to copy!", false);
+            return;
+        }
+
+        navigator.clipboard.writeText(tokenText)
+            .then(() => showMessage("copy-msg", "Token copied!", true))
+            .catch(err => showMessage("copy-msg", "Failed to copy token!", false));
+    }
+
+    // Reset Password
+    function resetPassword() {
+        const email = document.getElementById("email").value;
+        if (!email) {
+            showMessage("email-msg", "Please enter your email first.", false);
+            return;
+        }
+
+        auth.sendPasswordResetEmail(email)
+            .then(() => showMessage("email-msg", "Password reset email sent!", true))
+            .catch(error => showMessage("email-msg", error.message, false));
+    }
+</script>
+</body>
+</html>

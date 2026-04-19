@@ -50,9 +50,15 @@ class VivinoGatewaySpec extends AnyWordSpec with Matchers {
       name: String,
       year: Int,
       s: Option[VivinoGateway.AlgoliaStatistics],
-      top: Option[VivinoGateway.AlgoliaStatistics] = None
+      top: Option[VivinoGateway.AlgoliaStatistics] = None,
+      winery: Option[String] = None
     ) =
-      VivinoGateway.AlgoliaHit(Some(name), top, Some(List(VivinoGateway.AlgoliaVintage(Some(year), s))))
+      VivinoGateway.AlgoliaHit(
+        Some(name),
+        winery.map(w => VivinoGateway.AlgoliaWinery(Some(w))),
+        top,
+        Some(List(VivinoGateway.AlgoliaVintage(Some(year.toString), s)))
+      )
 
     "pick the vintage whose year matches the target" in {
       val hits = List(
@@ -79,11 +85,18 @@ class VivinoGatewaySpec extends AnyWordSpec with Matchers {
 
     "tolerate missing optional fields" in {
       val hits = List(
-        VivinoGateway.AlgoliaHit(None, None, None),
-        VivinoGateway.AlgoliaHit(Some("Chateau Margaux"), None, None),
-        VivinoGateway.AlgoliaHit(Some("Chateau Margaux"), None, Some(List.empty))
+        VivinoGateway.AlgoliaHit(None, None, None, None),
+        VivinoGateway.AlgoliaHit(Some("Chateau Margaux"), None, None, None),
+        VivinoGateway.AlgoliaHit(Some("Chateau Margaux"), None, None, Some(List.empty))
       )
       VivinoGateway.pickBestMatch(target, year, hits) shouldBe None
+    }
+
+    "match using winery + name when the name alone is short" in {
+      // Vivino returns short names like "Grange" for Penfolds Grange. The winery field
+      // carries the producer; combined score must clear the threshold.
+      val hits = List(hit("Grange", 2017, stats(4.6, 374), winery = Some("Penfolds")))
+      VivinoGateway.pickBestMatch(WineName("Penfolds Grange"), Some(Vintage(2017)), hits).map(_.rating.unwrap) shouldBe Some(BigDecimal(4.6))
     }
 
     "skip vintages with non-Normal status" in {

@@ -1,6 +1,7 @@
 package madrileno.auction.gateways
 
 import cats.effect.IO
+import io.circe.Encoder
 import io.circe.derivation.{Configuration, ConfiguredCodec}
 import io.circe.syntax.*
 import madrileno.auction.domain.*
@@ -31,10 +32,7 @@ object VivinoGateway {
       override def findRating(wineName: WineName, vintage: Option[Vintage]): IO[Option[VivinoRating]] =
         cache.get((wineName, vintage)).flatMap {
           case Some(cached) => IO.pure(cached)
-          case None         =>
-            // Only cache successful fetches. Failures (network, timeout, parse) raise so
-            // flatTap is skipped and handleErrorWith returns None uncached; a transient
-            // upstream failure must not poison the entry for the full TTL.
+          case None =>
             fetch(wineName, vintage)
               .timeout(requestTimeout)
               .flatTap(result => cache.put((wineName, vintage), result))
@@ -77,7 +75,8 @@ object VivinoGateway {
                    for {
                      vintages <- hit.vintages.toList
                      vn       <- vintages
-                     year     <- vn.year.toList if v.unwrap == year
+                     rawYear  <- vn.year.toList
+                     year     <- rawYear.toIntOption.toList if v.unwrap == year
                      s        <- vn.statistics.toList
                    } yield s
                  case None =>
@@ -88,24 +87,37 @@ object VivinoGateway {
       count   <- stats.ratingsCount.toList if count > 0
       rating  <- Rating.validate(avg).toOption.toList
       ratings <- RatingsCount.validate(count).toOption.toList
-      similarity = Similarity.jaroWinkler(normalizedTarget, Similarity.normalize(hitName))
+      // Vivino strips the producer from `name` (e.g. "Grange" for Penfolds Grange). Score
+      // both name-only and winery+name; keep whichever is higher, so wines that already
+      // include the producer in the name (Romanée-Conti, Sassicaia) aren't penalised by
+      // concatenation.
+      nameSim = Similarity.jaroWinkler(normalizedTarget, Similarity.normalize(hitName))
+      wineryNameSim = hit.winery
+                        .flatMap(_.name)
+                        .map(w => Similarity.jaroWinkler(normalizedTarget, Similarity.normalize(s"$w $hitName")))
+                        .getOrElse(0.0)
+      similarity = math.max(nameSim, wineryNameSim)
       if similarity >= similarityThreshold
     } yield (similarity, VivinoRating(rating, ratings))
 
     candidates.sortBy(-_._1).headOption.map(_._2)
   }
 
-  private given Configuration = Configuration.default.withSnakeCaseMemberNames
+  // Outbound request keeps camelCase; Algolia rejects hits_per_page with a 400.
+  private case class AlgoliaQuery(query: String, hitsPerPage: Int) derives Encoder.AsObject
 
-  private case class AlgoliaQuery(query: String, hitsPerPage: Int) derives ConfiguredCodec
+  // Inbound response uses snake_case (ratings_count, ratings_average); scoped to decoders below.
+  private given Configuration = Configuration.default.withSnakeCaseMemberNames
 
   private[gateways] case class AlgoliaResponse(hits: List[AlgoliaHit]) derives ConfiguredCodec
   private[gateways] case class AlgoliaHit(
     name: Option[String],
+    winery: Option[AlgoliaWinery],
     statistics: Option[AlgoliaStatistics],
     vintages: Option[List[AlgoliaVintage]])
       derives ConfiguredCodec
-  private[gateways] case class AlgoliaVintage(year: Option[Int], statistics: Option[AlgoliaStatistics]) derives ConfiguredCodec
+  private[gateways] case class AlgoliaWinery(name: Option[String]) derives ConfiguredCodec
+  private[gateways] case class AlgoliaVintage(year: Option[String], statistics: Option[AlgoliaStatistics]) derives ConfiguredCodec
   private[gateways] case class AlgoliaStatistics(
     ratingsCount: Option[Int],
     ratingsAverage: Option[BigDecimal],
