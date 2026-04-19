@@ -8,12 +8,14 @@ import madrileno.healthcheck.HealthCheckModule
 import madrileno.user.UserModule
 import madrileno.utils.cache.CacheRuntime
 import madrileno.utils.db.transactor.Transactor
+import madrileno.utils.events.EventBusRuntime
 import madrileno.utils.http.{ApplicationRouteProvider, Handlers}
 import madrileno.utils.mailer.{MailContext, MailPreviewProvider, MailPreviewRouter, Mailer, MailerConfig, SmtpSender}
 import madrileno.utils.observability.*
 import madrileno.utils.task.{ApplicationTaskProvider, OneTimeTask, SchedulerClient}
 import org.http4s.Headers
 import org.http4s.otel4s.middleware.instances.all.*
+import org.http4s.server.websocket.WebSocketBuilder2
 import org.typelevel.otel4s.Attribute
 import pl.iterators.stir.server.{PathMatcher, Route}
 import pureconfig.*
@@ -44,7 +46,8 @@ class ApplicationLoader(
   val transactor: Transactor,
   val clock: Clock[IO],
   val schedulerClient: SchedulerClient,
-  val cacheRuntime: CacheRuntime
+  val cacheRuntime: CacheRuntime,
+  val eventBusRuntime: EventBusRuntime
 )(using TelemetryContext)
     extends ApplicationRouteProvider
     with ApplicationTaskProvider
@@ -104,7 +107,7 @@ class ApplicationLoader(
   private val apiVersion: String                   = appConfig.apiVersion
   private val pathPrefixMatcher: PathMatcher[Unit] = Slash ~ apiVersion
 
-  val routes: Route =
+  def buildRoutes(wsb: WebSocketBuilder2[IO]): Route =
     onSuccess(telemetryContext.tracer.propagate(Map.empty)) { initialCtx =>
       logRequest(logAction = Some(logAction(initialCtx))) {
         handleExceptions(exceptionHandler(logResult(logAction = Some(logAction(initialCtx))))) {
@@ -117,7 +120,7 @@ class ApplicationLoader(
                       logResult(logAction = Some(logAction(initialCtx))) {
                         onSuccess(telemetryContext.tracer.propagate(Headers.empty)) { newHeaders =>
                           mapResponseHeaders(_ ++ newHeaders) {
-                            route(auth) ~ route
+                            route(auth) ~ route ~ wsRoutes(wsb)
                           }
                         }
                       }
@@ -128,7 +131,7 @@ class ApplicationLoader(
                 logResult(logAction = Some(logAction(initialCtx))) {
                   onSuccess(telemetryContext.tracer.propagate(Headers.empty)) { newHeaders =>
                     mapResponseHeaders(_ ++ newHeaders) {
-                      route
+                      route ~ wsRoutes(wsb)
                     }
                   }
                 }

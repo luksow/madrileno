@@ -1,16 +1,27 @@
 package madrileno.auction.routers
 
+import cats.effect.IO
+import io.circe.syntax.*
 import madrileno.auction.domain.*
 import madrileno.auction.routers.dto.*
 import madrileno.auction.services.*
 import madrileno.auth.domain.AuthContext
 import madrileno.user.domain.UserId
+import madrileno.utils.events.EventBus
 import madrileno.utils.http.BaseRouter
 import madrileno.utils.observability.TelemetryContext
+import org.http4s.server.websocket.WebSocketBuilder2
+import org.http4s.websocket.WebSocketFrame
 import pl.iterators.stir.marshalling.ToResponseMarshallable
 import pl.iterators.stir.server.Route
+import pl.iterators.stir.server.directives.WebSocketDirectives
 
-class AuctionRouter(auctionService: AuctionService)(using TelemetryContext) extends BaseRouter {
+class AuctionRouter(
+  auctionService: AuctionService,
+  eventBus: EventBus[AuctionEvent]
+)(using TelemetryContext
+) extends BaseRouter
+    with WebSocketDirectives {
 
   val routes: Route = {
     (get & path("auctions") & parameters("status".as[AuctionStatus].?, "seller-id".as[UserId].?) & pathEndOrSingleSlash) { (status, sellerId) =>
@@ -29,6 +40,13 @@ class AuctionRouter(auctionService: AuctionService)(using TelemetryContext) exte
           }
         }
       }
+  }
+
+  def wsRoutes(wsb: WebSocketBuilder2[IO]): Route = {
+    (get & path("auctions" / "stream") & pathEndOrSingleSlash) {
+      val send = eventBus.subscribe.map(e => WebSocketFrame.Text(e.asJson.noSpaces))
+      handleWebSocketMessages(wsb, send, _.drain)
+    }
   }
 
   def authedRoutes(authContext: AuthContext): Route = {

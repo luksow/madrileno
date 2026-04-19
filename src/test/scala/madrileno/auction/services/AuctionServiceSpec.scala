@@ -8,6 +8,7 @@ import madrileno.auction.domain.*
 import madrileno.auction.gateways.VivinoGateway
 import madrileno.auction.repositories.{AuctionRepository, BidRepository}
 import madrileno.support.{TestData, TestGivens, TestMailpit, TestTransactor}
+import madrileno.utils.events.{EventBus, EventBusRuntime}
 import madrileno.user.domain.{User, UserId}
 import madrileno.user.repositories.UserRepository
 import madrileno.utils.mailer.*
@@ -39,8 +40,9 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
   private lazy val scheduler  = Scheduler(transactor, SchedulerConfig(pollingInterval = 1.second))
   private lazy val client     = scheduler.client
   private lazy val mailer     = new Mailer(smtpSender, client, MailContext(baseUrl = URI("https://example.com")))
-  private val vivinoGateway: VivinoGateway = (_, _) => IO.pure(None)
-  private lazy val service                 = new AuctionService(auctionRepo, bidRepo, userRepo, vivinoGateway, transactor, mailer)
+  private val vivinoGateway: VivinoGateway     = (_, _) => IO.pure(None)
+  private val eventBus: EventBus[AuctionEvent] = EventBusRuntime.local.topic[AuctionEvent]("auction.events.test")
+  private lazy val service                     = new AuctionService(auctionRepo, bidRepo, userRepo, vivinoGateway, eventBus, transactor, mailer)
 
   private val eur = Currency.getInstance("EUR")
 
@@ -127,7 +129,7 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
 
     "populate the auction with a rating when the gateway returns one" in {
       val ratedGateway: VivinoGateway = (_, _) => IO.pure(Some(VivinoRating(Rating(BigDecimal(4.7)), RatingsCount(12345))))
-      val ratedService                = new AuctionService(auctionRepo, bidRepo, userRepo, ratedGateway, transactor, mailer)
+      val ratedService                = new AuctionService(auctionRepo, bidRepo, userRepo, ratedGateway, eventBus, transactor, mailer)
       for {
         seller  <- seedUser()
         created <- createAuctionOrFail(createCommand(seller.id))
