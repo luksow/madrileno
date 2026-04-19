@@ -20,8 +20,8 @@ class PostgresEventBusSpec extends AsyncWordSpec with AsyncIOSpec with Matchers 
     "deliver events across separate runtime instances over the same Postgres" in {
       Supervisor[IO].use { sup =>
         given Supervisor[IO] = sup
-        val publisherBus     = EventBusRuntime.postgres(pgSessions).topic[Sample]("eventbus.crossinst.test")
-        val subscriberBus    = EventBusRuntime.postgres(pgSessions).topic[Sample]("eventbus.crossinst.test")
+        val publisherBus     = EventBusRuntime.postgres(pgSessions).topic[Sample]("eventbus_crossinst_test")
+        val subscriberBus    = EventBusRuntime.postgres(pgSessions).topic[Sample]("eventbus_crossinst_test")
         for {
           sub <- subscriberBus.subscribe.take(1).compile.lastOrError.start
           _   <- IO.sleep(300.millis)
@@ -34,7 +34,7 @@ class PostgresEventBusSpec extends AsyncWordSpec with AsyncIOSpec with Matchers 
     "fan out a publish to multiple subscribers on a single runtime instance" in {
       Supervisor[IO].use { sup =>
         given Supervisor[IO] = sup
-        val bus              = EventBusRuntime.postgres(pgSessions).topic[Sample]("eventbus.fanout.test")
+        val bus              = EventBusRuntime.postgres(pgSessions).topic[Sample]("eventbus_fanout_test")
         for {
           a  <- bus.subscribe.take(1).compile.lastOrError.start
           b  <- bus.subscribe.take(1).compile.lastOrError.start

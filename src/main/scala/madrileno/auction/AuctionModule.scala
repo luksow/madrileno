@@ -33,7 +33,7 @@ trait AuctionModule extends RouteProvider with AuthRouteProvider with RecurringT
   def webSocketBuilder: WebSocketBuilder2[IO]
 
   protected lazy val vivinoGateway: VivinoGateway            = VivinoGateway.live(httpClient, cacheRuntime)
-  protected lazy val auctionEventBus: EventBus[AuctionEvent] = eventBusRuntime.topic[AuctionEvent]("auction.events")
+  protected lazy val auctionEventBus: EventBus[AuctionEvent] = eventBusRuntime.topic[AuctionEvent]("auction_events")
 
   private val auctionRepository = wire[AuctionRepository]
   private val bidRepository     = wire[BidRepository]

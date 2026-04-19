@@ -612,10 +612,10 @@ new ApplicationLoader(...) {
 
 ```scala
 protected lazy val productEventBus: EventBus[ProductEvent] =
-  eventBusRuntime.topic[ProductEvent]("product.events")
+  eventBusRuntime.topic[ProductEvent]("product_events")
 ```
 
-The `name` becomes the Postgres `LISTEN` / `NOTIFY` channel under the Postgres backend.
+The `name` becomes the Postgres `LISTEN` / `NOTIFY` channel under the Postgres backend — Skunk's identifier rules apply (matches `[A-Za-z_][A-Za-z_0-9$]*`, no dots).
 
 Service publishes after the commit lands — failures are logged, never raised:
 
