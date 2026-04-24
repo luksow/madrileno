@@ -17,7 +17,7 @@ import pl.iterators.stir.server.Route
 
 class AuctionRouter(
   auctionService: AuctionService,
-  eventBus: EventBus[AuctionEvent],
+  eventBus: EventBus[AuctionEventDto],
   wsBuilder: () => WebSocketBuilder2[IO]
 )(using TelemetryContext)
     extends BaseRouter {

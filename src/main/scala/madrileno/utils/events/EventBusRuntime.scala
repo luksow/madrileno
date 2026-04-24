@@ -1,15 +1,15 @@
 package madrileno.utils.events
 
 import cats.effect.std.Supervisor
-import cats.effect.{IO, Ref, Resource}
+import cats.effect.{IO, Ref}
 import fs2.Stream
 import fs2.concurrent.Topic
 import io.circe.Codec
 import io.circe.parser.decode
 import io.circe.syntax.*
+import madrileno.utils.db.transactor.Transactor
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
-import skunk.Session
 import skunk.data.Identifier
 
 import scala.concurrent.duration.*
@@ -24,8 +24,8 @@ object EventBusRuntime {
     override def topic[E: Codec](name: String): EventBus[E] = new LocalEventBus[E]
   }
 
-  def postgres(sessions: Resource[IO, Session[IO]])(using Supervisor[IO]): EventBusRuntime = new EventBusRuntime {
-    override def topic[E: Codec](name: String): EventBus[E] = new PostgresEventBus[E](sessions, name)
+  def postgres(transactor: Transactor)(using Supervisor[IO]): EventBusRuntime = new EventBusRuntime {
+    override def topic[E: Codec](name: String): EventBus[E] = new PostgresEventBus[E](transactor, name)
   }
 
   private val logger: Logger[IO] = Slf4jLogger.getLogger[IO]
@@ -43,7 +43,7 @@ object EventBusRuntime {
     override def subscribe: Stream[IO, E]    = Stream.eval(underlying).flatMap(_.subscribe(maxQueued = 64))
   }
 
-  private class PostgresEventBus[E: Codec](sessions: Resource[IO, Session[IO]], name: String)(using supervisor: Supervisor[IO]) extends EventBus[E] {
+  private class PostgresEventBus[E: Codec](transactor: Transactor, name: String)(using supervisor: Supervisor[IO]) extends EventBus[E] {
 
     private val identifier = Identifier.fromString(name).fold(msg => sys.error(s"Invalid channel name '$name': $msg"), identity)
 
@@ -57,7 +57,7 @@ object EventBusRuntime {
     private val listenerStarted: Ref[IO, Boolean] = Ref.unsafe(false)
 
     override def publish(event: E): IO[Unit] =
-      sessions.use(_.channel(identifier).notify(event.asJson.noSpaces))
+      transactor.notify(identifier, event.asJson.noSpaces)
 
     override def subscribe: Stream[IO, E] =
       Stream.eval(ensureListener) >> Stream.eval(localTopic).flatMap(_.subscribe(maxQueued = 64))
@@ -71,19 +71,16 @@ object EventBusRuntime {
     private def listenLoop: IO[Unit] =
       localTopic
         .flatMap { sink =>
-          sessions.use { session =>
-            session
-              .channel(identifier)
-              .listen(maxQueued = 64)
-              .evalMap { notification =>
-                decode[E](notification.value) match {
-                  case Right(event) => sink.publish1(event).void
-                  case Left(err)    => logger.warn(err)(s"Failed to decode notification on $name: ${notification.value}")
-                }
+          transactor
+            .listen(identifier, maxQueued = 64)
+            .evalMap { notification =>
+              decode[E](notification.value) match {
+                case Right(event) => sink.publish1(event).void
+                case Left(err)    => logger.warn(err)(s"Failed to decode notification on $name: ${notification.value}")
               }
-              .compile
-              .drain
-          }
+            }
+            .compile
+            .drain
         }
         .handleErrorWith(t => logger.warn(t)(s"LISTEN on $name dropped — reconnecting after 1s") *> IO.sleep(1.second))
   }

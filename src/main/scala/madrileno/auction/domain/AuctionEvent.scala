@@ -1,11 +1,8 @@
 package madrileno.auction.domain
 
-import io.circe.Codec
-import madrileno.utils.json.JsonProtocol.given
-
 import java.time.Instant
 
-sealed trait AuctionEvent derives Codec.AsObject {
+sealed trait AuctionEvent {
   def auctionId: AuctionId
   def at: Instant
 }

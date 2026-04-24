@@ -1,7 +1,7 @@
 package madrileno.support
 
+import cats.effect.IO
 import cats.effect.unsafe.implicits.global
-import cats.effect.{IO, Resource}
 import com.dimafeng.testcontainers.PostgreSQLContainer
 import com.dimafeng.testcontainers.scalatest.TestContainersForAll
 import madrileno.utils.db.transactor.{DB, DBInTransaction, PgConfig, PgTransactor, Transactor}
@@ -28,7 +28,7 @@ trait TestTransactor extends TestContainersForAll { self: Suite =>
 
   given Tracer[IO] = Tracer.noop[IO]
 
-  private lazy val pgParts: (PgTransactor, Resource[IO, Session[IO]]) = withContainers { container =>
+  private lazy val pgTransactor: PgTransactor = withContainers { container =>
     val pgConfig = PgConfig(
       host = container.host,
       port = container.mappedPort(5432),
@@ -42,8 +42,7 @@ trait TestTransactor extends TestContainersForAll { self: Suite =>
     PgTransactor.resource(pgConfig).allocated.unsafeRunSync()._1
   }
 
-  lazy val transactor: Transactor                = pgParts._1
-  lazy val pgSessions: Resource[IO, Session[IO]] = pgParts._2
+  lazy val transactor: Transactor = pgTransactor
 
   def withSession[A](f: DB[A]): IO[A] =
     transactor.inSession(f)
