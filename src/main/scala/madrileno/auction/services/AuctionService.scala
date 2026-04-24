@@ -8,7 +8,6 @@ import madrileno.auction.domain.AuctionEvent.*
 import madrileno.auction.emails.{AuctionClosedEmailTemplate, OutbidEmailTemplate}
 import madrileno.auction.gateways.VivinoGateway
 import madrileno.auction.repositories.*
-import madrileno.auction.routers.dto.AuctionEventDto
 import madrileno.user.domain.*
 import madrileno.user.repositories.UserRepository
 import madrileno.utils.crypto.IdGenerator
@@ -28,7 +27,7 @@ class AuctionService(
   bidRepository: BidRepository,
   userRepository: UserRepository,
   vivinoGateway: VivinoGateway,
-  eventBus: EventBus[AuctionEventDto],
+  eventBus: EventBus[AuctionEvent],
   transactor: Transactor,
   mailer: Mailer
 )(using
@@ -38,7 +37,7 @@ class AuctionService(
     extends LoggingSupport {
 
   private def publish(event: AuctionEvent): IO[Unit] =
-    eventBus.publish(AuctionEventDto.fromDomain(event)).handleErrorWith(t => logger.warn(t)(s"Failed to publish $event"))
+    eventBus.publish(event).handleErrorWith(t => logger.warn(t)(s"Failed to publish $event"))
 
   def createAuction(command: CreateAuctionCommand): IO[CreateAuctionResult] = {
     transactor

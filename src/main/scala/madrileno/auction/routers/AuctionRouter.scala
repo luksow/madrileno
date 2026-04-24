@@ -17,7 +17,7 @@ import pl.iterators.stir.server.Route
 
 class AuctionRouter(
   auctionService: AuctionService,
-  eventBus: EventBus[AuctionEventDto],
+  eventBus: EventBus[AuctionEvent],
   wsBuilder: () => WebSocketBuilder2[IO]
 )(using TelemetryContext)
     extends BaseRouter {
@@ -40,7 +40,7 @@ class AuctionRouter(
         }
       } ~
       (get & path("auctions" / "stream") & pathEndOrSingleSlash) {
-        val send = eventBus.subscribe.map(e => WebSocketFrame.Text(e.asJson.noSpaces))
+        val send = eventBus.subscribe.map(e => WebSocketFrame.Text(AuctionEventDto.fromDomain(e).asJson.noSpaces))
         handleWebSocketMessages(wsBuilder(), send, _.drain)
       }
   }

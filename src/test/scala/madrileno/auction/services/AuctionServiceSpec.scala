@@ -7,7 +7,7 @@ import io.opentelemetry.api.OpenTelemetry
 import madrileno.auction.domain.*
 import madrileno.auction.gateways.VivinoGateway
 import madrileno.auction.repositories.{AuctionRepository, BidRepository}
-import madrileno.auction.routers.dto.AuctionEventDto
+import madrileno.auction.routers.dto.AuctionEventDto.given
 import madrileno.support.{TestData, TestGivens, TestMailpit, TestTransactor}
 import madrileno.user.domain.{User, UserId}
 import madrileno.user.repositories.UserRepository
@@ -41,13 +41,13 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
   private lazy val scheduler  = Scheduler(transactor, SchedulerConfig(pollingInterval = 1.second))
   private lazy val client     = scheduler.client
   private lazy val mailer     = new Mailer(smtpSender, client, MailContext(baseUrl = URI("https://example.com")))
-  private val vivinoGateway: VivinoGateway        = (_, _) => IO.pure(None)
-  private val eventBus: EventBus[AuctionEventDto] = EventBusRuntime.local.topic[AuctionEventDto]("auction_events_test")
-  private lazy val service                        = new AuctionService(auctionRepo, bidRepo, userRepo, vivinoGateway, eventBus, transactor, mailer)
+  private val vivinoGateway: VivinoGateway     = (_, _) => IO.pure(None)
+  private val eventBus: EventBus[AuctionEvent] = EventBusRuntime.local.topic[AuctionEvent]("auction_events_test")
+  private lazy val service                     = new AuctionService(auctionRepo, bidRepo, userRepo, vivinoGateway, eventBus, transactor, mailer)
 
   private val eur = Currency.getInstance("EUR")
 
-  private def withObservedEvent[A](action: IO[A]): IO[(AuctionEventDto, A)] =
+  private def withObservedEvent[A](action: IO[A]): IO[(AuctionEvent, A)] =
     for {
       subFiber <- eventBus.subscribe.take(1).compile.lastOrError.start
       _        <- IO.sleep(100.millis)
@@ -151,7 +151,7 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
 
     "publish AuctionCreated when createAuction succeeds" in {
       withObservedEvent(seedUser().flatMap(seller => createAuctionOrFail(createCommand(seller.id)))).map { case (event, auction) =>
-        event shouldBe a[AuctionEventDto.AuctionCreated]
+        event shouldBe a[AuctionEvent.AuctionCreated]
         event.auctionId shouldBe auction.id
       }
     }
@@ -163,7 +163,7 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
         auction <- createAuctionOrFail(createCommand(seller.id))
         out     <- withObservedEvent(service.placeBid(PlaceBidCommand(auction.id, bidder.id, Price(BigDecimal(150)))))
       } yield {
-        out._1 shouldBe a[AuctionEventDto.BidPlaced]
+        out._1 shouldBe a[AuctionEvent.BidPlaced]
         out._1.auctionId shouldBe auction.id
       }
     }
@@ -174,7 +174,7 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
         auction <- createAuctionOrFail(createCommand(seller.id))
         out     <- withObservedEvent(service.cancelAuction(CancelAuctionCommand(auction.id, seller.id)))
       } yield {
-        out._1 shouldBe a[AuctionEventDto.AuctionCancelled]
+        out._1 shouldBe a[AuctionEvent.AuctionCancelled]
         out._1.auctionId shouldBe auction.id
       }
     }

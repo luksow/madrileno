@@ -2,11 +2,12 @@ package madrileno.auction
 
 import cats.effect.IO
 import com.softwaremill.macwire.*
+import madrileno.auction.domain.AuctionEvent
 import madrileno.auction.emails.{AuctionClosedEmailTemplate, OutbidEmailTemplate}
 import madrileno.auction.gateways.VivinoGateway
 import madrileno.auction.repositories.{AuctionRepository, BidRepository}
 import madrileno.auction.routers.AuctionRouter
-import madrileno.auction.routers.dto.AuctionEventDto
+import madrileno.auction.routers.dto.AuctionEventDto.given
 import madrileno.auction.services.AuctionService
 import madrileno.auth.domain.AuthContext
 import madrileno.user.repositories.UserRepository
@@ -32,8 +33,8 @@ trait AuctionModule extends RouteProvider with AuthRouteProvider with RecurringT
   lazy val mailer: Mailer
   def webSocketBuilder: WebSocketBuilder2[IO]
 
-  protected lazy val vivinoGateway: VivinoGateway               = VivinoGateway.live(httpClient, cacheRuntime)
-  protected lazy val auctionEventBus: EventBus[AuctionEventDto] = eventBusRuntime.topic[AuctionEventDto]("auction_events")
+  protected lazy val vivinoGateway: VivinoGateway            = VivinoGateway.live(httpClient, cacheRuntime)
+  protected lazy val auctionEventBus: EventBus[AuctionEvent] = eventBusRuntime.topic[AuctionEvent]("auction_events")
 
   private val auctionRepository = wire[AuctionRepository]
   private val bidRepository     = wire[BidRepository]
