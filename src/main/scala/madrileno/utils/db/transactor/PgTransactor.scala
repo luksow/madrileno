@@ -50,8 +50,6 @@ object PgTransactor {
       .pooled(pgConfig.max)
     for {
       sessions <- pool
-      // One dedicated session for LISTEN. Multiplexed across channels so topic count
-      // doesn't consume the query pool.
       listener <- sessions
     } yield new PgTransactor(sessions, listener)
   }

@@ -28,8 +28,5 @@ trait Transactor {
 
   def notify(channel: Identifier, payload: String): IO[Unit]
 
-  /** Stream of notifications for `channel`. Implementations multiplex many channels onto one dedicated session so the query pool isn't depleted as
-    * topic count grows.
-    */
   def listen(channel: Identifier, maxQueued: Int): Stream[IO, Notification[String]]
 }
