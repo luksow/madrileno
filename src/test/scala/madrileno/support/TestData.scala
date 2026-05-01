@@ -11,7 +11,6 @@ import java.util.{Currency, UUID}
 object TestData {
   def randomUserId(): UserId                 = UserId(UUID.randomUUID())
   def randomRefreshTokenId(): RefreshTokenId = RefreshTokenId(UUID.randomUUID())
-  val knownRefreshTokenId: RefreshTokenId    = RefreshTokenId(UUID.fromString("00000000-0000-0000-0000-000000000001"))
   def randomUserAuthId(): UserAuthId         = UserAuthId(UUID.randomUUID())
   def randomAuctionId(): AuctionId           = AuctionId(UUID.randomUUID())
   def randomBidId(): BidId                   = BidId(UUID.randomUUID())

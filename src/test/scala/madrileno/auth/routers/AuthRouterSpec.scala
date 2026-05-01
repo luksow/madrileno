@@ -1,11 +1,12 @@
 package madrileno.auth.routers
 
 import cats.effect.IO
-import madrileno.auth.domain.{AuthContext, FirebaseJwt, UserAgent}
+import madrileno.auth.domain.{AuthContext, FirebaseJwt, RefreshTokenId, UserAgent}
 import madrileno.auth.repositories.RefreshTokenRepository
 import madrileno.auth.routers.dto.{AuthWithFirebaseRequest, AuthWithRefreshTokenRequest, AuthenticatedResponse, RefreshTokenDto}
 import madrileno.auth.services.JwtService
 import madrileno.support.{BaseRouteSpec, TestApplicationLoader, TestData}
+import madrileno.user.domain.UserId
 import madrileno.utils.http.Error
 import madrileno.utils.json.JsonProtocol.*
 import org.http4s.*
@@ -37,41 +38,41 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
           response.body.jwt.toString should not be empty
           response.body.refreshToken.toString should not be empty
         },
-      onRequest(body = AuthWithFirebaseRequest(FirebaseJwt("test-token")), headers = "127.0.0.1")
+      withSetup {
+        // Ensure user exists before testing the "existing user" path
+        val setupRequest = Request[IO](Method.POST, Uri.unsafeFromString("/v1/auth/firebase"))
+          .withEntity(AuthWithFirebaseRequest(FirebaseJwt("test-token")))
+          .putHeaders("X-Forwarded-For" -> "127.0.0.1")
+        val _ = allRoutes.orNotFound.run(setupRequest).unsafeRunSync()
+      }.request(_ => onRequest(body = AuthWithFirebaseRequest(FirebaseJwt("test-token")), headers = "127.0.0.1"))
         .respondsWith[AuthenticatedResponse](Ok, description = "Authenticated existing user")
-        .assert { ctx =>
-          // Ensure user exists before testing the "existing user" path
-          val setupRequest = Request[IO](Method.POST, Uri.unsafeFromString("/v1/auth/firebase"))
-            .withEntity(AuthWithFirebaseRequest(FirebaseJwt("test-token")))
-            .putHeaders("X-Forwarded-For" -> "127.0.0.1")
-          val _ = allRoutes.orNotFound.run(setupRequest).unsafeRunSync()
-
+        .assert { case (ctx, _) =>
           val response = ctx.performRequest(allRoutes)
           response.body.jwt.toString should not be empty
           response.body.refreshToken.toString should not be empty
         },
-      onRequest(body = AuthWithFirebaseRequest(FirebaseJwt("test-token")), headers = "127.0.0.1")
-        .respondsWith[Error[Unit]](Locked, description = "User is blocked")
-        .assert { ctx =>
-          // Ensure user exists via direct firebase call
-          val firebaseRequest = Request[IO](Method.POST, Uri.unsafeFromString("/v1/auth/firebase"))
-            .withEntity(AuthWithFirebaseRequest(FirebaseJwt("test-token")))
-            .putHeaders("X-Forwarded-For" -> "127.0.0.1")
-          val firebaseResponse = allRoutes.orNotFound.run(firebaseRequest).unsafeRunSync()
-          val authResponse     = firebaseResponse.as[AuthenticatedResponse].unsafeRunSync()
+      withSetup {
+        // Ensure user exists via direct firebase call, then block them
+        val firebaseRequest = Request[IO](Method.POST, Uri.unsafeFromString("/v1/auth/firebase"))
+          .withEntity(AuthWithFirebaseRequest(FirebaseJwt("test-token")))
+          .putHeaders("X-Forwarded-For" -> "127.0.0.1")
+        val firebaseResponse = allRoutes.orNotFound.run(firebaseRequest).unsafeRunSync()
+        val authResponse     = firebaseResponse.as[AuthenticatedResponse].unsafeRunSync()
 
-          // Decode JWT to get userId, then block the user
-          val userId = jwtService.decode[AuthContext](authResponse.jwt.toString) match {
-            case JwtService.DecodingResult.Decoded(ctx) => ctx.userId
-            case other                                  => fail(s"Failed to decode JWT: $other")
+        val userId: UserId = jwtService.decode[AuthContext](authResponse.jwt.toString) match {
+          case JwtService.DecodingResult.Decoded(ctx) => ctx.userId
+          case other                                  => fail(s"Failed to decode JWT: $other")
+        }
+        val blockAt = Instant.now()
+        application.transactor
+          .inTransaction {
+            application.userRepository.update(userId, _.copy(blockedAt = Some(blockAt)), blockAt)
           }
-          val blockAt = Instant.now()
-          application.transactor
-            .inTransaction {
-              application.userRepository.update(userId, _.copy(blockedAt = Some(blockAt)), blockAt)
-            }
-            .unsafeRunSync()
-
+          .unsafeRunSync()
+        userId
+      }.request(_ => onRequest(body = AuthWithFirebaseRequest(FirebaseJwt("test-token")), headers = "127.0.0.1"))
+        .respondsWith[Error[Unit]](Locked, description = "User is blocked")
+        .assert { case (ctx, userId) =>
           val response = ctx.performRequest(allRoutes)
           response.body.title shouldBe Some("User is blocked")
 
@@ -107,18 +108,20 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
       headers = h[String]("X-Forwarded-For", "Client IP address"),
       tags = Seq("Auth")
     )(
-      onRequest(body = AuthWithRefreshTokenRequest(TestData.knownRefreshTokenId), headers = "127.0.0.1")
-        .respondsWith[AuthenticatedResponse](Ok, description = "Authenticated with refresh token")
-        .assert { ctx =>
-          val user         = TestData.user()
-          val refreshToken = TestData.refreshToken(id = TestData.knownRefreshTokenId, userId = user.id)
-          val _ = application.transactor
-            .inTransaction {
-              application.userRepository.create(user, Instant.now()) *>
-                new RefreshTokenRepository().save(refreshToken)
-            }
-            .unsafeRunSync()
-
+      withSetup {
+        val user         = TestData.user()
+        val refreshToken = TestData.refreshToken(userId = user.id)
+        val _ = application.transactor
+          .inTransaction {
+            application.userRepository.create(user, Instant.now()) *>
+              new RefreshTokenRepository().save(refreshToken)
+          }
+          .unsafeRunSync()
+        refreshToken.id
+      }.request { (tokenId: RefreshTokenId) =>
+        onRequest(body = AuthWithRefreshTokenRequest(tokenId), headers = "127.0.0.1")
+      }.respondsWith[AuthenticatedResponse](Ok, description = "Authenticated with refresh token")
+        .assert { case (ctx, _) =>
           val response = ctx.performRequest(allRoutes)
           response.body.jwt.toString should not be empty
           response.body.refreshToken.toString should not be empty
