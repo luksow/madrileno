@@ -7,7 +7,6 @@ import madrileno.auction.emails.{AuctionClosedEmailTemplate, OutbidEmailTemplate
 import madrileno.auction.gateways.VivinoGateway
 import madrileno.auction.repositories.{AuctionRepository, BidRepository}
 import madrileno.auction.routers.AuctionRouter
-import madrileno.auction.routers.dto.AuctionEventDto.given
 import madrileno.auction.services.AuctionService
 import madrileno.auth.domain.AuthContext
 import madrileno.user.repositories.UserRepository

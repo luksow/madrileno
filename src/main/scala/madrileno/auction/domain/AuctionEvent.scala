@@ -1,8 +1,11 @@
 package madrileno.auction.domain
 
+import madrileno.utils.events.EventCodec
+import madrileno.utils.json.JsonProtocol.*
+
 import java.time.Instant
 
-sealed trait AuctionEvent {
+sealed trait AuctionEvent derives EventCodec {
   def auctionId: AuctionId
   def at: Instant
 }

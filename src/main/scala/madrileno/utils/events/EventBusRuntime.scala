@@ -4,9 +4,6 @@ import cats.effect.std.Supervisor
 import cats.effect.{IO, Ref}
 import fs2.Stream
 import fs2.concurrent.Topic
-import io.circe.Codec
-import io.circe.parser.decode
-import io.circe.syntax.*
 import madrileno.utils.db.transactor.Transactor
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
 import skunk.data.Identifier
@@ -14,17 +11,17 @@ import skunk.data.Identifier
 import scala.concurrent.duration.*
 
 trait EventBusRuntime {
-  def topic[E: Codec](name: String): EventBus[E]
+  def topic[E: EventCodec](name: String): EventBus[E]
 }
 
 object EventBusRuntime {
 
   def local: EventBusRuntime = new EventBusRuntime {
-    override def topic[E: Codec](name: String): EventBus[E] = new LocalEventBus[E]
+    override def topic[E: EventCodec](name: String): EventBus[E] = new LocalEventBus[E]
   }
 
   def postgres(transactor: Transactor)(using Supervisor[IO], TelemetryContext): EventBusRuntime = new EventBusRuntime {
-    override def topic[E: Codec](name: String): EventBus[E] = new PostgresEventBus[E](transactor, name)
+    override def topic[E: EventCodec](name: String): EventBus[E] = new PostgresEventBus[E](transactor, name)
   }
 
   private def memoize[A](init: IO[A]): IO[A] = {
@@ -42,17 +39,18 @@ object EventBusRuntime {
     override def subscribe(maxQueued: Int): Stream[IO, E] = Stream.eval(topic).flatMap(_.subscribe(maxQueued))
   }
 
-  private class PostgresEventBus[E: Codec](transactor: Transactor, name: String)(using supervisor: Supervisor[IO], tc: TelemetryContext)
+  private class PostgresEventBus[E: EventCodec](transactor: Transactor, name: String)(using supervisor: Supervisor[IO], tc: TelemetryContext)
       extends EventBus[E]
       with LoggingSupport {
 
     private val identifier = Identifier.fromString(name).fold(msg => sys.error(s"Invalid channel name '$name': $msg"), identity)
+    private val codec      = EventCodec[E]
 
     private val topic: IO[Topic[IO, E]] =
       memoize(Topic[IO, E].flatTap(t => supervisor.supervise(listenLoop(t).foreverM)))
 
     override def publish(event: E): IO[Unit] =
-      transactor.notify(identifier, event.asJson.noSpaces)
+      transactor.notify(identifier, codec.encode(event))
 
     override def subscribe(maxQueued: Int): Stream[IO, E] =
       Stream.eval(topic).flatMap(_.subscribe(maxQueued))
@@ -61,7 +59,7 @@ object EventBusRuntime {
       transactor
         .listen(identifier, maxQueued = 64)
         .evalMap { notification =>
-          decode[E](notification.value) match {
+          codec.decode(notification.value) match {
             case Right(event) => sink.publish1(event).void
             case Left(err)    => logger.warn(err)(s"Failed to decode notification on $name: ${notification.value}")
           }

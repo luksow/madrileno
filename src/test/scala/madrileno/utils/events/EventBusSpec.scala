@@ -3,8 +3,6 @@ package madrileno.utils.events
 import cats.effect.IO
 import cats.effect.testing.scalatest.AsyncIOSpec
 import cats.syntax.all.*
-import io.circe.Codec
-import io.circe.generic.semiauto.deriveCodec
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AsyncWordSpec
 
@@ -12,8 +10,7 @@ import scala.concurrent.duration.*
 
 class EventBusSpec extends AsyncWordSpec with AsyncIOSpec with Matchers {
 
-  private case class Event(value: Int)
-  private given Codec[Event] = deriveCodec
+  private case class Event(value: Int) derives EventCodec
 
   "EventBusRuntime.local" should {
     "fan out published events to every subscriber" in {

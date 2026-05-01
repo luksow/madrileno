@@ -1,6 +1,7 @@
 package madrileno.auction.routers
 
 import cats.effect.IO
+import io.circe.Json
 import io.circe.syntax.*
 import madrileno.auction.domain.*
 import madrileno.auction.routers.dto.*
@@ -40,7 +41,7 @@ class AuctionRouter(
         }
       } ~
       (get & path("auctions" / "stream") & pathEndOrSingleSlash) {
-        val send = eventBus.subscribe(maxQueued = 64).map(e => WebSocketFrame.Text(AuctionEventDto.fromDomain(e).asJson.noSpaces))
+        val send = eventBus.subscribe(maxQueued = 64).map(e => WebSocketFrame.Text(toFrame(e).noSpaces))
         handleWebSocketMessages(wsBuilder(), send, _.drain)
       }
   }
@@ -99,5 +100,15 @@ class AuctionRouter(
           }
         }
       }
+  }
+
+  private def toFrame(event: AuctionEvent): Json = {
+    val (kind, data) = event match {
+      case e: AuctionEvent.AuctionCreated   => "AuctionCreated"   -> AuctionCreatedDto(e).asJson
+      case e: AuctionEvent.BidPlaced        => "BidPlaced"        -> BidPlacedDto(e).asJson
+      case e: AuctionEvent.AuctionCancelled => "AuctionCancelled" -> AuctionCancelledDto(e).asJson
+      case e: AuctionEvent.AuctionClosed    => "AuctionClosed"    -> AuctionClosedDto(e).asJson
+    }
+    Json.obj("kind" -> kind.asJson, "data" -> data)
   }
 }

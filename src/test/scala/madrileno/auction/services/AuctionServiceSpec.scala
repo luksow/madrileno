@@ -7,7 +7,6 @@ import io.opentelemetry.api.OpenTelemetry
 import madrileno.auction.domain.*
 import madrileno.auction.gateways.VivinoGateway
 import madrileno.auction.repositories.{AuctionRepository, BidRepository}
-import madrileno.auction.routers.dto.AuctionEventDto.given
 import madrileno.support.{TestData, TestGivens, TestMailpit, TestTransactor}
 import madrileno.user.domain.{User, UserId}
 import madrileno.user.repositories.UserRepository

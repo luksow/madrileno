@@ -3,8 +3,6 @@ package madrileno.utils.events
 import cats.effect.IO
 import cats.effect.std.Supervisor
 import cats.effect.testing.scalatest.AsyncIOSpec
-import io.circe.Codec
-import io.circe.generic.semiauto.deriveCodec
 import madrileno.support.TestTransactor
 import madrileno.utils.observability.TelemetryContext
 import org.scalatest.matchers.should.Matchers
@@ -18,8 +16,7 @@ class PostgresEventBusSpec extends AsyncWordSpec with AsyncIOSpec with Matchers 
 
   private given TelemetryContext = TelemetryContext(Meter.noop[IO], Tracer.noop[IO], io.opentelemetry.api.OpenTelemetry.noop())
 
-  private case class Sample(id: Int, name: String)
-  private given Codec[Sample] = deriveCodec
+  private case class Sample(id: Int, name: String) derives EventCodec
 
   "EventBusRuntime.postgres" should {
     "deliver events across separate runtime instances over the same Postgres" in {
