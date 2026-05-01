@@ -148,51 +148,73 @@ onRequest(body = AuthWithFirebaseRequest(FirebaseJwt("test-token")), headers = "
 .respondsWith[Error[Unit]](Unauthorized, description = "Invalid Firebase token")
 ```
 
-**Seeding DB state** — when `ctx.performRequest` needs data to already exist, seed it in the `assert` block before calling `performRequest`. Use a known ID from `TestData` so the `onRequest(body = ...)` can reference it at construction time:
+**Seeding DB state** — when `ctx.performRequest` needs data to already exist (and the request inputs depend on it), use `withSetup`. The setup block runs at test-execution time, and its return value flows into both `.request { ... }` (to construct request inputs from seeded data) and `.assert { (ctx, s) => ... }`:
 ```scala
-onRequest(body = AuthWithRefreshTokenRequest(TestData.knownRefreshTokenId), headers = "127.0.0.1")
-  .respondsWith[AuthenticatedResponse](Ok, description = "Authenticated with refresh token")
-  .assert { ctx =>
-    val user         = TestData.user()
-    val refreshToken = TestData.refreshToken(id = TestData.knownRefreshTokenId, userId = user.id)
-    application.transactor
-      .inTransaction { application.userRepository.create(user) *> new RefreshTokenRepository().save(refreshToken) }
-      .unsafeRunSync()
+withSetup {
+  val user         = TestData.user()
+  val refreshToken = TestData.refreshToken(userId = user.id)
+  val _ = application.transactor
+    .inTransaction {
+      application.userRepository.create(user, Instant.now()) *>
+        new RefreshTokenRepository().save(refreshToken)
+    }
+    .unsafeRunSync()
+  refreshToken.id
+}.request { (tokenId: RefreshTokenId) =>
+  onRequest(body = AuthWithRefreshTokenRequest(tokenId), headers = "127.0.0.1")
+}.respondsWith[AuthenticatedResponse](Ok, description = "Authenticated with refresh token")
+  .assert { case (ctx, _) =>
     val response = ctx.performRequest(allRoutes)
     response.body.jwt.toString should not be empty
   }
 ```
 
-**Multi-step setup** — when testing a response that depends on a previous request's side effects (e.g., blocking a user after they authenticate), call `allRoutes` directly for the setup step, then use `ctx.performRequest` for the actual assertion:
+For path parameters from seeded entities, the same shape works:
 ```scala
-.assert { ctx =>
-  // Setup: create user via direct firebase call
-  val req = Request[IO](Method.POST, Uri.unsafeFromString("/v1/auth/firebase"))
-    .withEntity(AuthWithFirebaseRequest(FirebaseJwt("test-token")))
-    .putHeaders("X-Forwarded-For" -> "127.0.0.1")
-  val authResponse = allRoutes.orNotFound.run(req).unsafeRunSync().as[AuthenticatedResponse].unsafeRunSync()
-
-  // Modify state
-  val userId = jwtService.decode[AuthContext](authResponse.jwt.toString) match {
-    case JwtService.DecodingResult.Decoded(ctx) => ctx.userId
-    case other => fail(s"Failed to decode JWT: $other")
-  }
+withSetup {
   application.transactor
-    .inTransaction { application.userRepository.update(userId, _.copy(blockedAt = Some(Instant.now()))) }
+    .inSession(seedUser(seller) *> seedAuction(TestData.randomAuctionId(), seller.id))
     .unsafeRunSync()
+}.request(auction => onRequest(pathParameters = auction.id))
+  .respondsWith[AuctionDto](Ok, description = "Auction found")
+  .assert { case (ctx, auction) =>
+    val response = ctx.performRequest(allRoutes)
+    response.body.id shouldBe auction.id
+  }
+```
 
-  // Assert
-  val response = ctx.performRequest(allRoutes)
-  response.body.title shouldBe Some("User is blocked")
-}
+If the request inputs are static and only the assertion needs the seeded value, ignore the setup result in the lambda:
+```scala
+withSetup {
+  application.transactor.inSession(seedUser(seller).void).unsafeRunSync()
+}.request(_ => onRequest(body = sampleCreateRequest(), security = bearer.apply(validJwt(sellerAuth))))
+  .respondsWith[AuctionDto](Created, description = "Auction created")
+  .assert { case (ctx, _) => ... }
+```
+
+**Multi-step setup** — when the setup involves several related entities, pack the whole chain into `withSetup` and return whatever the assertion needs. Prefer direct repository calls over HTTP self-calls — the setup is for test scaffolding, not for exercising the public API. Post-request cleanup (e.g., undoing a `blockedAt` modification so subsequent tests aren't poisoned) stays in `assert`, since it has to run after `performRequest`:
+```scala
+withSetup {
+  seedFirebaseUser(blockedAt = Some(Instant.now())) // returns UserId after creating user + user_auth
+}.request(_ => onRequest(body = AuthWithFirebaseRequest(FirebaseJwt("test-token")), headers = "127.0.0.1"))
+  .respondsWith[Error[Unit]](Locked, description = "User is blocked")
+  .assert { case (ctx, userId) =>
+    val response = ctx.performRequest(allRoutes)
+    response.body.title shouldBe Some("User is blocked")
+
+    // Unblock the user so subsequent tests aren't poisoned
+    application.transactor
+      .inTransaction { application.userRepository.update(userId, _.copy(blockedAt = None), Instant.now()) }
+      .unsafeRunSync()
+  }
 ```
 
 #### Timing constraint
 
 `onRequest(...)` arguments are evaluated at class construction time, before Testcontainers starts. Anything that depends on `application` (which needs the DB container) cannot be used in `onRequest` parameters directly. This is why:
 - `validJwt` loads JWT config independently from `ConfigSource.default` rather than from `application.jwtConfig`
-- Seeded data uses fixed IDs known at construction time (`TestData.knownRefreshTokenId`)
-- DB seeding happens inside the `assert` block, not at field level
+- Use `withSetup { ... }.request { seeded => onRequest(...) }` whenever request inputs are derived from seeded data — setup runs at test-execution time, after Testcontainers is up
+- For requests with no seeded inputs, plain `onRequest(...)` outside `withSetup` is fine; just keep DB seeding inside `withSetup` (or `assert` for legacy specs)
 
 #### Adding Decoder/Encoder to DTOs
 

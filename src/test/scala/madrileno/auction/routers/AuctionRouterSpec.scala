@@ -35,18 +35,6 @@ class AuctionRouterSpec extends BaseRouteSpec with TestApplicationLoader {
   private val bidderAuth = AuthContext(bidder)
   private val otherAuth  = AuthContext(other)
 
-  // Distinct ids per test (path params are bound at class construction; tests share DB state)
-  private val getAuctionFoundId   = AuctionId(UUID.randomUUID())
-  private val cancelSuccessId     = AuctionId(UUID.randomUUID())
-  private val cancelForbiddenId   = AuctionId(UUID.randomUUID())
-  private val cancelNotOpenId     = AuctionId(UUID.randomUUID())
-  private val bidSuccessId        = AuctionId(UUID.randomUUID())
-  private val bidNotOpenId        = AuctionId(UUID.randomUUID())
-  private val bidNotStartedId     = AuctionId(UUID.randomUUID())
-  private val bidOwnAuctionId     = AuctionId(UUID.randomUUID())
-  private val bidTooLowId         = AuctionId(UUID.randomUUID())
-  private val bidAlreadyHighestId = AuctionId(UUID.randomUUID())
-
   private def seedUser(user: User): DB[User] =
     application.userRepository.find(user.id).flatMap {
       case Some(existing) => IO.pure(existing)
@@ -73,6 +61,41 @@ class AuctionRouterSpec extends BaseRouteSpec with TestApplicationLoader {
     bidRepository.save(bid)
   }
 
+  // Setup helpers — run inside `withSetup` so each scenario gets a fresh, self-contained AuctionId
+  private def setupAuction(
+    status: AuctionStatus = AuctionStatus.Open,
+    startsAt: Instant = Instant.now().minusSeconds(60),
+    endsAt: Instant = Instant.now().plusSeconds(3600),
+    alsoSeedBidder: Boolean = false,
+    alsoSeedOther: Boolean = false
+  ): Auction = {
+    val id = TestData.randomAuctionId()
+    application.transactor
+      .inSession {
+        seedUser(seller) *>
+          (if (alsoSeedBidder) seedUser(bidder).void else IO.unit) *>
+          (if (alsoSeedOther) seedUser(other).void else IO.unit) *>
+          seedAuction(id, seller.id, status = status, startsAt = startsAt, endsAt = endsAt)
+      }
+      .unsafeRunSync()
+  }
+
+  private def setupAuctionWithExistingBid(amount: Price): Auction = {
+    val id = TestData.randomAuctionId()
+    application.transactor
+      .inSession {
+        seedUser(seller) *> seedUser(bidder) *>
+          seedAuction(id, seller.id).flatTap(_ => seedBid(id, bidder.id, amount))
+      }
+      .unsafeRunSync()
+  }
+
+  private def cancelRequest(auth: AuthContext)(auction: Auction) =
+    onRequest(security = bearer.apply(validJwt(auth)), pathParameters = auction.id)
+
+  private def placeBidRequest(amount: BigDecimal, auth: AuthContext)(auction: Auction) =
+    onRequest(body = PlaceBidRequest(Price(amount)), security = bearer.apply(validJwt(auth)), pathParameters = auction.id)
+
   private def sampleCreateRequest(startsAt: Instant = Instant.now().minusSeconds(60), endsAt: Instant = Instant.now().plusSeconds(3600)) =
     CreateAuctionRequest(
       wineName = WineName("Château Margaux"),
@@ -98,10 +121,11 @@ class AuctionRouterSpec extends BaseRouteSpec with TestApplicationLoader {
       securitySchemes = Seq(bearerScheme),
       tags = Seq("Auctions")
     )(
-      onRequest(body = sampleCreateRequest(), security = bearer.apply(validJwt(sellerAuth)))
+      withSetup {
+        application.transactor.inSession(seedUser(seller).void).unsafeRunSync()
+      }.request(_ => onRequest(body = sampleCreateRequest(), security = bearer.apply(validJwt(sellerAuth))))
         .respondsWith[AuctionDto](Created, description = "Auction created")
-        .assert { ctx =>
-          application.transactor.inSession(seedUser(seller).void).unsafeRunSync()
+        .assert { case (ctx, _) =>
           val response = ctx.performRequest(allRoutes)
           response.body.sellerId shouldBe seller.id
           response.body.status shouldBe AuctionStatus.Open
@@ -139,17 +163,12 @@ class AuctionRouterSpec extends BaseRouteSpec with TestApplicationLoader {
       pathParameters = p[AuctionId]("auctionId"),
       tags = Seq("Auctions")
     )(
-      onRequest(pathParameters = getAuctionFoundId)
+      withSetup(setupAuction())
+        .request(auction => onRequest(pathParameters = auction.id))
         .respondsWith[AuctionDto](Ok, description = "Auction found")
-        .assert { ctx =>
-          application.transactor
-            .inSession {
-              seedUser(seller) *> seedAuction(getAuctionFoundId, seller.id)
-            }
-            .void
-            .unsafeRunSync()
+        .assert { case (ctx, auction) =>
           val response = ctx.performRequest(allRoutes)
-          response.body.id shouldBe getAuctionFoundId
+          response.body.id shouldBe auction.id
           response.body.sellerId shouldBe seller.id
         },
       onRequest(pathParameters = AuctionId(UUID.randomUUID()))
@@ -167,15 +186,10 @@ class AuctionRouterSpec extends BaseRouteSpec with TestApplicationLoader {
       pathParameters = p[AuctionId]("auctionId"),
       tags = Seq("Auctions")
     )(
-      onRequest(security = bearer.apply(validJwt(sellerAuth)), pathParameters = cancelSuccessId)
+      withSetup(setupAuction())
+        .request(cancelRequest(sellerAuth))
         .respondsWith[EmptyBody](NoContent, description = "Auction cancelled")
-        .assert { ctx =>
-          application.transactor
-            .inSession {
-              seedUser(seller) *> seedAuction(cancelSuccessId, seller.id)
-            }
-            .void
-            .unsafeRunSync()
+        .assert { case (ctx, _) =>
           ctx.performRequest(allRoutes)
         },
       onRequest(security = bearer.apply(validJwt(sellerAuth)), pathParameters = AuctionId(UUID.randomUUID()))
@@ -184,27 +198,17 @@ class AuctionRouterSpec extends BaseRouteSpec with TestApplicationLoader {
           val response = ctx.performRequest(allRoutes)
           response.body.title shouldBe Some("Auction not found")
         },
-      onRequest(security = bearer.apply(validJwt(otherAuth)), pathParameters = cancelForbiddenId)
+      withSetup(setupAuction(alsoSeedOther = true))
+        .request(cancelRequest(otherAuth))
         .respondsWith[Error[Unit]](Forbidden, description = "Cancel attempted by non-owner")
-        .assert { ctx =>
-          application.transactor
-            .inSession {
-              seedUser(seller) *> seedUser(other) *> seedAuction(cancelForbiddenId, seller.id)
-            }
-            .void
-            .unsafeRunSync()
+        .assert { case (ctx, _) =>
           val response = ctx.performRequest(allRoutes)
           response.body.title shouldBe Some("Only the seller can cancel this auction")
         },
-      onRequest(security = bearer.apply(validJwt(sellerAuth)), pathParameters = cancelNotOpenId)
+      withSetup(setupAuction(status = AuctionStatus.Cancelled))
+        .request(cancelRequest(sellerAuth))
         .respondsWith[Error[Unit]](Conflict, description = "Auction already cancelled or closed")
-        .assert { ctx =>
-          application.transactor
-            .inSession {
-              seedUser(seller) *> seedAuction(cancelNotOpenId, seller.id, status = AuctionStatus.Cancelled)
-            }
-            .void
-            .unsafeRunSync()
+        .assert { case (ctx, _) =>
           val response = ctx.performRequest(allRoutes)
           response.body.title shouldBe Some("Auction is not open")
         }
@@ -220,19 +224,14 @@ class AuctionRouterSpec extends BaseRouteSpec with TestApplicationLoader {
       pathParameters = p[AuctionId]("auctionId"),
       tags = Seq("Auctions")
     )(
-      onRequest(body = PlaceBidRequest(Price(BigDecimal(150))), security = bearer.apply(validJwt(bidderAuth)), pathParameters = bidSuccessId)
+      withSetup(setupAuction(alsoSeedBidder = true))
+        .request(placeBidRequest(150, bidderAuth))
         .respondsWith[BidDto](Created, description = "Bid placed")
-        .assert { ctx =>
-          application.transactor
-            .inSession {
-              seedUser(seller) *> seedUser(bidder) *> seedAuction(bidSuccessId, seller.id)
-            }
-            .void
-            .unsafeRunSync()
+        .assert { case (ctx, auction) =>
           val response = ctx.performRequest(allRoutes)
           response.body.amount shouldBe Price(BigDecimal(150))
           response.body.bidderId shouldBe bidder.id
-          response.body.auctionId shouldBe bidSuccessId
+          response.body.auctionId shouldBe auction.id
         },
       onRequest(
         body = PlaceBidRequest(Price(BigDecimal(150))),
@@ -243,70 +242,38 @@ class AuctionRouterSpec extends BaseRouteSpec with TestApplicationLoader {
           val response = ctx.performRequest(allRoutes)
           response.body.title shouldBe Some("Auction not found")
         },
-      onRequest(body = PlaceBidRequest(Price(BigDecimal(150))), security = bearer.apply(validJwt(bidderAuth)), pathParameters = bidNotOpenId)
+      withSetup(setupAuction(status = AuctionStatus.Cancelled, alsoSeedBidder = true))
+        .request(placeBidRequest(150, bidderAuth))
         .respondsWith[Error[Unit]](Conflict, description = "Auction is not open")
-        .assert { ctx =>
-          application.transactor
-            .inSession {
-              seedUser(seller) *> seedUser(bidder) *> seedAuction(bidNotOpenId, seller.id, status = AuctionStatus.Cancelled)
-            }
-            .void
-            .unsafeRunSync()
+        .assert { case (ctx, _) =>
           val response = ctx.performRequest(allRoutes)
           response.body.title shouldBe Some("Auction is not open")
         },
-      onRequest(body = PlaceBidRequest(Price(BigDecimal(150))), security = bearer.apply(validJwt(bidderAuth)), pathParameters = bidNotStartedId)
+      withSetup(setupAuction(startsAt = Instant.now().plusSeconds(600), endsAt = Instant.now().plusSeconds(3600), alsoSeedBidder = true))
+        .request(placeBidRequest(150, bidderAuth))
         .respondsWith[Error[Unit]](Conflict, description = "Auction has not started yet")
-        .assert { ctx =>
-          application.transactor
-            .inSession {
-              seedUser(seller) *> seedUser(bidder) *> seedAuction(
-                bidNotStartedId,
-                seller.id,
-                startsAt = Instant.now().plusSeconds(600),
-                endsAt = Instant.now().plusSeconds(3600)
-              )
-            }
-            .void
-            .unsafeRunSync()
+        .assert { case (ctx, _) =>
           val response = ctx.performRequest(allRoutes)
           response.body.title shouldBe Some("Auction has not started yet")
         },
-      onRequest(body = PlaceBidRequest(Price(BigDecimal(150))), security = bearer.apply(validJwt(sellerAuth)), pathParameters = bidOwnAuctionId)
+      withSetup(setupAuction())
+        .request(placeBidRequest(150, sellerAuth))
         .respondsWith[Error[Unit]](Forbidden, description = "Cannot bid on own auction")
-        .assert { ctx =>
-          application.transactor
-            .inSession {
-              seedUser(seller) *> seedAuction(bidOwnAuctionId, seller.id)
-            }
-            .void
-            .unsafeRunSync()
+        .assert { case (ctx, _) =>
           val response = ctx.performRequest(allRoutes)
           response.body.title shouldBe Some("Cannot bid on your own auction")
         },
-      onRequest(body = PlaceBidRequest(Price(BigDecimal(50))), security = bearer.apply(validJwt(bidderAuth)), pathParameters = bidTooLowId)
+      withSetup(setupAuction(alsoSeedBidder = true))
+        .request(placeBidRequest(50, bidderAuth))
         .respondsWith[Error[Unit]](Conflict, description = "Bid below minimum")
-        .assert { ctx =>
-          application.transactor
-            .inSession {
-              seedUser(seller) *> seedUser(bidder) *> seedAuction(bidTooLowId, seller.id)
-            }
-            .void
-            .unsafeRunSync()
+        .assert { case (ctx, _) =>
           val response = ctx.performRequest(allRoutes)
           response.body.title.exists(_.startsWith("Bid must be strictly greater than")) shouldBe true
         },
-      onRequest(body = PlaceBidRequest(Price(BigDecimal(250))), security = bearer.apply(validJwt(bidderAuth)), pathParameters = bidAlreadyHighestId)
+      withSetup(setupAuctionWithExistingBid(Price(BigDecimal(200))))
+        .request(placeBidRequest(250, bidderAuth))
         .respondsWith[Error[Unit]](Conflict, description = "Already the highest bidder")
-        .assert { ctx =>
-          application.transactor
-            .inSession {
-              seedUser(seller) *> seedUser(bidder) *>
-                seedAuction(bidAlreadyHighestId, seller.id) *>
-                seedBid(bidAlreadyHighestId, bidder.id, Price(BigDecimal(200)))
-            }
-            .void
-            .unsafeRunSync()
+        .assert { case (ctx, _) =>
           val response = ctx.performRequest(allRoutes)
           response.body.title shouldBe Some("You already have the highest bid")
         }
