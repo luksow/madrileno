@@ -90,6 +90,12 @@ class AuctionRouterSpec extends BaseRouteSpec with TestApplicationLoader {
       .unsafeRunSync()
   }
 
+  private def cancelRequest(auth: AuthContext)(auction: Auction) =
+    onRequest(security = bearer.apply(validJwt(auth)), pathParameters = auction.id)
+
+  private def placeBidRequest(amount: BigDecimal, auth: AuthContext)(auction: Auction) =
+    onRequest(body = PlaceBidRequest(Price(amount)), security = bearer.apply(validJwt(auth)), pathParameters = auction.id)
+
   private def sampleCreateRequest(startsAt: Instant = Instant.now().minusSeconds(60), endsAt: Instant = Instant.now().plusSeconds(3600)) =
     CreateAuctionRequest(
       wineName = WineName("Château Margaux"),
@@ -181,7 +187,7 @@ class AuctionRouterSpec extends BaseRouteSpec with TestApplicationLoader {
       tags = Seq("Auctions")
     )(
       withSetup(setupAuction())
-        .request(auction => onRequest(security = bearer.apply(validJwt(sellerAuth)), pathParameters = auction.id))
+        .request(cancelRequest(sellerAuth))
         .respondsWith[EmptyBody](NoContent, description = "Auction cancelled")
         .assert { case (ctx, _) =>
           ctx.performRequest(allRoutes)
@@ -193,14 +199,14 @@ class AuctionRouterSpec extends BaseRouteSpec with TestApplicationLoader {
           response.body.title shouldBe Some("Auction not found")
         },
       withSetup(setupAuction(alsoSeedOther = true))
-        .request(auction => onRequest(security = bearer.apply(validJwt(otherAuth)), pathParameters = auction.id))
+        .request(cancelRequest(otherAuth))
         .respondsWith[Error[Unit]](Forbidden, description = "Cancel attempted by non-owner")
         .assert { case (ctx, _) =>
           val response = ctx.performRequest(allRoutes)
           response.body.title shouldBe Some("Only the seller can cancel this auction")
         },
       withSetup(setupAuction(status = AuctionStatus.Cancelled))
-        .request(auction => onRequest(security = bearer.apply(validJwt(sellerAuth)), pathParameters = auction.id))
+        .request(cancelRequest(sellerAuth))
         .respondsWith[Error[Unit]](Conflict, description = "Auction already cancelled or closed")
         .assert { case (ctx, _) =>
           val response = ctx.performRequest(allRoutes)
@@ -219,9 +225,7 @@ class AuctionRouterSpec extends BaseRouteSpec with TestApplicationLoader {
       tags = Seq("Auctions")
     )(
       withSetup(setupAuction(alsoSeedBidder = true))
-        .request { auction =>
-          onRequest(body = PlaceBidRequest(Price(BigDecimal(150))), security = bearer.apply(validJwt(bidderAuth)), pathParameters = auction.id)
-        }
+        .request(placeBidRequest(150, bidderAuth))
         .respondsWith[BidDto](Created, description = "Bid placed")
         .assert { case (ctx, auction) =>
           val response = ctx.performRequest(allRoutes)
@@ -239,45 +243,35 @@ class AuctionRouterSpec extends BaseRouteSpec with TestApplicationLoader {
           response.body.title shouldBe Some("Auction not found")
         },
       withSetup(setupAuction(status = AuctionStatus.Cancelled, alsoSeedBidder = true))
-        .request { auction =>
-          onRequest(body = PlaceBidRequest(Price(BigDecimal(150))), security = bearer.apply(validJwt(bidderAuth)), pathParameters = auction.id)
-        }
+        .request(placeBidRequest(150, bidderAuth))
         .respondsWith[Error[Unit]](Conflict, description = "Auction is not open")
         .assert { case (ctx, _) =>
           val response = ctx.performRequest(allRoutes)
           response.body.title shouldBe Some("Auction is not open")
         },
       withSetup(setupAuction(startsAt = Instant.now().plusSeconds(600), endsAt = Instant.now().plusSeconds(3600), alsoSeedBidder = true))
-        .request { auction =>
-          onRequest(body = PlaceBidRequest(Price(BigDecimal(150))), security = bearer.apply(validJwt(bidderAuth)), pathParameters = auction.id)
-        }
+        .request(placeBidRequest(150, bidderAuth))
         .respondsWith[Error[Unit]](Conflict, description = "Auction has not started yet")
         .assert { case (ctx, _) =>
           val response = ctx.performRequest(allRoutes)
           response.body.title shouldBe Some("Auction has not started yet")
         },
       withSetup(setupAuction())
-        .request { auction =>
-          onRequest(body = PlaceBidRequest(Price(BigDecimal(150))), security = bearer.apply(validJwt(sellerAuth)), pathParameters = auction.id)
-        }
+        .request(placeBidRequest(150, sellerAuth))
         .respondsWith[Error[Unit]](Forbidden, description = "Cannot bid on own auction")
         .assert { case (ctx, _) =>
           val response = ctx.performRequest(allRoutes)
           response.body.title shouldBe Some("Cannot bid on your own auction")
         },
       withSetup(setupAuction(alsoSeedBidder = true))
-        .request { auction =>
-          onRequest(body = PlaceBidRequest(Price(BigDecimal(50))), security = bearer.apply(validJwt(bidderAuth)), pathParameters = auction.id)
-        }
+        .request(placeBidRequest(50, bidderAuth))
         .respondsWith[Error[Unit]](Conflict, description = "Bid below minimum")
         .assert { case (ctx, _) =>
           val response = ctx.performRequest(allRoutes)
           response.body.title.exists(_.startsWith("Bid must be strictly greater than")) shouldBe true
         },
       withSetup(setupAuctionWithExistingBid(Price(BigDecimal(200))))
-        .request { auction =>
-          onRequest(body = PlaceBidRequest(Price(BigDecimal(250))), security = bearer.apply(validJwt(bidderAuth)), pathParameters = auction.id)
-        }
+        .request(placeBidRequest(250, bidderAuth))
         .respondsWith[Error[Unit]](Conflict, description = "Already the highest bidder")
         .assert { case (ctx, _) =>
           val response = ctx.performRequest(allRoutes)

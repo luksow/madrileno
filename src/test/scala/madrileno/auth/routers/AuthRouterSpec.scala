@@ -20,6 +20,39 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
 
   override def route: Route = application.routes
 
+  private def seedFirebaseUser(blockedAt: Option[Instant] = None): UserId = {
+    val userAuthRepository = new UserAuthRepository()
+    val now                = Instant.now()
+    application.transactor
+      .inTransaction {
+        userAuthRepository.findForUpdate(firebaseToken.provider, firebaseToken.providerUserId).flatMap {
+          case Some(userAuth) =>
+            blockedAt.fold(IO.pure(userAuth.userId)) { ts =>
+              application.userRepository.update(userAuth.userId, _.copy(blockedAt = Some(ts)), ts).as(userAuth.userId)
+            }
+          case None =>
+            val userId   = UserId(UUID.randomUUID())
+            val user     = User(userId, firebaseToken).copy(blockedAt = blockedAt)
+            val userAuth = UserAuth(UserAuthId(UUID.randomUUID()), userId, firebaseToken)
+            application.userRepository.create(user, now) *>
+              userAuthRepository.save(userAuth, now).as(userId)
+        }
+      }
+      .unsafeRunSync()
+  }
+
+  private def seedRefreshToken(): RefreshTokenId = {
+    val user         = TestData.user()
+    val refreshToken = TestData.refreshToken(userId = user.id)
+    val _ = application.transactor
+      .inTransaction {
+        application.userRepository.create(user, Instant.now()) *>
+          new RefreshTokenRepository().save(refreshToken)
+      }
+      .unsafeRunSync()
+    refreshToken.id
+  }
+
   path("/v1/auth/firebase")(
     supports(
       POST,
@@ -84,19 +117,9 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
       headers = h[String]("X-Forwarded-For", "Client IP address"),
       tags = Seq("Auth")
     )(
-      withSetup {
-        val user         = TestData.user()
-        val refreshToken = TestData.refreshToken(userId = user.id)
-        val _ = application.transactor
-          .inTransaction {
-            application.userRepository.create(user, Instant.now()) *>
-              new RefreshTokenRepository().save(refreshToken)
-          }
-          .unsafeRunSync()
-        refreshToken.id
-      }.request { (tokenId: RefreshTokenId) =>
-        onRequest(body = AuthWithRefreshTokenRequest(tokenId), headers = "127.0.0.1")
-      }.respondsWith[AuthenticatedResponse](Ok, description = "Authenticated with refresh token")
+      withSetup(seedRefreshToken())
+        .request(tokenId => onRequest(body = AuthWithRefreshTokenRequest(tokenId), headers = "127.0.0.1"))
+        .respondsWith[AuthenticatedResponse](Ok, description = "Authenticated with refresh token")
         .assert { case (ctx, _) =>
           val response = ctx.performRequest(allRoutes)
           response.body.jwt.toString should not be empty
@@ -140,27 +163,6 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
         }
     )
   )
-
-  private def seedFirebaseUser(blockedAt: Option[Instant] = None): UserId = {
-    val userAuthRepository = new UserAuthRepository()
-    val now                = Instant.now()
-    application.transactor
-      .inTransaction {
-        userAuthRepository.findForUpdate(firebaseToken.provider, firebaseToken.providerUserId).flatMap {
-          case Some(userAuth) =>
-            blockedAt.fold(IO.pure(userAuth.userId)) { ts =>
-              application.userRepository.update(userAuth.userId, _.copy(blockedAt = Some(ts)), ts).as(userAuth.userId)
-            }
-          case None =>
-            val userId   = UserId(UUID.randomUUID())
-            val user     = User(userId, firebaseToken).copy(blockedAt = blockedAt)
-            val userAuth = UserAuth(UserAuthId(UUID.randomUUID()), userId, firebaseToken)
-            application.userRepository.create(user, now) *>
-              userAuthRepository.save(userAuth, now).as(userId)
-        }
-      }
-      .unsafeRunSync()
-  }
 
   path("/v1/auth/sessions/{sessionId}")(
     supports(
