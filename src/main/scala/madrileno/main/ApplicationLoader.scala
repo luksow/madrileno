@@ -4,6 +4,7 @@ import cats.effect.{Clock, IO}
 import com.comcast.ip4s.{Ipv4Address, Port}
 import madrileno.auction.AuctionModule
 import madrileno.auth.AuthModule
+import madrileno.auth.domain.AuthContext
 import madrileno.healthcheck.HealthCheckModule
 import madrileno.user.UserModule
 import madrileno.utils.cache.CacheRuntime
