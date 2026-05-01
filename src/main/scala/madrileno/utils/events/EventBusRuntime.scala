@@ -39,7 +39,11 @@ object EventBusRuntime {
     override def subscribe: Stream[IO, E]    = Stream.eval(topic).flatMap(_.subscribe(maxQueued))
   }
 
-  private class PostgresEventBus[E: EventCodec](transactor: Transactor, name: String, maxQueued: Int)(using
+  private class PostgresEventBus[E: EventCodec](
+    transactor: Transactor,
+    name: String,
+    maxQueued: Int
+  )(using
     supervisor: Supervisor[IO],
     tc: TelemetryContext)
       extends EventBus[E]

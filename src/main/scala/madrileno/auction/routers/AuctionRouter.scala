@@ -16,11 +16,7 @@ import org.http4s.websocket.WebSocketFrame
 import pl.iterators.stir.marshalling.ToResponseMarshallable
 import pl.iterators.stir.server.Route
 
-class AuctionRouter(
-  auctionService: AuctionService,
-  eventBus: EventBus[AuctionEvent]
-)(using TelemetryContext)
-    extends BaseRouter {
+class AuctionRouter(auctionService: AuctionService, eventBus: EventBus[AuctionEvent])(using TelemetryContext) extends BaseRouter {
 
   val routes: Route = {
     (get & path("auctions") & parameters("status".as[AuctionStatus].?, "seller-id".as[UserId].?) & pathEndOrSingleSlash) { (status, sellerId) =>

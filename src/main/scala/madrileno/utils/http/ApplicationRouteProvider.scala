@@ -7,10 +7,10 @@ import pl.iterators.stir.server.directives.RouteDirectives
 import pl.iterators.stir.server.{Directives, Route, RouteConcatenation}
 
 trait ApplicationRouteProvider extends RouteProvider with AuthRouteProvider with WsRouteProvider with AuthWsRouteProvider with Directives {
-  override def route: Route                                                       = RouteDirectives.reject
-  override def route(auth: AuthContext): Route                                    = RouteDirectives.reject
-  override def wsRoutes(wsb: WebSocketBuilder2[IO]): Route                        = RouteDirectives.reject
-  override def wsRoutes(wsb: WebSocketBuilder2[IO], auth: AuthContext): Route     = RouteDirectives.reject
+  override def route: Route                                                   = RouteDirectives.reject
+  override def route(auth: AuthContext): Route                                = RouteDirectives.reject
+  override def wsRoutes(wsb: WebSocketBuilder2[IO]): Route                    = RouteDirectives.reject
+  override def wsRoutes(wsb: WebSocketBuilder2[IO], auth: AuthContext): Route = RouteDirectives.reject
 }
 
 trait RouteProvider extends RouteConcatenation {
