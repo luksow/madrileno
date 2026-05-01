@@ -5,5 +5,5 @@ import fs2.Stream
 
 trait EventBus[E] {
   def publish(event: E): IO[Unit]
-  def subscribe: Stream[IO, E]
+  def subscribe(maxQueued: Int): Stream[IO, E]
 }

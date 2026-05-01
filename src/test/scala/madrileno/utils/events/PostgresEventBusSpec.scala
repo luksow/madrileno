@@ -6,12 +6,17 @@ import cats.effect.testing.scalatest.AsyncIOSpec
 import io.circe.Codec
 import io.circe.generic.semiauto.deriveCodec
 import madrileno.support.TestTransactor
+import madrileno.utils.observability.TelemetryContext
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AsyncWordSpec
+import org.typelevel.otel4s.metrics.Meter
+import org.typelevel.otel4s.trace.Tracer
 
 import scala.concurrent.duration.*
 
 class PostgresEventBusSpec extends AsyncWordSpec with AsyncIOSpec with Matchers with TestTransactor {
+
+  private given TelemetryContext = TelemetryContext(Meter.noop[IO], Tracer.noop[IO], io.opentelemetry.api.OpenTelemetry.noop())
 
   private case class Sample(id: Int, name: String)
   private given Codec[Sample] = deriveCodec
@@ -23,7 +28,7 @@ class PostgresEventBusSpec extends AsyncWordSpec with AsyncIOSpec with Matchers 
         val publisherBus     = EventBusRuntime.postgres(transactor).topic[Sample]("eventbus_crossinst_test")
         val subscriberBus    = EventBusRuntime.postgres(transactor).topic[Sample]("eventbus_crossinst_test")
         for {
-          sub <- subscriberBus.subscribe.take(1).compile.lastOrError.start
+          sub <- subscriberBus.subscribe(maxQueued = 64).take(1).compile.lastOrError.start
           _   <- IO.sleep(300.millis)
           _   <- publisherBus.publish(Sample(1, "hello"))
           got <- sub.joinWithNever
@@ -36,8 +41,8 @@ class PostgresEventBusSpec extends AsyncWordSpec with AsyncIOSpec with Matchers 
         given Supervisor[IO] = sup
         val bus              = EventBusRuntime.postgres(transactor).topic[Sample]("eventbus_fanout_test")
         for {
-          a  <- bus.subscribe.take(1).compile.lastOrError.start
-          b  <- bus.subscribe.take(1).compile.lastOrError.start
+          a  <- bus.subscribe(maxQueued = 64).take(1).compile.lastOrError.start
+          b  <- bus.subscribe(maxQueued = 64).take(1).compile.lastOrError.start
           _  <- IO.sleep(300.millis)
           _  <- bus.publish(Sample(42, "broadcast"))
           ra <- a.joinWithNever

@@ -49,7 +49,7 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
 
   private def withObservedEvent[A](action: IO[A]): IO[(AuctionEvent, A)] =
     for {
-      subFiber <- eventBus.subscribe.take(1).compile.lastOrError.start
+      subFiber <- eventBus.subscribe(maxQueued = 64).take(1).compile.lastOrError.start
       _        <- IO.sleep(100.millis)
       result   <- action
       event    <- subFiber.joinWithNever

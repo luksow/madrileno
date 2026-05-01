@@ -40,7 +40,7 @@ class AuctionRouter(
         }
       } ~
       (get & path("auctions" / "stream") & pathEndOrSingleSlash) {
-        val send = eventBus.subscribe.map(e => WebSocketFrame.Text(AuctionEventDto.fromDomain(e).asJson.noSpaces))
+        val send = eventBus.subscribe(maxQueued = 64).map(e => WebSocketFrame.Text(AuctionEventDto.fromDomain(e).asJson.noSpaces))
         handleWebSocketMessages(wsBuilder(), send, _.drain)
       }
   }
