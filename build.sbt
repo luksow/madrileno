@@ -35,7 +35,7 @@ libraryDependencies ++= {
   val scalatagsV         = "0.13.1"
   val scaffeineV         = "5.3.0"
   val testcontainersV    = "0.44.1"
-  val baklavaV           = "1.1.1"
+  val baklavaV           = "1.2.0"
   val flywayV            = "12.0.1"
   val scalatestV         = "3.2.20"
   Seq(
