@@ -192,24 +192,10 @@ withSetup {
   .assert { case (ctx, _) => ... }
 ```
 
-**Multi-step setup** — when the setup itself involves multiple effects (HTTP self-call, JWT decoding, then DB mutation), pack the whole chain into `withSetup` and return whatever the assertion needs. Post-request cleanup (e.g., undoing a `blockedAt` modification so subsequent tests aren't poisoned) stays in `assert`, since it has to run after `performRequest`:
+**Multi-step setup** — when the setup involves several related entities, pack the whole chain into `withSetup` and return whatever the assertion needs. Prefer direct repository calls over HTTP self-calls — the setup is for test scaffolding, not for exercising the public API. Post-request cleanup (e.g., undoing a `blockedAt` modification so subsequent tests aren't poisoned) stays in `assert`, since it has to run after `performRequest`:
 ```scala
 withSetup {
-  // Ensure user exists via direct firebase call, then block them
-  val firebaseRequest = Request[IO](Method.POST, Uri.unsafeFromString("/v1/auth/firebase"))
-    .withEntity(AuthWithFirebaseRequest(FirebaseJwt("test-token")))
-    .putHeaders("X-Forwarded-For" -> "127.0.0.1")
-  val firebaseResponse = allRoutes.orNotFound.run(firebaseRequest).unsafeRunSync()
-  val authResponse     = firebaseResponse.as[AuthenticatedResponse].unsafeRunSync()
-  val userId: UserId   = jwtService.decode[AuthContext](authResponse.jwt.toString) match {
-    case JwtService.DecodingResult.Decoded(ctx) => ctx.userId
-    case other                                  => fail(s"Failed to decode JWT: $other")
-  }
-  val blockAt = Instant.now()
-  application.transactor
-    .inTransaction { application.userRepository.update(userId, _.copy(blockedAt = Some(blockAt)), blockAt) }
-    .unsafeRunSync()
-  userId
+  seedFirebaseUser(blockedAt = Some(Instant.now())) // returns UserId after creating user + user_auth
 }.request(_ => onRequest(body = AuthWithFirebaseRequest(FirebaseJwt("test-token")), headers = "127.0.0.1"))
   .respondsWith[Error[Unit]](Locked, description = "User is blocked")
   .assert { case (ctx, userId) =>

@@ -5,7 +5,7 @@ import cats.effect.{Clock, IO}
 import com.dimafeng.testcontainers.PostgreSQLContainer
 import com.dimafeng.testcontainers.scalatest.TestContainersForAll
 import madrileno.auction.gateways.VivinoGateway
-import madrileno.auth.domain.AuthContext
+import madrileno.auth.domain.{AuthContext, VerifiedExternalToken}
 import madrileno.auth.services.{ExternalAuthVerifier, JwtService}
 import madrileno.main.ApplicationLoader
 import madrileno.utils.db.transactor.{PgConfig, PgTransactor}
@@ -34,6 +34,9 @@ trait TestApplicationLoader extends TestContainersForAll with TestMailpit { self
   given Meter[IO]        = Meter.noop[IO]
   given TelemetryContext = TelemetryContext(Meter.noop[IO], Tracer.noop[IO], io.opentelemetry.api.OpenTelemetry.noop())
 
+  // Stable across the spec lifetime so tests can seed users matching the fake firebase verifier
+  val firebaseToken: VerifiedExternalToken = TestData.verifiedExternalToken()
+
   lazy val application: ApplicationLoader = withContainers { container =>
     val pgConfig = PgConfig(
       host = container.host,
@@ -52,7 +55,7 @@ trait TestApplicationLoader extends TestContainersForAll with TestMailpit { self
     val scheduler       = Scheduler(transactor, schedulerConfig)
     new ApplicationLoader(config, httpClient, transactor, Clock[IO], scheduler.client, TestCacheRuntime.unbounded) {
       override protected lazy val externalAuthVerifier: ExternalAuthVerifier =
-        FakeAuthVerifier(TestData.verifiedExternalToken())
+        FakeAuthVerifier(firebaseToken)
       override protected lazy val vivinoGateway: VivinoGateway = (_, _) => IO.pure(None)
     }
   }

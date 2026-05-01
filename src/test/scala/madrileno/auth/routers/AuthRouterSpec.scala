@@ -1,18 +1,15 @@
 package madrileno.auth.routers
 
 import cats.effect.IO
-import madrileno.auth.domain.{AuthContext, FirebaseJwt, RefreshTokenId, UserAgent}
-import madrileno.auth.repositories.RefreshTokenRepository
+import madrileno.auth.domain.{FirebaseJwt, RefreshTokenId, UserAgent, UserAuth, UserAuthId}
+import madrileno.auth.repositories.{RefreshTokenRepository, UserAuthRepository}
 import madrileno.auth.routers.dto.{AuthWithFirebaseRequest, AuthWithRefreshTokenRequest, AuthenticatedResponse, RefreshTokenDto}
-import madrileno.auth.services.JwtService
 import madrileno.support.{BaseRouteSpec, TestApplicationLoader, TestData}
-import madrileno.user.domain.UserId
+import madrileno.user.domain.{User, UserId}
 import madrileno.utils.http.Error
 import madrileno.utils.json.JsonProtocol.*
-import org.http4s.*
 import org.http4s.Method.*
 import org.http4s.Status.*
-import org.http4s.circe.CirceEntityCodec.*
 import pl.iterators.baklava.EmptyBody
 import pl.iterators.stir.server.Route
 
@@ -39,11 +36,7 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
           response.body.refreshToken.toString should not be empty
         },
       withSetup {
-        // Ensure user exists before testing the "existing user" path
-        val setupRequest = Request[IO](Method.POST, Uri.unsafeFromString("/v1/auth/firebase"))
-          .withEntity(AuthWithFirebaseRequest(FirebaseJwt("test-token")))
-          .putHeaders("X-Forwarded-For" -> "127.0.0.1")
-        val _ = allRoutes.orNotFound.run(setupRequest).unsafeRunSync()
+        seedFirebaseUser()
       }.request(_ => onRequest(body = AuthWithFirebaseRequest(FirebaseJwt("test-token")), headers = "127.0.0.1"))
         .respondsWith[AuthenticatedResponse](Ok, description = "Authenticated existing user")
         .assert { case (ctx, _) =>
@@ -52,24 +45,7 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
           response.body.refreshToken.toString should not be empty
         },
       withSetup {
-        // Ensure user exists via direct firebase call, then block them
-        val firebaseRequest = Request[IO](Method.POST, Uri.unsafeFromString("/v1/auth/firebase"))
-          .withEntity(AuthWithFirebaseRequest(FirebaseJwt("test-token")))
-          .putHeaders("X-Forwarded-For" -> "127.0.0.1")
-        val firebaseResponse = allRoutes.orNotFound.run(firebaseRequest).unsafeRunSync()
-        val authResponse     = firebaseResponse.as[AuthenticatedResponse].unsafeRunSync()
-
-        val userId: UserId = jwtService.decode[AuthContext](authResponse.jwt.toString) match {
-          case JwtService.DecodingResult.Decoded(ctx) => ctx.userId
-          case other                                  => fail(s"Failed to decode JWT: $other")
-        }
-        val blockAt = Instant.now()
-        application.transactor
-          .inTransaction {
-            application.userRepository.update(userId, _.copy(blockedAt = Some(blockAt)), blockAt)
-          }
-          .unsafeRunSync()
-        userId
+        seedFirebaseUser(blockedAt = Some(Instant.now()))
       }.request(_ => onRequest(body = AuthWithFirebaseRequest(FirebaseJwt("test-token")), headers = "127.0.0.1"))
         .respondsWith[Error[Unit]](Locked, description = "User is blocked")
         .assert { case (ctx, userId) =>
@@ -164,6 +140,27 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
         }
     )
   )
+
+  private def seedFirebaseUser(blockedAt: Option[Instant] = None): UserId = {
+    val userAuthRepository = new UserAuthRepository()
+    val now                = Instant.now()
+    application.transactor
+      .inTransaction {
+        userAuthRepository.findForUpdate(firebaseToken.provider, firebaseToken.providerUserId).flatMap {
+          case Some(userAuth) =>
+            blockedAt.fold(IO.pure(userAuth.userId)) { ts =>
+              application.userRepository.update(userAuth.userId, _.copy(blockedAt = Some(ts)), ts).as(userAuth.userId)
+            }
+          case None =>
+            val userId   = UserId(UUID.randomUUID())
+            val user     = User(userId, firebaseToken).copy(blockedAt = blockedAt)
+            val userAuth = UserAuth(UserAuthId(UUID.randomUUID()), userId, firebaseToken)
+            application.userRepository.create(user, now) *>
+              userAuthRepository.save(userAuth, now).as(userId)
+        }
+      }
+      .unsafeRunSync()
+  }
 
   path("/v1/auth/sessions/{sessionId}")(
     supports(
