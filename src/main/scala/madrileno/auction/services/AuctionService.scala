@@ -73,9 +73,8 @@ class AuctionService(
         } yield result
       }
       .flatTap {
-        case CreateAuctionResult.Created(view) =>
-          publish(AuctionCreated(view.id, view.wineName, view.startingPrice, view.endsAt, view.createdAt))
-        case _ => IO.unit
+        case CreateAuctionResult.Created(view) => publish(AuctionCreated.from(view))
+        case _                                 => IO.unit
       }
   }
 
@@ -129,7 +128,7 @@ class AuctionService(
         } yield PlaceBidResult.BidPlaced(saved)).run
       }
       .flatTap {
-        case PlaceBidResult.BidPlaced(bid) => publish(BidPlaced(bid.auctionId, bid.amount, bid.createdAt))
+        case PlaceBidResult.BidPlaced(bid) => publish(BidPlaced.from(bid))
         case _                             => IO.unit
       }
   }
@@ -153,24 +152,23 @@ class AuctionService(
                          }
                          .rethrow[IO]
           _ <- auctionRepository.update(cancelled).seal
-        } yield CancelAuctionResult.Cancelled).run
+        } yield CancelAuctionResult.Cancelled(cancelled.updatedAt)).run
       }
       .flatTap {
-        case CancelAuctionResult.Cancelled =>
-          Clock[IO].realTimeInstant.flatMap(now => publish(AuctionCancelled(command.auctionId, now)))
-        case _ => IO.unit
+        case CancelAuctionResult.Cancelled(at) => publish(AuctionCancelled(command.auctionId, at))
+        case _                                 => IO.unit
       }
   }
 
   val closeExpiredAuctionsTask: Task[Unit] = {
-    def performClose(closed: Auction): DBInTransaction[Option[Price]] = {
+    def performClose(closed: Auction): DBInTransaction[Option[Bid]] = {
       for {
         winner <- bidRepository.highestBid(closed.id)
         _      <- auctionRepository.update(closed)
         seller <- userRepository.find(closed.sellerId)
         _      <- notifyAuctionClosed(closed, seller, winner)
         _      <- logger.info(s"Closed auction ${closed.id}, winner: ${winner.map(_.bidderId)}")
-      } yield winner.map(_.amount)
+      } yield winner
     }
 
     def closeOne(auctionId: AuctionId, now: Instant): IO[Unit] = {
@@ -179,15 +177,15 @@ class AuctionService(
           auctionRepository.findForUpdate(auctionId).flatMap {
             case Some(lockedRow) =>
               lockedRow.toAuction.close(now) match {
-                case Right(closed)                       => performClose(closed).map(winning => Some((closed.id, winning, closed.updatedAt)))
+                case Right(closed)                       => performClose(closed).map(winner => Some(AuctionClosed.from(closed, winner)))
                 case Left(CloseRejection.AuctionNotOpen) => IO.pure(None)
               }
             case None => IO.pure(None)
           }
         }
         .flatMap {
-          case Some((id, winning, at)) => publish(AuctionClosed(id, winning, at))
-          case None                    => IO.unit
+          case Some(event) => publish(event)
+          case None        => IO.unit
         }
     }
 
@@ -328,7 +326,7 @@ enum CreateAuctionResult {
 }
 
 enum CancelAuctionResult {
-  case Cancelled
+  case Cancelled(at: Instant)
   case AuctionNotFound
   case NotOwner
   case AuctionNotOpen

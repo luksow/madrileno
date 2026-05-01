@@ -1,36 +1,59 @@
 package madrileno.auction.domain
 
+import io.scalaland.chimney.dsl.*
 import madrileno.utils.events.EventCodec
 import madrileno.utils.json.JsonProtocol.*
 
 import java.time.Instant
 
-sealed trait AuctionEvent derives EventCodec {
+enum AuctionEvent derives EventCodec {
   def auctionId: AuctionId
   def at: Instant
-}
 
-object AuctionEvent {
-
-  case class AuctionCreated(
+  case AuctionCreated(
     auctionId: AuctionId,
     wineName: WineName,
     startingPrice: Price,
     endsAt: Instant,
     at: Instant)
-      extends AuctionEvent
 
-  case class BidPlaced(
+  case BidPlaced(
     auctionId: AuctionId,
     amount: Price,
     at: Instant)
-      extends AuctionEvent
 
-  case class AuctionCancelled(auctionId: AuctionId, at: Instant) extends AuctionEvent
+  case AuctionCancelled(auctionId: AuctionId, at: Instant)
 
-  case class AuctionClosed(
+  case AuctionClosed(
     auctionId: AuctionId,
-    winningBid: Option[Price],
+    winningBid: Option[Bid],
     at: Instant)
-      extends AuctionEvent
+}
+
+object AuctionEvent {
+
+  object AuctionCreated {
+    def from(view: AuctionView): AuctionCreated =
+      view
+        .into[AuctionCreated]
+        .withFieldRenamed(_.id, _.auctionId)
+        .withFieldRenamed(_.createdAt, _.at)
+        .transform
+  }
+
+  object BidPlaced {
+    def from(bid: Bid): BidPlaced =
+      bid
+        .into[BidPlaced]
+        .withFieldRenamed(_.createdAt, _.at)
+        .transform
+  }
+
+  object AuctionCancelled {
+    def from(auction: Auction): AuctionCancelled = AuctionCancelled(auction.id, auction.updatedAt)
+  }
+
+  object AuctionClosed {
+    def from(auction: Auction, winningBid: Option[Bid]): AuctionClosed = AuctionClosed(auction.id, winningBid, auction.updatedAt)
+  }
 }

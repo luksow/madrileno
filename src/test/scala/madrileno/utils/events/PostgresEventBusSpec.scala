@@ -22,10 +22,10 @@ class PostgresEventBusSpec extends AsyncWordSpec with AsyncIOSpec with Matchers 
     "deliver events across separate runtime instances over the same Postgres" in {
       Supervisor[IO].use { sup =>
         given Supervisor[IO] = sup
-        val publisherBus     = EventBusRuntime.postgres(transactor).topic[Sample]("eventbus_crossinst_test")
-        val subscriberBus    = EventBusRuntime.postgres(transactor).topic[Sample]("eventbus_crossinst_test")
+        val publisherBus     = EventBusRuntime.postgres(transactor).topic[Sample]("eventbus_crossinst_test", maxQueued = 64)
+        val subscriberBus    = EventBusRuntime.postgres(transactor).topic[Sample]("eventbus_crossinst_test", maxQueued = 64)
         for {
-          sub <- subscriberBus.subscribe(maxQueued = 64).take(1).compile.lastOrError.start
+          sub <- subscriberBus.subscribe.take(1).compile.lastOrError.start
           _   <- IO.sleep(300.millis)
           _   <- publisherBus.publish(Sample(1, "hello"))
           got <- sub.joinWithNever
@@ -36,10 +36,10 @@ class PostgresEventBusSpec extends AsyncWordSpec with AsyncIOSpec with Matchers 
     "fan out a publish to multiple subscribers on a single runtime instance" in {
       Supervisor[IO].use { sup =>
         given Supervisor[IO] = sup
-        val bus              = EventBusRuntime.postgres(transactor).topic[Sample]("eventbus_fanout_test")
+        val bus              = EventBusRuntime.postgres(transactor).topic[Sample]("eventbus_fanout_test", maxQueued = 64)
         for {
-          a  <- bus.subscribe(maxQueued = 64).take(1).compile.lastOrError.start
-          b  <- bus.subscribe(maxQueued = 64).take(1).compile.lastOrError.start
+          a  <- bus.subscribe.take(1).compile.lastOrError.start
+          b  <- bus.subscribe.take(1).compile.lastOrError.start
           _  <- IO.sleep(300.millis)
           _  <- bus.publish(Sample(42, "broadcast"))
           ra <- a.joinWithNever

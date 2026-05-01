@@ -41,7 +41,7 @@ class AuctionRouter(
         }
       } ~
       (get & path("auctions" / "stream") & pathEndOrSingleSlash) {
-        val send = eventBus.subscribe(maxQueued = 64).map(e => WebSocketFrame.Text(toFrame(e).noSpaces))
+        val send = eventBus.subscribe.map(e => WebSocketFrame.Text(toFrame(e).noSpaces))
         handleWebSocketMessages(wsBuilder(), send, _.drain)
       }
   }
@@ -76,7 +76,7 @@ class AuctionRouter(
         complete {
           val command = CancelAuctionCommand(auctionId, authContext.userId)
           auctionService.cancelAuction(command).map[ToResponseMarshallable] {
-            case CancelAuctionResult.Cancelled       => NoContent
+            case _: CancelAuctionResult.Cancelled    => NoContent
             case CancelAuctionResult.AuctionNotFound => error(NotFound, "auction-not-found", "Auction not found")
             case CancelAuctionResult.NotOwner        => error(Forbidden, "not-owner", "Only the seller can cancel this auction")
             case CancelAuctionResult.AuctionNotOpen  => error(Conflict, "auction-not-open", "Auction is not open")

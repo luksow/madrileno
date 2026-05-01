@@ -41,14 +41,14 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
   private lazy val client     = scheduler.client
   private lazy val mailer     = new Mailer(smtpSender, client, MailContext(baseUrl = URI("https://example.com")))
   private val vivinoGateway: VivinoGateway     = (_, _) => IO.pure(None)
-  private val eventBus: EventBus[AuctionEvent] = EventBusRuntime.local.topic[AuctionEvent]("auction_events_test")
+  private val eventBus: EventBus[AuctionEvent] = EventBusRuntime.local.topic[AuctionEvent]("auction_events_test", maxQueued = 64)
   private lazy val service                     = new AuctionService(auctionRepo, bidRepo, userRepo, vivinoGateway, eventBus, transactor, mailer)
 
   private val eur = Currency.getInstance("EUR")
 
   private def withObservedEvent[A](action: IO[A]): IO[(AuctionEvent, A)] =
     for {
-      subFiber <- eventBus.subscribe(maxQueued = 64).take(1).compile.lastOrError.start
+      subFiber <- eventBus.subscribe.take(1).compile.lastOrError.start
       _        <- IO.sleep(100.millis)
       result   <- action
       event    <- subFiber.joinWithNever
@@ -321,7 +321,7 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
         result  <- service.cancelAuction(CancelAuctionCommand(auction.id, seller.id))
         found   <- service.getAuction(auction.id)
       } yield {
-        result shouldBe CancelAuctionResult.Cancelled
+        result shouldBe a[CancelAuctionResult.Cancelled]
         found shouldBe defined
         found.get.status shouldBe AuctionStatus.Cancelled
       }
