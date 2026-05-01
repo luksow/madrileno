@@ -13,7 +13,7 @@ import madrileno.user.repositories.UserRepository
 import madrileno.utils.cache.CacheRuntime
 import madrileno.utils.db.transactor.Transactor
 import madrileno.utils.events.{EventBus, EventBusRuntime}
-import madrileno.utils.http.{AuthRouteProvider, RouteProvider}
+import madrileno.utils.http.{AuthRouteProvider, RouteProvider, WsRouteProvider}
 import madrileno.utils.mailer.{MailPreview, MailPreviewProvider, Mailer}
 import madrileno.utils.observability.TelemetryContext
 import madrileno.utils.task.{RecurringTaskProvider, Task}
@@ -22,7 +22,7 @@ import pl.iterators.stir.server.Route
 import sttp.capabilities.fs2.Fs2Streams
 import sttp.client4.WebSocketStreamBackend
 
-trait AuctionModule extends RouteProvider with AuthRouteProvider with RecurringTaskProvider with MailPreviewProvider {
+trait AuctionModule extends RouteProvider with AuthRouteProvider with WsRouteProvider with RecurringTaskProvider with MailPreviewProvider {
   given telemetryContext: TelemetryContext
   val transactor: Transactor
   val cacheRuntime: CacheRuntime
@@ -30,7 +30,6 @@ trait AuctionModule extends RouteProvider with AuthRouteProvider with RecurringT
   lazy val httpClient: WebSocketStreamBackend[IO, Fs2Streams[IO]]
   lazy val userRepository: UserRepository
   lazy val mailer: Mailer
-  def webSocketBuilder: WebSocketBuilder2[IO]
 
   protected lazy val vivinoGateway: VivinoGateway            = VivinoGateway.live(httpClient, cacheRuntime)
   protected lazy val auctionEventBus: EventBus[AuctionEvent] = eventBusRuntime.topic[AuctionEvent]("auction_events", maxQueued = 64)
@@ -38,7 +37,7 @@ trait AuctionModule extends RouteProvider with AuthRouteProvider with RecurringT
   private val auctionRepository = wire[AuctionRepository]
   private val bidRepository     = wire[BidRepository]
   private val auctionService    = wire[AuctionService]
-  private val auctionRouter     = new AuctionRouter(auctionService, auctionEventBus, () => webSocketBuilder)
+  private val auctionRouter     = wire[AuctionRouter]
 
   override abstract def route(auth: AuthContext): Route = {
     super.route(auth) ~ auctionRouter.authedRoutes(auth)
@@ -46,6 +45,10 @@ trait AuctionModule extends RouteProvider with AuthRouteProvider with RecurringT
 
   override abstract def route: Route = {
     super.route ~ auctionRouter.routes
+  }
+
+  override abstract def wsRoutes(wsb: WebSocketBuilder2[IO]): Route = {
+    super.wsRoutes(wsb) ~ auctionRouter.wsRoutes(wsb)
   }
 
   override abstract def recurringTasks: List[Task[?]] = {

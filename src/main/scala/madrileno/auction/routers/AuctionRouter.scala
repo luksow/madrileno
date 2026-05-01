@@ -18,8 +18,7 @@ import pl.iterators.stir.server.Route
 
 class AuctionRouter(
   auctionService: AuctionService,
-  eventBus: EventBus[AuctionEvent],
-  wsBuilder: () => WebSocketBuilder2[IO]
+  eventBus: EventBus[AuctionEvent]
 )(using TelemetryContext)
     extends BaseRouter {
 
@@ -39,10 +38,6 @@ class AuctionRouter(
             case None       => error(NotFound, "auction-not-found", "Auction not found")
           }
         }
-      } ~
-      (get & path("auctions" / "stream") & pathEndOrSingleSlash) {
-        val send = eventBus.subscribe.map(e => WebSocketFrame.Text(toFrame(e).noSpaces))
-        handleWebSocketMessages(wsBuilder(), send, _.drain)
       }
   }
 
@@ -100,6 +95,13 @@ class AuctionRouter(
           }
         }
       }
+  }
+
+  def wsRoutes(wsb: WebSocketBuilder2[IO]): Route = {
+    (get & path("auctions" / "stream") & pathEndOrSingleSlash) {
+      val send = eventBus.subscribe.map(e => WebSocketFrame.Text(toFrame(e).noSpaces))
+      handleWebSocketMessages(wsb, send, _.drain)
+    }
   }
 
   private def toFrame(event: AuctionEvent): Json = {

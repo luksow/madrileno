@@ -27,7 +27,6 @@ import sttp.client4.opentelemetry.OpenTelemetryMetricsBackend
 import sttp.client4.{WebSocketStreamBackend, logging}
 
 import java.net.URI
-import java.util.concurrent.atomic.AtomicReference
 
 final case class HttpConfig(
   host: Ipv4Address,
@@ -109,14 +108,10 @@ class ApplicationLoader(
   private val apiVersion: String                   = appConfig.apiVersion
   private val pathPrefixMatcher: PathMatcher[Unit] = Slash ~ apiVersion
 
-  private val wsBuilderRef: AtomicReference[Option[WebSocketBuilder2[IO]]] = new AtomicReference(None)
+  def routes(wsb: WebSocketBuilder2[IO]): Route = assembleRoutes(authedWs = wsRoutes(wsb, _), unauthedWs = wsRoutes(wsb))
+  def routes: Route                             = assembleRoutes(authedWs = _ => RouteDirectives.reject, unauthedWs = RouteDirectives.reject)
 
-  private[main] def setWebSocketBuilder(wsb: WebSocketBuilder2[IO]): Unit = wsBuilderRef.set(Some(wsb))
-
-  override def webSocketBuilder: WebSocketBuilder2[IO] =
-    wsBuilderRef.get().getOrElse(sys.error("WebSocketBuilder2 not initialised — setWebSocketBuilder must run before a WS request lands"))
-
-  val routes: Route =
+  private def assembleRoutes(authedWs: AuthContext => Route, unauthedWs: => Route): Route =
     onSuccess(telemetryContext.tracer.propagate(Map.empty)) { initialCtx =>
       logRequest(logAction = Some(logAction(initialCtx))) {
         handleExceptions(exceptionHandler(logResult(logAction = Some(logAction(initialCtx))))) {
@@ -129,7 +124,7 @@ class ApplicationLoader(
                       logResult(logAction = Some(logAction(initialCtx))) {
                         onSuccess(telemetryContext.tracer.propagate(Headers.empty)) { newHeaders =>
                           mapResponseHeaders(_ ++ newHeaders) {
-                            route(auth) ~ route
+                            route(auth) ~ route ~ authedWs(auth) ~ unauthedWs
                           }
                         }
                       }
@@ -140,7 +135,7 @@ class ApplicationLoader(
                 logResult(logAction = Some(logAction(initialCtx))) {
                   onSuccess(telemetryContext.tracer.propagate(Headers.empty)) { newHeaders =>
                     mapResponseHeaders(_ ++ newHeaders) {
-                      route
+                      route ~ unauthedWs
                     }
                   }
                 }
