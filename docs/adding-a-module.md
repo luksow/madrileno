@@ -608,11 +608,19 @@ new ApplicationLoader(...) {
 
 ### Pub/sub and WebSocket streaming
 
-`EventBusRuntime` is the Transactor analogue for publish/subscribe. Module declares `val eventBusRuntime: EventBusRuntime` and mints its typed topic:
+`EventBusRuntime` is the Transactor analogue for publish/subscribe. Module declares `val eventBusRuntime: EventBusRuntime` and mints its typed topic — the `maxQueued` is the per-subscriber buffer size:
 
 ```scala
 protected lazy val productEventBus: EventBus[ProductEvent] =
-  eventBusRuntime.topic[ProductEvent]("product_events")
+  eventBusRuntime.topic[ProductEvent]("product_events", maxQueued = 64)
+```
+
+`ProductEvent` derives `EventCodec` (the project's wrapper over circe `Codec.AsObject`):
+
+```scala
+enum ProductEvent derives EventCodec {
+  case Registered(productId: ProductId, name: ProductName, at: Instant)
+}
 ```
 
 The `name` becomes the Postgres `LISTEN` / `NOTIFY` channel under the Postgres backend — Skunk's identifier rules apply (matches `[A-Za-z_][A-Za-z_0-9$]*`, no dots).
@@ -627,13 +635,21 @@ def register(cmd): IO[RegisterResult] =
   }
 ```
 
-WebSocket endpoints sit in the module's regular `routes: Route`. The router takes `wsBuilder: () => WebSocketBuilder2[IO]` via macwire; `handleWebSocketMessages` comes from `BaseRouter`:
+WebSocket endpoints live in a separate `wsRoutes(wsb: WebSocketBuilder2[IO]): Route` method on the router, contributed via the module's `WsRouteProvider` (use `AuthWsRouteProvider` if the route needs `AuthContext`). The builder is the one Ember hands to `withHttpWebSocketApp`, threaded through `ApplicationLoader.routes(wsb)` — no DI getter, no mutable reference:
 
 ```scala
-(get & path("products" / "stream") & pathEndOrSingleSlash) {
-  val send = eventBus.subscribe.map(e => WebSocketFrame.Text(e.asJson.noSpaces))
-  handleWebSocketMessages(wsBuilder(), send, _.drain)
-}
+def wsRoutes(wsb: WebSocketBuilder2[IO]): Route =
+  (get & path("products" / "stream") & pathEndOrSingleSlash) {
+    val send = eventBus.subscribe.map(e => WebSocketFrame.Text(e.asJson.noSpaces))
+    handleWebSocketMessages(wsb, send, _.drain)
+  }
+```
+
+In the module, mix in `WsRouteProvider` and contribute via the standard `super` chain:
+
+```scala
+override abstract def wsRoutes(wsb: WebSocketBuilder2[IO]): Route =
+  super.wsRoutes(wsb) ~ productRouter.wsRoutes(wsb)
 ```
 
 Backend choice is Main's concern: `EventBusRuntime.local` (fs2.Topic, single-process) for dev/tests; `EventBusRuntime.postgres(pgSessions)` for production. Postgres variant requires a shared `Supervisor[IO]` and reconnects the LISTEN session on failure. NOTIFY payloads are capped at ~8 KB, messages are transient — not a replacement for the scheduler when you need durability.
