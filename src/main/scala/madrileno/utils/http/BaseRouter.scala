@@ -1,6 +1,8 @@
 package madrileno.utils.http
 
 import cats.effect.IO
+import cats.effect.std.Queue
+import fs2.Stream
 import madrileno.utils.json.JsonProtocol
 import madrileno.utils.json.JsonProtocol.*
 import madrileno.utils.observability.TelemetryContext
@@ -47,4 +49,12 @@ trait BaseRouter
     }
   }
 
+  // Decouple a slow downstream consumer (e.g. a backpressured WS client) from the upstream source by
+  // routing through a per-connection bounded queue with drop-newest semantics. The pump fiber drains
+  // `source` at full speed via `tryOffer`, so upstream backpressure never reaches the source.
+  extension [A](source: Stream[IO, A])
+    def droppingBuffer(capacity: Int): Stream[IO, A] =
+      Stream.eval(Queue.bounded[IO, A](capacity)).flatMap { q =>
+        Stream.fromQueueUnterminated(q).concurrently(source.evalMap(a => q.tryOffer(a).void))
+      }
 }

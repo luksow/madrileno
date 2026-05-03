@@ -93,7 +93,7 @@ class AuctionRouter(auctionService: AuctionService, eventBus: EventBus[AuctionEv
 
   def wsRoutes(wsb: WebSocketBuilder2[IO]): Route = {
     (get & path("auctions" / "stream") & pathEndOrSingleSlash) {
-      val send = eventBus.subscribe.map(e => WebSocketFrame.Text(AuctionEventEnvelope(e).noSpaces))
+      val send = eventBus.subscribe.droppingBuffer(capacity = 256).map(e => WebSocketFrame.Text(AuctionEventEnvelope(e).noSpaces))
       handleWebSocketMessages(wsb, send, _.drain)
     }
   }
