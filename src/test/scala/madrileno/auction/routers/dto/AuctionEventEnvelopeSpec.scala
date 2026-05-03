@@ -52,15 +52,15 @@ class AuctionEventEnvelopeSpec extends AnyWordSpec with Matchers {
       data.get[Instant]("at") shouldBe Right(at)
     }
 
-    "wrap AuctionClosed with the winning bid as a nested DTO when present" in {
+    "wrap AuctionClosed with the winning bid amount; bidder identity intentionally NOT in the wire shape" in {
       val winningBid = Bid(bidId, auctionId, bidderId, Price(BigDecimal(200)), at)
       val event      = AuctionEvent.AuctionClosed(auctionId, Some(winningBid), at)
       val json       = AuctionEventEnvelope(event)
 
       json.hcursor.get[String]("kind") shouldBe Right("AuctionClosed")
       val winning = json.hcursor.downField("data").downField("winningBid")
-      winning.get[BidId]("id") shouldBe Right(bidId)
       winning.get[Price]("amount") shouldBe Right(Price(BigDecimal(200)))
+      winning.keys.map(_.toSet).getOrElse(Set.empty) shouldBe Set("amount")
     }
 
     "wrap AuctionClosed with winningBid: null when no bids were placed" in {

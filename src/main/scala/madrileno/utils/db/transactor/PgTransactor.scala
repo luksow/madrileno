@@ -7,7 +7,7 @@ import skunk.*
 import skunk.Session.Credentials
 import skunk.data.{Identifier, Notification}
 
-class PgTransactor(sessions: Resource[IO, Session[IO]], listenerSession: Session[IO]) extends Transactor {
+class PgTransactor(sessions: Resource[IO, Session[IO]]) extends Transactor {
 
   override def inTransaction[A](f: DBInTransaction[A]): IO[A] =
     sessions.use { session =>
@@ -22,8 +22,11 @@ class PgTransactor(sessions: Resource[IO, Session[IO]], listenerSession: Session
   override def notify(channel: Identifier, payload: String): IO[Unit] =
     sessions.use(_.channel(channel).notify(payload))
 
+  // Each call leases a fresh session for the lifetime of the returned stream. When the stream
+  // terminates (normally or via error), the session is returned to the pool — so a reconnect
+  // loop over `listen(...)` actually re-acquires a live connection instead of reusing a dead one.
   override def listen(channel: Identifier, maxQueued: Int): Stream[IO, Notification[String]] =
-    listenerSession.channel(channel).listen(maxQueued)
+    Stream.resource(sessions).flatMap(_.channel(channel).listen(maxQueued))
 }
 
 object PgTransactor {
@@ -48,9 +51,6 @@ object PgTransactor {
       .withRedactionStrategy(RedactionStrategy.OptIn)
       .withSocketOptions(Session.DefaultSocketOptions)
       .pooled(pgConfig.max)
-    for {
-      sessions <- pool
-      listener <- sessions
-    } yield new PgTransactor(sessions, listener)
+    pool.map(sessions => new PgTransactor(sessions))
   }
 }

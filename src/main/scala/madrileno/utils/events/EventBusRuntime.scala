@@ -1,7 +1,8 @@
 package madrileno.utils.events
 
+import cats.effect.kernel.Deferred
 import cats.effect.std.Supervisor
-import cats.effect.{Deferred, IO, Ref}
+import cats.effect.{IO, Ref}
 import fs2.Stream
 import fs2.concurrent.Topic
 import madrileno.utils.db.transactor.Transactor
@@ -33,15 +34,25 @@ object EventBusRuntime {
   }
 
   // One-shot memoization of `init`. Concurrent callers share a single Deferred so
-  // `init` runs at most once even under contention — no leaked Topics or supervised
-  // listener fibers if multiple subscribers race during startup.
+  // `init` runs at most once per attempt even under contention. On failure the slot
+  // is cleared so a later caller can retry — leaving a permanently-failed Deferred
+  // would dead-end the bus with no recovery path.
   private def memoize[A](init: IO[A]): IO[A] = {
-    val ref   = Ref.unsafe[IO, Option[Deferred[IO, Either[Throwable, A]]]](None)
-    val fresh = Deferred.unsafe[IO, Either[Throwable, A]]
-    ref.modify {
-      case Some(d) => (Some(d), d.get.rethrow)
-      case None    => (Some(fresh), init.attempt.flatTap(fresh.complete(_).void).rethrow)
-    }.flatten
+    val ref = Ref.unsafe[IO, Option[Deferred[IO, Either[Throwable, A]]]](None)
+    Deferred[IO, Either[Throwable, A]].flatMap { fresh =>
+      ref.modify {
+        case Some(d) => (Some(d), d.get.rethrow)
+        case None =>
+          val attempt = init.attempt
+            .flatTap(fresh.complete(_).void)
+            .flatTap {
+              case Left(_)  => ref.set(None)
+              case Right(_) => IO.unit
+            }
+            .rethrow
+          (Some(fresh), attempt)
+      }.flatten
+    }
   }
 
   private class LocalEventBus[E](maxQueued: Int) extends EventBus[E] {
