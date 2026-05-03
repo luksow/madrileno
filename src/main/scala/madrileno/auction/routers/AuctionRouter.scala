@@ -1,8 +1,6 @@
 package madrileno.auction.routers
 
 import cats.effect.IO
-import io.circe.Json
-import io.circe.syntax.*
 import madrileno.auction.domain.*
 import madrileno.auction.routers.dto.*
 import madrileno.auction.services.*
@@ -95,18 +93,8 @@ class AuctionRouter(auctionService: AuctionService, eventBus: EventBus[AuctionEv
 
   def wsRoutes(wsb: WebSocketBuilder2[IO]): Route = {
     (get & path("auctions" / "stream") & pathEndOrSingleSlash) {
-      val send = eventBus.subscribe.map(e => WebSocketFrame.Text(toFrame(e).noSpaces))
+      val send = eventBus.subscribe.map(e => WebSocketFrame.Text(AuctionEventEnvelope(e).noSpaces))
       handleWebSocketMessages(wsb, send, _.drain)
     }
-  }
-
-  private def toFrame(event: AuctionEvent): Json = {
-    val (kind, data) = event match {
-      case e: AuctionEvent.AuctionCreated   => "AuctionCreated"   -> AuctionCreatedDto(e).asJson
-      case e: AuctionEvent.BidPlaced        => "BidPlaced"        -> BidPlacedDto(e).asJson
-      case e: AuctionEvent.AuctionCancelled => "AuctionCancelled" -> AuctionCancelledDto(e).asJson
-      case e: AuctionEvent.AuctionClosed    => "AuctionClosed"    -> AuctionClosedDto(e).asJson
-    }
-    Json.obj("kind" -> kind.asJson, "data" -> data)
   }
 }

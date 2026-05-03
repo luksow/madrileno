@@ -1,7 +1,7 @@
 package madrileno.utils.events
 
 import cats.effect.std.Supervisor
-import cats.effect.{IO, Ref}
+import cats.effect.{Deferred, IO, Ref}
 import fs2.Stream
 import fs2.concurrent.Topic
 import madrileno.utils.db.transactor.Transactor
@@ -10,6 +10,14 @@ import skunk.data.Identifier
 
 import scala.concurrent.duration.*
 
+/** Pluggable event-bus factory.
+  *
+  * `local` keeps fan-out in-process via fs2 Topic — fine for tests and single-instance dev. NOTE: each call to `topic(name, _)` returns an
+  * **independent** bus; the `name` is not used for sharing. Callers that need a shared bus must wire it once and pass the reference around.
+  *
+  * `postgres` shares state across instances over LISTEN/NOTIFY on the named channel — two `topic("x", _)` calls (in the same JVM or another instance)
+  * resolve to the same logical bus.
+  */
 trait EventBusRuntime {
   def topic[E: EventCodec](name: String, maxQueued: Int): EventBus[E]
 }
@@ -24,12 +32,16 @@ object EventBusRuntime {
     override def topic[E: EventCodec](name: String, maxQueued: Int): EventBus[E] = new PostgresEventBus[E](transactor, name, maxQueued)
   }
 
+  // One-shot memoization of `init`. Concurrent callers share a single Deferred so
+  // `init` runs at most once even under contention — no leaked Topics or supervised
+  // listener fibers if multiple subscribers race during startup.
   private def memoize[A](init: IO[A]): IO[A] = {
-    val ref = Ref.unsafe[IO, Option[A]](None)
-    ref.get.flatMap {
-      case Some(a) => IO.pure(a)
-      case None    => init.flatMap(a => ref.modify(_.fold((Some(a), a))(prev => (Some(prev), prev))))
-    }
+    val ref   = Ref.unsafe[IO, Option[Deferred[IO, Either[Throwable, A]]]](None)
+    val fresh = Deferred.unsafe[IO, Either[Throwable, A]]
+    ref.modify {
+      case Some(d) => (Some(d), d.get.rethrow)
+      case None    => (Some(fresh), init.attempt.flatTap(fresh.complete(_).void).rethrow)
+    }.flatten
   }
 
   private class LocalEventBus[E](maxQueued: Int) extends EventBus[E] {
