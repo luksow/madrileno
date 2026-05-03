@@ -10,6 +10,7 @@ import org.scalatest.wordspec.AsyncWordSpec
 import org.typelevel.otel4s.metrics.Meter
 import org.typelevel.otel4s.trace.Tracer
 
+import java.util.UUID
 import scala.concurrent.duration.*
 
 class PostgresEventBusSpec extends AsyncWordSpec with AsyncIOSpec with Matchers with TestTransactor {
@@ -18,12 +19,16 @@ class PostgresEventBusSpec extends AsyncWordSpec with AsyncIOSpec with Matchers 
 
   private case class Sample(id: Int, name: String) derives EventCodec
 
+  // Unique per-test channel names so concurrent test runs against the same Postgres can't cross-talk.
+  private def channel(prefix: String): String = s"${prefix}_${UUID.randomUUID().toString.replace("-", "_")}"
+
   "EventBusRuntime.postgres" should {
     "deliver events across separate runtime instances over the same Postgres" in {
       Supervisor[IO].use { sup =>
         given Supervisor[IO] = sup
-        val publisherBus     = EventBusRuntime.postgres(transactor).topic[Sample]("eventbus_crossinst_test", maxQueued = 64)
-        val subscriberBus    = EventBusRuntime.postgres(transactor).topic[Sample]("eventbus_crossinst_test", maxQueued = 64)
+        val name             = channel("eventbus_crossinst_test")
+        val publisherBus     = EventBusRuntime.postgres(transactor).topic[Sample](name, maxQueued = 64)
+        val subscriberBus    = EventBusRuntime.postgres(transactor).topic[Sample](name, maxQueued = 64)
         for {
           sub <- subscriberBus.subscribe.take(1).compile.lastOrError.start
           _   <- IO.sleep(300.millis)
@@ -36,7 +41,7 @@ class PostgresEventBusSpec extends AsyncWordSpec with AsyncIOSpec with Matchers 
     "fan out a publish to multiple subscribers on a single runtime instance" in {
       Supervisor[IO].use { sup =>
         given Supervisor[IO] = sup
-        val bus              = EventBusRuntime.postgres(transactor).topic[Sample]("eventbus_fanout_test", maxQueued = 64)
+        val bus              = EventBusRuntime.postgres(transactor).topic[Sample](channel("eventbus_fanout_test"), maxQueued = 64)
         for {
           a  <- bus.subscribe.take(1).compile.lastOrError.start
           b  <- bus.subscribe.take(1).compile.lastOrError.start
