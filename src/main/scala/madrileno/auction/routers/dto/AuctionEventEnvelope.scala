@@ -3,7 +3,6 @@ package madrileno.auction.routers.dto
 import io.circe.Json
 import io.circe.syntax.*
 import madrileno.auction.domain.AuctionEvent
-import madrileno.utils.json.JsonProtocol.*
 
 object AuctionEventEnvelope {
   def apply(event: AuctionEvent): Json = {
