@@ -652,7 +652,7 @@ override abstract def wsRoutes(wsb: WebSocketBuilder2[IO]): Route =
   super.wsRoutes(wsb) ~ productRouter.wsRoutes(wsb)
 ```
 
-Backend choice is Main's concern: `EventBusRuntime.local` (fs2.Topic, single-process) for dev/tests; `EventBusRuntime.postgres(pgSessions)` for production. Postgres variant requires a shared `Supervisor[IO]` and reconnects the LISTEN session on failure. NOTIFY payloads are capped at ~8 KB, messages are transient — not a replacement for the scheduler when you need durability.
+Backend choice is Main's concern: `EventBusRuntime.local` (fs2.Topic, single-process) for dev/tests; `EventBusRuntime.postgres(transactor)` for production. Postgres variant requires a shared `Supervisor[IO]` and a `TelemetryContext`, and reconnects the LISTEN session on failure. NOTIFY payloads are capped at ~8 KB, messages are transient — not a replacement for the scheduler when you need durability.
 
 ## Step 8 — Router spec (Baklava), also your OpenAPI source
 

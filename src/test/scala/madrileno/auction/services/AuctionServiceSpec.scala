@@ -47,12 +47,12 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
   private val eur = Currency.getInstance("EUR")
 
   private def withObservedEvent[A](action: IO[A]): IO[(AuctionEvent, A)] =
-    for {
+    (for {
       subFiber <- eventBus.subscribe.take(1).compile.lastOrError.start
       _        <- IO.sleep(100.millis)
       result   <- action
       event    <- subFiber.joinWithNever
-    } yield (event, result)
+    } yield (event, result)).timeout(5.seconds)
 
   // Service manages its own sessions/transactions, so we seed data via the transactor directly
   private def seedUser(user: User = TestData.user()): IO[User] = {

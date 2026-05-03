@@ -25,17 +25,15 @@ object EventBusRuntime {
     override def topic[E: EventCodec](name: String, maxQueued: Int): EventBus[E] = new PostgresEventBus[E](transactor, name, maxQueued)
   }
 
-  // One-shot memoization of `init`. Concurrent callers share a single Deferred so
-  // `init` runs at most once per attempt even under contention. On failure the slot
-  // is cleared so a later caller can retry — leaving a permanently-failed Deferred
-  // would dead-end the bus with no recovery path.
   private def memoize[A](init: IO[A]): IO[A] = {
     val ref = Ref.unsafe[IO, Option[Deferred[IO, Either[Throwable, A]]]](None)
     Deferred[IO, Either[Throwable, A]].flatMap { fresh =>
       ref.modify {
         case Some(d) => (Some(d), d.get.rethrow)
         case None =>
+          val cancellation = new java.util.concurrent.CancellationException("memoize: init cancelled")
           val attempt = init.attempt
+            .onCancel(ref.set(None) *> fresh.complete(Left(cancellation)).void)
             .flatTap(fresh.complete(_).void)
             .flatTap {
               case Left(_)  => ref.set(None)

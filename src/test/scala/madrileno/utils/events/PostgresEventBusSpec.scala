@@ -22,6 +22,8 @@ class PostgresEventBusSpec extends AsyncWordSpec with AsyncIOSpec with Matchers 
   // Unique per-test channel names so concurrent test runs against the same Postgres can't cross-talk.
   private def channel(prefix: String): String = s"${prefix}_${UUID.randomUUID().toString.replace("-", "_")}"
 
+  private val testTimeout: FiniteDuration = 10.seconds
+
   "EventBusRuntime.postgres" should {
     "deliver events across separate runtime instances over the same Postgres" in {
       Supervisor[IO].use { sup =>
@@ -29,12 +31,12 @@ class PostgresEventBusSpec extends AsyncWordSpec with AsyncIOSpec with Matchers 
         val name             = channel("eventbus_crossinst_test")
         val publisherBus     = EventBusRuntime.postgres(transactor).topic[Sample](name, maxQueued = 64)
         val subscriberBus    = EventBusRuntime.postgres(transactor).topic[Sample](name, maxQueued = 64)
-        for {
+        (for {
           sub <- subscriberBus.subscribe.take(1).compile.lastOrError.start
           _   <- IO.sleep(300.millis)
           _   <- publisherBus.publish(Sample(1, "hello"))
           got <- sub.joinWithNever
-        } yield got shouldBe Sample(1, "hello")
+        } yield got shouldBe Sample(1, "hello")).timeout(testTimeout)
       }
     }
 
@@ -42,7 +44,7 @@ class PostgresEventBusSpec extends AsyncWordSpec with AsyncIOSpec with Matchers 
       Supervisor[IO].use { sup =>
         given Supervisor[IO] = sup
         val bus              = EventBusRuntime.postgres(transactor).topic[Sample](channel("eventbus_fanout_test"), maxQueued = 64)
-        for {
+        (for {
           a  <- bus.subscribe.take(1).compile.lastOrError.start
           b  <- bus.subscribe.take(1).compile.lastOrError.start
           _  <- IO.sleep(300.millis)
@@ -52,7 +54,7 @@ class PostgresEventBusSpec extends AsyncWordSpec with AsyncIOSpec with Matchers 
         } yield {
           ra shouldBe Sample(42, "broadcast")
           rb shouldBe Sample(42, "broadcast")
-        }
+        }).timeout(testTimeout)
       }
     }
   }
