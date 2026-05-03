@@ -4,7 +4,6 @@ import cats.effect.{Clock, IO}
 import com.comcast.ip4s.{Ipv4Address, Port}
 import madrileno.auction.AuctionModule
 import madrileno.auth.AuthModule
-import madrileno.auth.domain.AuthContext
 import madrileno.healthcheck.HealthCheckModule
 import madrileno.user.UserModule
 import madrileno.utils.cache.CacheRuntime
@@ -109,10 +108,7 @@ class ApplicationLoader(
   private val apiVersion: String                   = appConfig.apiVersion
   private val pathPrefixMatcher: PathMatcher[Unit] = Slash ~ apiVersion
 
-  def routes(wsb: WebSocketBuilder2[IO]): Route = assembleRoutes(authedWs = wsRoutes(wsb, _), unauthedWs = wsRoutes(wsb))
-  def routes: Route                             = assembleRoutes(authedWs = _ => RouteDirectives.reject, unauthedWs = RouteDirectives.reject)
-
-  private def assembleRoutes(authedWs: AuthContext => Route, unauthedWs: => Route): Route =
+  def routes(wsb: WebSocketBuilder2[IO]): Route =
     onSuccess(telemetryContext.tracer.propagate(Map.empty)) { initialCtx =>
       logRequest(logAction = Some(logAction(initialCtx))) {
         handleExceptions(exceptionHandler(logResult(logAction = Some(logAction(initialCtx))))) {
@@ -125,7 +121,7 @@ class ApplicationLoader(
                       logResult(logAction = Some(logAction(initialCtx))) {
                         onSuccess(telemetryContext.tracer.propagate(Headers.empty)) { newHeaders =>
                           mapResponseHeaders(_ ++ newHeaders) {
-                            route(auth) ~ route ~ authedWs(auth) ~ unauthedWs
+                            route(auth) ~ route ~ wsRoutes(auth, wsb) ~ wsRoutes(wsb)
                           }
                         }
                       }
@@ -136,7 +132,41 @@ class ApplicationLoader(
                 logResult(logAction = Some(logAction(initialCtx))) {
                   onSuccess(telemetryContext.tracer.propagate(Headers.empty)) { newHeaders =>
                     mapResponseHeaders(_ ++ newHeaders) {
-                      route ~ unauthedWs
+                      route ~ wsRoutes(wsb)
+                    }
+                  }
+                }
+            } ~ (if (appConfig.environment == "dev") new MailPreviewRouter(mailPreviews, mailContext).routes else RouteDirectives.reject)
+          }
+        }
+      }
+    }
+
+  def routes: Route =
+    onSuccess(telemetryContext.tracer.propagate(Map.empty)) { initialCtx =>
+      logRequest(logAction = Some(logAction(initialCtx))) {
+        handleExceptions(exceptionHandler(logResult(logAction = Some(logAction(initialCtx))))) {
+          handleRejections(rejectionHandler(logResult(logAction = Some(logAction(initialCtx))))) {
+            rawPathPrefix(pathPrefixMatcher) {
+              authenticateOrRejectWithChallenge(userAuthenticator) { auth =>
+                handleExceptions(exceptionHandler(logResult(logAction = Some(logAction(initialCtx))))) {
+                  handleRejections(rejectionHandler(logResult(logAction = Some(logAction(initialCtx))))) {
+                    onSuccess(telemetryContext.tracer.currentSpanOrNoop.flatMap(_.addAttribute(Attribute("app.user.id", auth.userId.toString)))) {
+                      logResult(logAction = Some(logAction(initialCtx))) {
+                        onSuccess(telemetryContext.tracer.propagate(Headers.empty)) { newHeaders =>
+                          mapResponseHeaders(_ ++ newHeaders) {
+                            route(auth) ~ route
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              } ~
+                logResult(logAction = Some(logAction(initialCtx))) {
+                  onSuccess(telemetryContext.tracer.propagate(Headers.empty)) { newHeaders =>
+                    mapResponseHeaders(_ ++ newHeaders) {
+                      route
                     }
                   }
                 }

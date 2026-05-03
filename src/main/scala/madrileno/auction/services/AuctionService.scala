@@ -4,7 +4,6 @@ import cats.effect.std.UUIDGen
 import cats.effect.{Clock, IO}
 import cats.syntax.all.*
 import madrileno.auction.domain.*
-import madrileno.auction.domain.AuctionEvent.*
 import madrileno.auction.emails.{AuctionClosedEmailTemplate, OutbidEmailTemplate}
 import madrileno.auction.gateways.VivinoGateway
 import madrileno.auction.repositories.*
@@ -73,7 +72,7 @@ class AuctionService(
         } yield result
       }
       .flatTap {
-        case CreateAuctionResult.Created(view) => publish(AuctionCreated.from(view))
+        case CreateAuctionResult.Created(view) => publish(AuctionEvent.auctionCreated(view))
         case _                                 => IO.unit
       }
   }
@@ -128,7 +127,7 @@ class AuctionService(
         } yield PlaceBidResult.BidPlaced(saved)).run
       }
       .flatTap {
-        case PlaceBidResult.BidPlaced(bid) => publish(BidPlaced.from(bid))
+        case PlaceBidResult.BidPlaced(bid) => publish(AuctionEvent.bidPlaced(bid))
         case _                             => IO.unit
       }
   }
@@ -155,7 +154,7 @@ class AuctionService(
         } yield CancelAuctionResult.Cancelled(cancelled.updatedAt)).run
       }
       .flatTap {
-        case CancelAuctionResult.Cancelled(at) => publish(AuctionCancelled(command.auctionId, at))
+        case CancelAuctionResult.Cancelled(at) => publish(AuctionEvent.AuctionCancelled(command.auctionId, at))
         case _                                 => IO.unit
       }
   }
@@ -177,16 +176,17 @@ class AuctionService(
           auctionRepository.findForUpdate(auctionId).flatMap {
             case Some(lockedRow) =>
               lockedRow.toAuction.close(now) match {
-                case Right(closed)                       => performClose(closed).map(winner => Some(AuctionClosed.from(closed, winner)))
+                case Right(closed)                       => performClose(closed).map(winner => Some((closed, winner)))
                 case Left(CloseRejection.AuctionNotOpen) => IO.pure(None)
               }
             case None => IO.pure(None)
           }
         }
-        .flatMap {
-          case Some(event) => publish(event)
-          case None        => IO.unit
+        .flatTap {
+          case Some((auction, winner)) => publish(AuctionEvent.auctionClosed(auction, winner))
+          case None                    => IO.unit
         }
+        .void
     }
 
     def findExpired(now: Instant): IO[List[AuctionId]] = {

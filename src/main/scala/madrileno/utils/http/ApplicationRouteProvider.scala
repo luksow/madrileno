@@ -10,7 +10,7 @@ trait ApplicationRouteProvider extends RouteProvider with AuthRouteProvider with
   override def route: Route                                                   = RouteDirectives.reject
   override def route(auth: AuthContext): Route                                = RouteDirectives.reject
   override def wsRoutes(wsb: WebSocketBuilder2[IO]): Route                    = RouteDirectives.reject
-  override def wsRoutes(wsb: WebSocketBuilder2[IO], auth: AuthContext): Route = RouteDirectives.reject
+  override def wsRoutes(auth: AuthContext, wsb: WebSocketBuilder2[IO]): Route = RouteDirectives.reject
 }
 
 trait RouteProvider extends RouteConcatenation {
@@ -26,5 +26,5 @@ trait WsRouteProvider extends RouteConcatenation {
 }
 
 trait AuthWsRouteProvider extends RouteConcatenation {
-  def wsRoutes(wsb: WebSocketBuilder2[IO], auth: AuthContext): Route
+  def wsRoutes(auth: AuthContext, wsb: WebSocketBuilder2[IO]): Route
 }

@@ -22,9 +22,6 @@ class PgTransactor(sessions: Resource[IO, Session[IO]]) extends Transactor {
   override def notify(channel: Identifier, payload: String): IO[Unit] =
     sessions.use(_.channel(channel).notify(payload))
 
-  // Each call leases a fresh session for the lifetime of the returned stream. When the stream
-  // terminates (normally or via error), the session is returned to the pool — so a reconnect
-  // loop over `listen(...)` actually re-acquires a live connection instead of reusing a dead one.
   override def listen(channel: Identifier, maxQueued: Int): Stream[IO, Notification[String]] =
     Stream.resource(sessions).flatMap(_.channel(channel).listen(maxQueued))
 }

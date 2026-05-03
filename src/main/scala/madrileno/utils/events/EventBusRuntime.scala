@@ -11,14 +11,6 @@ import skunk.data.Identifier
 
 import scala.concurrent.duration.*
 
-/** Pluggable event-bus factory.
-  *
-  * `local` keeps fan-out in-process via fs2 Topic — fine for tests and single-instance dev. NOTE: each call to `topic(name, _)` returns an
-  * **independent** bus; the `name` is not used for sharing. Callers that need a shared bus must wire it once and pass the reference around.
-  *
-  * `postgres` shares state across instances over LISTEN/NOTIFY on the named channel — two `topic("x", _)` calls (in the same JVM or another instance)
-  * resolve to the same logical bus.
-  */
 trait EventBusRuntime {
   def topic[E: EventCodec](name: String, maxQueued: Int): EventBus[E]
 }
@@ -72,8 +64,9 @@ object EventBusRuntime {
       extends EventBus[E]
       with LoggingSupport {
 
-    private val identifier = Identifier.fromString(name).fold(msg => sys.error(s"Invalid channel name '$name': $msg"), identity)
-    private val codec      = EventCodec[E]
+    private val identifier =
+      Identifier.fromString(name).fold(msg => throw new IllegalArgumentException(s"Invalid channel name '$name': $msg"), identity)
+    private val codec = EventCodec[E]
 
     private val topic: IO[Topic[IO, E]] =
       memoize(Topic[IO, E].flatTap(t => supervisor.supervise(listenLoop(t).foreverM)))
