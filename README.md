@@ -37,10 +37,11 @@ docker compose up -d
 cp .env.sample .env
 ```
 
-The sample is wired against the docker-compose ports above — including a working `Authorization` header for OpenObserve so OTLP traces show up in the UI immediately. Two values you'll likely want to override:
+The sample is wired against the docker-compose ports above — including a working `Authorization` header for OpenObserve so OTLP traces show up in the UI immediately.
 
-- `FIREBASE_KEY` — defaults to `'{}'`, which crashes startup. To boot the app you need a real Firebase service-account JSON (single line, escaped) for the project you're developing against. Tests don't need this; only the running app does.
-- `JWT_SECRET` / `REFRESH_TOKEN_SECRET` — fine as-is for local dev, change for anything you don't want strangers to be able to forge.
+> **Required before step 4:** `FIREBASE_KEY` ships as `'{}'` in the sample, which **will crash the app on startup** (`Failed to initialize Firebase`). Replace it with a real Firebase service-account JSON (single line, escaped) for the project you're developing against. Tests don't need this; only the running app does.
+
+`JWT_SECRET` / `REFRESH_TOKEN_SECRET` are fine as-is for local dev — change them when you don't want strangers to be able to forge tokens.
 
 ### 3. Apply database migrations
 
