@@ -7,7 +7,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
-      - "55432:5432"
+      - "127.0.0.1:55432:5432"
     volumes:
       - madrileno-postgres:/var/lib/postgresql
     healthcheck:
@@ -24,8 +24,8 @@ services:
       MP_SMTP_AUTH_ACCEPT_ANY: 1
       MP_SMTP_AUTH_ALLOW_INSECURE: 1
     ports:
-      - "51025:1025"  # SMTP
-      - "58025:8025"  # UI + REST API at http://localhost:58025
+      - "127.0.0.1:51025:1025"  # SMTP
+      - "127.0.0.1:58025:8025"  # UI + REST API at http://localhost:58025
 
   openobserve:
     image: public.ecr.aws/zinclabs/openobserve:latest
@@ -34,7 +34,7 @@ services:
       ZO_ROOT_USER_EMAIL: root@example.com
       ZO_ROOT_USER_PASSWORD: Complexpass#123
     ports:
-      - "55080:5080"  # UI at http://localhost:55080  (login: root@example.com / Complexpass#123)
+      - "127.0.0.1:55080:5080"  # UI at http://localhost:55080  (login: root@example.com / Complexpass#123)
     volumes:
       - madrileno-openobserve:/data
     healthcheck:
