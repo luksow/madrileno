@@ -2,6 +2,7 @@ package madrileno.main
 
 import cats.effect.{Clock, IO}
 import com.comcast.ip4s.{Ipv4Address, Port}
+import com.typesafe.config.ConfigFactory
 import madrileno.auction.AuctionModule
 import madrileno.auth.AuthModule
 import madrileno.healthcheck.HealthCheckModule
@@ -13,10 +14,11 @@ import madrileno.utils.http.{ApplicationRouteProvider, Handlers}
 import madrileno.utils.mailer.{MailContext, MailPreviewProvider, MailPreviewRouter, Mailer, MailerConfig, SmtpSender}
 import madrileno.utils.observability.*
 import madrileno.utils.task.{ApplicationTaskProvider, OneTimeTask, SchedulerClient}
-import org.http4s.Headers
 import org.http4s.otel4s.middleware.instances.all.*
 import org.http4s.server.websocket.WebSocketBuilder2
+import org.http4s.{Headers, HttpRoutes, Response, Status}
 import org.typelevel.otel4s.Attribute
+import pl.iterators.baklava.http4s.routes.BaklavaRoutes
 import pl.iterators.stir.server.directives.RouteDirectives
 import pl.iterators.stir.server.{PathMatcher, Route}
 import pureconfig.*
@@ -67,6 +69,14 @@ class ApplicationLoader(
   private lazy val mailerConfig: MailerConfig = config.at("mailer").loadOrThrow[MailerConfig]
   private lazy val smtpSender                 = new SmtpSender(mailerConfig)
   lazy val mailer: Mailer                     = new Mailer(smtpSender, schedulerClient, mailContext)
+
+  private lazy val baklavaHttpRoutes: HttpRoutes[IO] = BaklavaRoutes.routes(ConfigFactory.load())
+  private val baklavaPathSegments: Set[String]       = Set("openapi", "swagger", "swagger-ui", "docs")
+
+  lazy val baklavaDocs: Route = httpRoutesOf {
+    case req if baklavaPathSegments.contains(req.uri.path.segments.headOption.fold("")(_.encoded)) =>
+      baklavaHttpRoutes.run(req).getOrElseF(IO.pure(Response[IO](Status.NotFound)))
+  }
 
   override def oneTimeTasks: List[OneTimeTask[?]] = super.oneTimeTasks :+ mailer.sendMailTask
 
@@ -136,7 +146,8 @@ class ApplicationLoader(
                     }
                   }
                 }
-            } ~ (if (appConfig.environment == "dev") new MailPreviewRouter(mailPreviews, mailContext).routes else RouteDirectives.reject)
+            } ~ (if (appConfig.environment == "dev") new MailPreviewRouter(mailPreviews, mailContext).routes ~ baklavaDocs
+                 else RouteDirectives.reject)
           }
         }
       }
@@ -170,7 +181,8 @@ class ApplicationLoader(
                     }
                   }
                 }
-            } ~ (if (appConfig.environment == "dev") new MailPreviewRouter(mailPreviews, mailContext).routes else RouteDirectives.reject)
+            } ~ (if (appConfig.environment == "dev") new MailPreviewRouter(mailPreviews, mailContext).routes ~ baklavaDocs
+                 else RouteDirectives.reject)
           }
         }
       }

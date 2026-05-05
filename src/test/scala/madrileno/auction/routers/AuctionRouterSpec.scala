@@ -10,9 +10,11 @@ import madrileno.user.domain.{User, UserId}
 import madrileno.utils.db.transactor.DB
 import madrileno.utils.http.Error
 import madrileno.utils.json.JsonProtocol.*
+import org.http4s.EntityDecoder
 import org.http4s.Method.*
 import org.http4s.Status.*
 import org.http4s.circe.CirceEntityCodec.*
+import org.http4s.server.websocket.WebSocketBuilder2
 import pl.iterators.baklava.EmptyBody
 import pl.iterators.stir.server.Route
 
@@ -21,7 +23,11 @@ import java.util.{Currency, UUID}
 
 class AuctionRouterSpec extends BaseRouteSpec with TestApplicationLoader {
 
-  override def route: Route = application.routes
+  // Mount with a real WebSocketBuilder2 so /v1/auctions/stream is reachable in tests.
+  // For non-upgrade GETs, http4s' default onNonWebSocketRequest returns 501 — see the spec entry below.
+  private val wsb: WebSocketBuilder2[IO] = WebSocketBuilder2[IO].unsafeRunSync()
+
+  override def route: Route = application.routes(wsb)
 
   private val eur = Currency.getInstance("EUR")
 
@@ -151,6 +157,37 @@ class AuctionRouterSpec extends BaseRouteSpec with TestApplicationLoader {
         .respondsWith[List[AuctionDto]](Ok, description = "Auctions list")
         .assert { ctx =>
           ctx.performRequest(allRoutes)
+        }
+    )
+  )
+
+  path("/v1/auctions/stream")(
+    supports(
+      GET,
+      description = """Live auction event stream over WebSocket.
+          |
+          |Connect with a WebSocket client to receive a JSON frame per event. Wire format:
+          |`{"kind": "...", "data": {...}}` where `kind` is one of `AuctionCreated`, `BidPlaced`,
+          |`AuctionCancelled`, `AuctionClosed` and `data` is the per-variant flat DTO. See
+          |`docs/adding-a-module.md` for the wire shapes.
+          |
+          |OpenAPI 3.x does not model WebSockets; this entry exists for discoverability only.
+          |A WebSocket upgrade request returns 101 Switching Protocols and starts streaming.
+          |A plain GET falls through to http4s' default `onNonWebSocketRequest` and returns
+          |501 Not Implemented with the body `This is a WebSocket route.` — documented below.""".stripMargin,
+      summary = "Live auction event stream (WebSocket)",
+      tags = Seq("Auctions")
+    )(
+      onRequest()
+        // Override circe's String entity decoder so the plain-text 501 body decodes via http4s' text decoder.
+        .respondsWith[String](NotImplemented, description = "Plain GET fallback — default WebSocket handler response")(
+          using EntityDecoder.text[IO],
+          summon,
+          summon
+        )
+        .assert { ctx =>
+          val response = ctx.performRequest(allRoutes)
+          response.body shouldBe "This is a WebSocket route."
         }
     )
   )

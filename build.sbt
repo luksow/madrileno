@@ -34,6 +34,7 @@ libraryDependencies ++= {
   val scaffeineV         = "5.3.0"
   val testcontainersV    = "0.44.1"
   val baklavaV           = "1.2.0"
+  val swaggerUiV         = "5.21.0"
   val flywayV            = "12.0.1"
   val scalatestV         = "3.2.20"
   Seq(
@@ -79,6 +80,8 @@ libraryDependencies ++= {
     "com.lihaoyi"                     %% "scalatags"                                 % scalatagsV,
     "com.github.blemale"              %% "scaffeine"                                 % scaffeineV,
     "com.google.firebase"              % "firebase-admin"                            % firebaseV,
+    "pl.iterators"                    %% "baklava-http4s-routes"                     % baklavaV,
+    "org.webjars"                      % "swagger-ui"                                % swaggerUiV,
     "pl.iterators"                    %% "http4s-stir-testkit"                       % http4sStirV        % "test",
     "pl.iterators"                    %% "baklava-http4s"                            % baklavaV           % "test",
     "pl.iterators"                    %% "baklava-scalatest"                         % baklavaV           % "test",
