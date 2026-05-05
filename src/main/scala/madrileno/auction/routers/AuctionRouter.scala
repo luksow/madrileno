@@ -1,16 +1,21 @@
 package madrileno.auction.routers
 
+import cats.effect.IO
+import fs2.Stream
 import madrileno.auction.domain.*
 import madrileno.auction.routers.dto.*
 import madrileno.auction.services.*
 import madrileno.auth.domain.AuthContext
 import madrileno.user.domain.UserId
+import madrileno.utils.events.EventBus
 import madrileno.utils.http.BaseRouter
 import madrileno.utils.observability.TelemetryContext
+import org.http4s.server.websocket.WebSocketBuilder2
+import org.http4s.websocket.WebSocketFrame
 import pl.iterators.stir.marshalling.ToResponseMarshallable
 import pl.iterators.stir.server.Route
 
-class AuctionRouter(auctionService: AuctionService)(using TelemetryContext) extends BaseRouter {
+class AuctionRouter(auctionService: AuctionService, eventBus: EventBus[AuctionEvent])(using TelemetryContext) extends BaseRouter {
 
   val routes: Route = {
     (get & path("auctions") & parameters("status".as[AuctionStatus].?, "seller-id".as[UserId].?) & pathEndOrSingleSlash) { (status, sellerId) =>
@@ -61,7 +66,7 @@ class AuctionRouter(auctionService: AuctionService)(using TelemetryContext) exte
         complete {
           val command = CancelAuctionCommand(auctionId, authContext.userId)
           auctionService.cancelAuction(command).map[ToResponseMarshallable] {
-            case CancelAuctionResult.Cancelled       => NoContent
+            case _: CancelAuctionResult.Cancelled    => NoContent
             case CancelAuctionResult.AuctionNotFound => error(NotFound, "auction-not-found", "Auction not found")
             case CancelAuctionResult.NotOwner        => error(Forbidden, "not-owner", "Only the seller can cancel this auction")
             case CancelAuctionResult.AuctionNotOpen  => error(Conflict, "auction-not-open", "Auction is not open")
@@ -73,7 +78,7 @@ class AuctionRouter(auctionService: AuctionService)(using TelemetryContext) exte
         complete {
           val command = PlaceBidCommand(auctionId, authContext.userId, request.amount)
           auctionService.placeBid(command).map[ToResponseMarshallable] {
-            case PlaceBidResult.BidPlaced(bid)        => Created -> BidDto(bid)
+            case PlaceBidResult.BidPlaced(bid, _)     => Created -> BidDto(bid)
             case PlaceBidResult.AuctionNotFound       => error(NotFound, "auction-not-found", "Auction not found")
             case PlaceBidResult.AuctionNotOpen        => error(Conflict, "auction-not-open", "Auction is not open")
             case PlaceBidResult.AuctionNotStarted     => error(Conflict, "auction-not-started", "Auction has not started yet")
@@ -85,5 +90,14 @@ class AuctionRouter(auctionService: AuctionService)(using TelemetryContext) exte
           }
         }
       }
+  }
+
+  def wsRoutes(wsb: WebSocketBuilder2[IO]): Route = {
+    (get & path("auctions" / "stream") & pathEndOrSingleSlash) {
+      val send = Stream
+        .resource(eventBus.subscribeAwait)
+        .flatMap(_.droppingBuffer(capacity = 256).map(e => WebSocketFrame.Text(AuctionEventEnvelope(e).noSpaces)))
+      handleWebSocketMessages(wsb, send, _.drain)
+    }
   }
 }

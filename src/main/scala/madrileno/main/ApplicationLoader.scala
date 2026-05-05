@@ -8,13 +8,16 @@ import madrileno.healthcheck.HealthCheckModule
 import madrileno.user.UserModule
 import madrileno.utils.cache.CacheRuntime
 import madrileno.utils.db.transactor.Transactor
+import madrileno.utils.events.EventBusRuntime
 import madrileno.utils.http.{ApplicationRouteProvider, Handlers}
 import madrileno.utils.mailer.{MailContext, MailPreviewProvider, MailPreviewRouter, Mailer, MailerConfig, SmtpSender}
 import madrileno.utils.observability.*
 import madrileno.utils.task.{ApplicationTaskProvider, OneTimeTask, SchedulerClient}
 import org.http4s.Headers
 import org.http4s.otel4s.middleware.instances.all.*
+import org.http4s.server.websocket.WebSocketBuilder2
 import org.typelevel.otel4s.Attribute
+import pl.iterators.stir.server.directives.RouteDirectives
 import pl.iterators.stir.server.{PathMatcher, Route}
 import pureconfig.*
 import pureconfig.module.ip4s.*
@@ -44,7 +47,8 @@ class ApplicationLoader(
   val transactor: Transactor,
   val clock: Clock[IO],
   val schedulerClient: SchedulerClient,
-  val cacheRuntime: CacheRuntime
+  val cacheRuntime: CacheRuntime,
+  val eventBusRuntime: EventBusRuntime
 )(using TelemetryContext)
     extends ApplicationRouteProvider
     with ApplicationTaskProvider
@@ -104,7 +108,41 @@ class ApplicationLoader(
   private val apiVersion: String                   = appConfig.apiVersion
   private val pathPrefixMatcher: PathMatcher[Unit] = Slash ~ apiVersion
 
-  val routes: Route =
+  def routes(wsb: WebSocketBuilder2[IO]): Route =
+    onSuccess(telemetryContext.tracer.propagate(Map.empty)) { initialCtx =>
+      logRequest(logAction = Some(logAction(initialCtx))) {
+        handleExceptions(exceptionHandler(logResult(logAction = Some(logAction(initialCtx))))) {
+          handleRejections(rejectionHandler(logResult(logAction = Some(logAction(initialCtx))))) {
+            rawPathPrefix(pathPrefixMatcher) {
+              authenticateOrRejectWithChallenge(userAuthenticator) { auth =>
+                handleExceptions(exceptionHandler(logResult(logAction = Some(logAction(initialCtx))))) {
+                  handleRejections(rejectionHandler(logResult(logAction = Some(logAction(initialCtx))))) {
+                    onSuccess(telemetryContext.tracer.currentSpanOrNoop.flatMap(_.addAttribute(Attribute("app.user.id", auth.userId.toString)))) {
+                      logResult(logAction = Some(logAction(initialCtx))) {
+                        onSuccess(telemetryContext.tracer.propagate(Headers.empty)) { newHeaders =>
+                          mapResponseHeaders(_ ++ newHeaders) {
+                            route(auth) ~ route ~ wsRoutes(auth, wsb) ~ wsRoutes(wsb)
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              } ~
+                logResult(logAction = Some(logAction(initialCtx))) {
+                  onSuccess(telemetryContext.tracer.propagate(Headers.empty)) { newHeaders =>
+                    mapResponseHeaders(_ ++ newHeaders) {
+                      route ~ wsRoutes(wsb)
+                    }
+                  }
+                }
+            } ~ (if (appConfig.environment == "dev") new MailPreviewRouter(mailPreviews, mailContext).routes else RouteDirectives.reject)
+          }
+        }
+      }
+    }
+
+  def routes: Route =
     onSuccess(telemetryContext.tracer.propagate(Map.empty)) { initialCtx =>
       logRequest(logAction = Some(logAction(initialCtx))) {
         handleExceptions(exceptionHandler(logResult(logAction = Some(logAction(initialCtx))))) {
@@ -132,7 +170,7 @@ class ApplicationLoader(
                     }
                   }
                 }
-            } ~ (if (appConfig.environment == "dev") new MailPreviewRouter(mailPreviews, mailContext).routes else reject)
+            } ~ (if (appConfig.environment == "dev") new MailPreviewRouter(mailPreviews, mailContext).routes else RouteDirectives.reject)
           }
         }
       }

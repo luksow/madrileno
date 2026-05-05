@@ -1,6 +1,8 @@
 package madrileno.utils.http
 
 import cats.effect.IO
+import cats.effect.std.Queue
+import fs2.Stream
 import madrileno.utils.json.JsonProtocol
 import madrileno.utils.json.JsonProtocol.*
 import madrileno.utils.observability.TelemetryContext
@@ -10,12 +12,14 @@ import pl.iterators.kebs.http4sstir.matchers.KebsHttp4sStirMatchers
 import pl.iterators.kebs.http4sstir.unmarshallers.{KebsHttp4sStirEnumUnmarshallers, KebsHttp4sStirUnmarshallers, KebsHttp4sStirValueEnumUnmarshallers}
 import pl.iterators.stir.marshalling.ToResponseMarshallable
 import pl.iterators.stir.server.Directives
+import pl.iterators.stir.server.directives.WebSocketDirectives
 
 import java.net.URI
 
 trait BaseRouter
     extends JsonProtocol
     with Directives
+    with WebSocketDirectives
     with KebsHttp4sStirMatchers
     with KebsHttp4sStirUnmarshallers
     with KebsHttp4sStirEnumUnmarshallers
@@ -45,4 +49,10 @@ trait BaseRouter
     }
   }
 
+  extension [A](source: Stream[IO, A])
+    def droppingBuffer(capacity: Int): Stream[IO, A] =
+      Stream.eval(Queue.bounded[IO, Option[A]](capacity)).flatMap { q =>
+        val pump = source.evalMap(a => q.tryOffer(Some(a)).void) ++ Stream.eval(q.offer(None))
+        Stream.fromQueueNoneTerminated(q).concurrently(pump)
+      }
 }

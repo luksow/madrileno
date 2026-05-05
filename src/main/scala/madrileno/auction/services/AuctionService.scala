@@ -12,6 +12,7 @@ import madrileno.user.repositories.UserRepository
 import madrileno.utils.crypto.IdGenerator
 import madrileno.utils.db.dsl.p
 import madrileno.utils.db.transactor.{DB, DBInTransaction, Transactor}
+import madrileno.utils.events.EventBus
 import madrileno.utils.mailer.{Language, Mailer}
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
 import madrileno.utils.task.{CronExpression, Schedule, Task}
@@ -25,6 +26,7 @@ class AuctionService(
   bidRepository: BidRepository,
   userRepository: UserRepository,
   vivinoGateway: VivinoGateway,
+  eventBus: EventBus[AuctionEvent],
   transactor: Transactor,
   mailer: Mailer
 )(using
@@ -33,38 +35,46 @@ class AuctionService(
   Clock[IO])
     extends LoggingSupport {
 
+  private def publish(event: AuctionEvent): IO[Unit] =
+    eventBus.publish(event).handleErrorWith(t => logger.warn(t)(s"Failed to publish $event"))
+
   def createAuction(command: CreateAuctionCommand): IO[CreateAuctionResult] = {
-    transactor.inSession {
-      for {
-        id  <- IdGenerator.generateId(AuctionId)
-        now <- Clock[IO].realTimeInstant
-        result <- Auction.open(
-                    id = id,
-                    sellerId = command.sellerId,
-                    wineName = command.wineName,
-                    vintage = command.vintage,
-                    color = command.color,
-                    region = command.region,
-                    appellation = command.appellation,
-                    producerName = command.producerName,
-                    bottleSize = command.bottleSize,
-                    bottleCount = command.bottleCount,
-                    description = command.description,
-                    startingPrice = command.startingPrice,
-                    currency = command.currency,
-                    startsAt = command.startsAt,
-                    endsAt = command.endsAt,
-                    now = now
-                  ) match {
-                    case Left(AuctionCreationError.InvalidWindow) =>
-                      IO.pure(CreateAuctionResult.InvalidWindow)
-                    case Right(auction) =>
-                      auctionRepository
-                        .save(auction)
-                        .as(CreateAuctionResult.Created(AuctionView(auction, currentPrice = auction.startingPrice)))
-                  }
-      } yield result
-    }
+    transactor
+      .inSession {
+        for {
+          id  <- IdGenerator.generateId(AuctionId)
+          now <- Clock[IO].realTimeInstant
+          result <- Auction.open(
+                      id = id,
+                      sellerId = command.sellerId,
+                      wineName = command.wineName,
+                      vintage = command.vintage,
+                      color = command.color,
+                      region = command.region,
+                      appellation = command.appellation,
+                      producerName = command.producerName,
+                      bottleSize = command.bottleSize,
+                      bottleCount = command.bottleCount,
+                      description = command.description,
+                      startingPrice = command.startingPrice,
+                      currency = command.currency,
+                      startsAt = command.startsAt,
+                      endsAt = command.endsAt,
+                      now = now
+                    ) match {
+                      case Left(AuctionCreationError.InvalidWindow) =>
+                        IO.pure(CreateAuctionResult.InvalidWindow)
+                      case Right(auction) =>
+                        auctionRepository
+                          .save(auction)
+                          .as(CreateAuctionResult.Created(AuctionView(auction, currentPrice = auction.startingPrice)))
+                    }
+        } yield result
+      }
+      .flatTap {
+        case CreateAuctionResult.Created(view) => publish(AuctionEvent.auctionCreated(view))
+        case _                                 => IO.unit
+      }
   }
 
   def getAuction(auctionId: AuctionId): IO[Option[AuctionView]] = {
@@ -90,77 +100,93 @@ class AuctionService(
   }
 
   def placeBid(command: PlaceBidCommand): IO[PlaceBidResult] = {
-    transactor.inTransaction {
-      (for {
-        row <- auctionRepository
-                 .findForUpdate(command.auctionId)
-                 .valueOr[PlaceBidResult](PlaceBidResult.AuctionNotFound)
-        previousHighest <- bidRepository.highestBid(command.auctionId).seal
-        auction = row.toAuction
-        now   <- Clock[IO].realTimeInstant.seal
-        bidId <- IdGenerator.generateId(BidId).seal
-        bid <- auction
-                 .placeBid(command.bidderId, command.amount, bidId, now, previousHighest)
-                 .left
-                 .map {
-                   case BidRejection.AuctionNotOpen        => PlaceBidResult.AuctionNotOpen
-                   case BidRejection.AuctionNotStarted     => PlaceBidResult.AuctionNotStarted
-                   case BidRejection.AuctionEnded          => PlaceBidResult.AuctionEnded
-                   case BidRejection.CannotBidOnOwnAuction => PlaceBidResult.CannotBidOnOwnAuction
-                   case BidRejection.AlreadyHighestBidder  => PlaceBidResult.AlreadyHighestBidder
-                   case BidRejection.BidTooLow(highest)    => PlaceBidResult.BidTooLow(highest)
-                 }
-                 .rethrow[IO]
-        saved <- bidRepository.save(bid).seal
-        _     <- notifyOutbid(previousHighest, auction, saved.amount).seal
-      } yield PlaceBidResult.BidPlaced(saved)).run
-    }
+    transactor
+      .inTransaction {
+        (for {
+          row <- auctionRepository
+                   .findForUpdate(command.auctionId)
+                   .valueOr[PlaceBidResult](PlaceBidResult.AuctionNotFound)
+          previousHighest <- bidRepository.highestBid(command.auctionId).seal
+          auction = row.toAuction
+          now   <- Clock[IO].realTimeInstant.seal
+          bidId <- IdGenerator.generateId(BidId).seal
+          bid <- auction
+                   .placeBid(command.bidderId, command.amount, bidId, now, previousHighest)
+                   .left
+                   .map {
+                     case BidRejection.AuctionNotOpen        => PlaceBidResult.AuctionNotOpen
+                     case BidRejection.AuctionNotStarted     => PlaceBidResult.AuctionNotStarted
+                     case BidRejection.AuctionEnded          => PlaceBidResult.AuctionEnded
+                     case BidRejection.CannotBidOnOwnAuction => PlaceBidResult.CannotBidOnOwnAuction
+                     case BidRejection.AlreadyHighestBidder  => PlaceBidResult.AlreadyHighestBidder
+                     case BidRejection.BidTooLow(highest)    => PlaceBidResult.BidTooLow(highest)
+                   }
+                   .rethrow[IO]
+          saved <- bidRepository.save(bid).seal
+          _     <- notifyOutbid(previousHighest, auction, saved.amount).seal
+        } yield PlaceBidResult.BidPlaced(saved, auction)).run
+      }
+      .flatTap {
+        case PlaceBidResult.BidPlaced(bid, auction) => publish(AuctionEvent.bidPlaced(bid, auction))
+        case _                                      => IO.unit
+      }
   }
 
   def cancelAuction(command: CancelAuctionCommand): IO[CancelAuctionResult] = {
-    transactor.inTransaction {
-      (for {
-        row <- auctionRepository
-                 .findForUpdate(command.auctionId)
-                 .valueOr[CancelAuctionResult](CancelAuctionResult.AuctionNotFound)
-        auction = row.toAuction
-        now <- Clock[IO].realTimeInstant.seal
-        cancelled <- auction
-                       .cancel(command.sellerId, now)
-                       .left
-                       .map {
-                         case CancellationRejection.NotOwner       => CancelAuctionResult.NotOwner
-                         case CancellationRejection.AuctionNotOpen => CancelAuctionResult.AuctionNotOpen
-                         case CancellationRejection.AuctionEnded   => CancelAuctionResult.AuctionEnded
-                       }
-                       .rethrow[IO]
-        _ <- auctionRepository.update(cancelled).seal
-      } yield CancelAuctionResult.Cancelled).run
-    }
+    transactor
+      .inTransaction {
+        (for {
+          row <- auctionRepository
+                   .findForUpdate(command.auctionId)
+                   .valueOr[CancelAuctionResult](CancelAuctionResult.AuctionNotFound)
+          auction = row.toAuction
+          now <- Clock[IO].realTimeInstant.seal
+          cancelled <- auction
+                         .cancel(command.sellerId, now)
+                         .left
+                         .map {
+                           case CancellationRejection.NotOwner       => CancelAuctionResult.NotOwner
+                           case CancellationRejection.AuctionNotOpen => CancelAuctionResult.AuctionNotOpen
+                           case CancellationRejection.AuctionEnded   => CancelAuctionResult.AuctionEnded
+                         }
+                         .rethrow[IO]
+          _ <- auctionRepository.update(cancelled).seal
+        } yield CancelAuctionResult.Cancelled(cancelled)).run
+      }
+      .flatTap {
+        case CancelAuctionResult.Cancelled(auction) => publish(AuctionEvent.auctionCancelled(auction))
+        case _                                      => IO.unit
+      }
   }
 
   val closeExpiredAuctionsTask: Task[Unit] = {
-    def performClose(closed: Auction): DBInTransaction[Unit] = {
+    def performClose(closed: Auction): DBInTransaction[Option[Bid]] = {
       for {
         winner <- bidRepository.highestBid(closed.id)
         _      <- auctionRepository.update(closed)
         seller <- userRepository.find(closed.sellerId)
         _      <- notifyAuctionClosed(closed, seller, winner)
         _      <- logger.info(s"Closed auction ${closed.id}, winner: ${winner.map(_.bidderId)}")
-      } yield ()
+      } yield winner
     }
 
     def closeOne(auctionId: AuctionId, now: Instant): IO[Unit] = {
-      transactor.inTransaction {
-        auctionRepository.findForUpdate(auctionId).flatMap {
-          case Some(lockedRow) =>
-            lockedRow.toAuction.close(now) match {
-              case Right(closed)                       => performClose(closed)
-              case Left(CloseRejection.AuctionNotOpen) => IO.unit
-            }
-          case None => IO.unit
+      transactor
+        .inTransaction {
+          auctionRepository.findForUpdate(auctionId).flatMap {
+            case Some(lockedRow) =>
+              lockedRow.toAuction.close(now) match {
+                case Right(closed)                       => performClose(closed).map(winner => Some((closed, winner)))
+                case Left(CloseRejection.AuctionNotOpen) => IO.pure(None)
+              }
+            case None => IO.pure(None)
+          }
         }
-      }
+        .flatTap {
+          case Some((auction, winner)) => publish(AuctionEvent.auctionClosed(auction, winner))
+          case None                    => IO.unit
+        }
+        .void
     }
 
     def findExpired(now: Instant): IO[List[AuctionId]] = {
@@ -284,7 +310,7 @@ case class PlaceBidCommand(
 case class CancelAuctionCommand(auctionId: AuctionId, sellerId: UserId)
 
 enum PlaceBidResult {
-  case BidPlaced(bid: Bid)
+  case BidPlaced(bid: Bid, auction: Auction)
   case AuctionNotFound
   case AuctionNotOpen
   case AuctionNotStarted
@@ -300,7 +326,7 @@ enum CreateAuctionResult {
 }
 
 enum CancelAuctionResult {
-  case Cancelled
+  case Cancelled(auction: Auction)
   case AuctionNotFound
   case NotOwner
   case AuctionNotOpen

@@ -1,7 +1,9 @@
 package madrileno.utils.db.transactor
 
-import cats.effect.IO
+import cats.effect.{IO, Resource}
+import fs2.Stream
 import skunk.*
+import skunk.data.{Identifier, Notification}
 import skunk.util.Origin
 
 type DB[A]              = Session[IO] ?=> IO[A]
@@ -23,4 +25,8 @@ trait Transactor {
     * Use `inTransaction` for atomicity.
     */
   def inSession[A](f: DB[A]): IO[A]
+
+  def notify(channel: Identifier, payload: String): IO[Unit]
+
+  def listen(channel: Identifier, maxQueued: Int): Resource[IO, Stream[IO, Notification[String]]]
 }

@@ -1,9 +1,11 @@
 package madrileno.main
 
+import cats.effect.std.Supervisor
 import cats.effect.{Clock, IO, IOApp, Resource}
 import io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppender
 import madrileno.utils.cache.CacheRuntime
 import madrileno.utils.db.transactor.{PgConfig, PgTransactor}
+import madrileno.utils.events.EventBusRuntime
 import madrileno.utils.observability.TelemetryContext
 import madrileno.utils.task.{Scheduler, SchedulerConfig}
 import org.http4s.RequestPrelude
@@ -39,7 +41,9 @@ object Main extends IOApp.Simple {
       schedulerConfig <- Resource.eval(IO.delay(config.at("scheduler").loadOrThrow[SchedulerConfig]))
       scheduler    = Scheduler(transactor, schedulerConfig)
       cacheRuntime = CacheRuntime.scaffeine
-      application  = ApplicationLoader(config, httpClient, transactor, clock, scheduler.client, cacheRuntime)
+      given Supervisor[IO] <- Supervisor[IO]
+      eventBusRuntime = EventBusRuntime.postgres(transactor)
+      application     = ApplicationLoader(config, httpClient, transactor, clock, scheduler.client, cacheRuntime, eventBusRuntime)
       _ <- scheduler.run(recurringTasks = application.recurringTasks, oneTimeTasks = application.oneTimeTasks, customTasks = application.customTasks)
       metricsOps <- OtelMetrics.serverMetricsOps[IO]().toResource
       redactor = new QueryRedactor.NeverRedact with PathRedactor.NeverRedact
@@ -65,15 +69,15 @@ object Main extends IOApp.Simple {
                             )
                             .build
                             .toResource
-      httpApp =
-        serverMiddleware.wrapHttpApp(
-          EntityLimiter.httpApp(Metrics(metricsOps)(application.routes.toHttpRoutes).orNotFound, application.httpConfig.maxRequestSize)
-        )
       _ <- EmberServerBuilder
              .default[IO]
              .withHost(application.httpConfig.host)
              .withPort(application.httpConfig.port)
-             .withHttpApp(httpApp)
+             .withHttpWebSocketApp { wsb =>
+               serverMiddleware.wrapHttpApp(
+                 EntityLimiter.httpApp(Metrics(metricsOps)(application.routes(wsb).toHttpRoutes).orNotFound, application.httpConfig.maxRequestSize)
+               )
+             }
              .build
     } yield application).use { _ =>
       IO.never

@@ -10,6 +10,7 @@ import madrileno.auction.repositories.{AuctionRepository, BidRepository}
 import madrileno.support.{TestData, TestGivens, TestMailpit, TestTransactor}
 import madrileno.user.domain.{User, UserId}
 import madrileno.user.repositories.UserRepository
+import madrileno.utils.events.{EventBus, EventBusRuntime}
 import madrileno.utils.mailer.*
 import madrileno.utils.observability.TelemetryContext
 import madrileno.utils.task.*
@@ -39,10 +40,22 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
   private lazy val scheduler  = Scheduler(transactor, SchedulerConfig(pollingInterval = 1.second))
   private lazy val client     = scheduler.client
   private lazy val mailer     = new Mailer(smtpSender, client, MailContext(baseUrl = URI("https://example.com")))
-  private val vivinoGateway: VivinoGateway = (_, _) => IO.pure(None)
-  private lazy val service                 = new AuctionService(auctionRepo, bidRepo, userRepo, vivinoGateway, transactor, mailer)
+  private val vivinoGateway: VivinoGateway     = (_, _) => IO.pure(None)
+  private val eventBus: EventBus[AuctionEvent] = EventBusRuntime.local.topic[AuctionEvent]("auction_events_test", maxQueued = 64)
+  private lazy val service                     = new AuctionService(auctionRepo, bidRepo, userRepo, vivinoGateway, eventBus, transactor, mailer)
 
   private val eur = Currency.getInstance("EUR")
+
+  private def withObservedEvent[A](action: IO[A]): IO[(AuctionEvent, A)] =
+    eventBus.subscribeAwait
+      .use { stream =>
+        for {
+          subFiber <- stream.take(1).compile.lastOrError.start
+          result   <- action
+          event    <- subFiber.joinWithNever
+        } yield (event, result)
+      }
+      .timeout(5.seconds)
 
   // Service manages its own sessions/transactions, so we seed data via the transactor directly
   private def seedUser(user: User = TestData.user()): IO[User] = {
@@ -127,7 +140,7 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
 
     "populate the auction with a rating when the gateway returns one" in {
       val ratedGateway: VivinoGateway = (_, _) => IO.pure(Some(VivinoRating(Rating(BigDecimal(4.7)), RatingsCount(12345))))
-      val ratedService                = new AuctionService(auctionRepo, bidRepo, userRepo, ratedGateway, transactor, mailer)
+      val ratedService                = new AuctionService(auctionRepo, bidRepo, userRepo, ratedGateway, eventBus, transactor, mailer)
       for {
         seller  <- seedUser()
         created <- createAuctionOrFail(createCommand(seller.id))
@@ -135,6 +148,36 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
       } yield {
         found.flatMap(_.rating).map(_.rating.unwrap) shouldBe Some(BigDecimal(4.7))
         found.flatMap(_.rating).map(_.ratingsCount.unwrap) shouldBe Some(12345)
+      }
+    }
+
+    "publish AuctionCreated when createAuction succeeds" in {
+      withObservedEvent(seedUser().flatMap(seller => createAuctionOrFail(createCommand(seller.id)))).map { case (event, auction) =>
+        event shouldBe a[AuctionEvent.AuctionCreated]
+        event.auctionId shouldBe auction.id
+      }
+    }
+
+    "publish BidPlaced when a bid is accepted" in {
+      for {
+        seller  <- seedUser()
+        bidder  <- seedUser()
+        auction <- createAuctionOrFail(createCommand(seller.id))
+        out     <- withObservedEvent(service.placeBid(PlaceBidCommand(auction.id, bidder.id, Price(BigDecimal(150)))))
+      } yield {
+        out._1 shouldBe a[AuctionEvent.BidPlaced]
+        out._1.auctionId shouldBe auction.id
+      }
+    }
+
+    "publish AuctionCancelled when the seller cancels" in {
+      for {
+        seller  <- seedUser()
+        auction <- createAuctionOrFail(createCommand(seller.id))
+        out     <- withObservedEvent(service.cancelAuction(CancelAuctionCommand(auction.id, seller.id)))
+      } yield {
+        out._1 shouldBe a[AuctionEvent.AuctionCancelled]
+        out._1.auctionId shouldBe auction.id
       }
     }
 
@@ -281,7 +324,7 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
         result  <- service.cancelAuction(CancelAuctionCommand(auction.id, seller.id))
         found   <- service.getAuction(auction.id)
       } yield {
-        result shouldBe CancelAuctionResult.Cancelled
+        result shouldBe a[CancelAuctionResult.Cancelled]
         found shouldBe defined
         found.get.status shouldBe AuctionStatus.Cancelled
       }
