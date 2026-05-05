@@ -4,16 +4,14 @@ version := "1.0.0-SNAPSHOT"
 
 scalaVersion := "3.8.2"
 
-resolvers += "Sonatype OSS Snapshots" at "https://oss.sonatype.org/content/repositories/snapshots"
-
 libraryDependencies ++= {
-  val http4sV            = "0.23.33"
+  val http4sV            = "0.23.34"
   val http4sStirV        = "0.4.1"
-  val http4sOtelV        = "0.16.0"
+  val http4sOtelV        = "0.17.0"
   val circeV             = "0.14.15"
   val pureconfigV        = "0.17.10"
-  val sttpV              = "4.0.19"
-  val skunkV             = "1.0.0-M12"
+  val sttpV              = "4.0.23"
+  val skunkV             = "1.0.0"
   val postgresqlV        = "42.7.10"
   val catsV              = "2.13.0"
   val catsEffectV        = "3.7.0"
@@ -22,9 +20,9 @@ libraryDependencies ++= {
   val kebsV              = "2.1.5"
   val logbackV           = "1.5.32"
   val log4catsV          = "2.8.0"
-  val otel4sV            = "0.15.2"
-  val otelV              = "1.60.1"
-  val otelLogbackV       = "2.26.1-alpha"
+  val otel4sV            = "0.16.0"
+  val otelV              = "1.61.0"
+  val otelLogbackV       = "2.27.0-alpha"
   val macwireV           = "2.6.7"
   val sealedV            = "2.0.1"
   val jwtCoreV           = "11.0.3"
@@ -97,12 +95,6 @@ libraryDependencies ++= {
     "org.typelevel"                   %% "cats-effect-testing-scalatest"             % catsEffectTestingV % "test"
   )
 }
-// skunk 1.0.0-M12 depends on otel4s 0.14.0, while we use 0.15.x — safe for pre-1.0 otel4s
-libraryDependencySchemes ++= Seq(
-  "org.typelevel" %% "otel4s-core-trace"  % VersionScheme.Always,
-  "org.typelevel" %% "otel4s-core-common" % VersionScheme.Always
-)
-
 Test / scalacOptions ++= Seq("-Wconf:msg=should not be used as infix:s", "-Wconf:msg=unused value of type org.scalatest:s")
 
 javaOptions += "-Dotel.java.global-autoconfigure.enabled=true"

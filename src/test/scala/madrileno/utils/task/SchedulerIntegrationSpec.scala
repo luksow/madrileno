@@ -13,7 +13,6 @@ import scala.concurrent.duration.*
 
 class SchedulerIntegrationSpec extends AsyncWordSpec with AsyncIOSpec with Matchers with TestTransactor {
 
-  given Meter[IO]        = Meter.noop[IO]
   given TelemetryContext = TelemetryContext(Meter.noop[IO], Tracer.noop[IO], io.opentelemetry.api.OpenTelemetry.noop())
 
   private val config = SchedulerConfig(pollingInterval = 100.millis, retryBaseDelay = 200.millis, maxRetries = Some(2))
