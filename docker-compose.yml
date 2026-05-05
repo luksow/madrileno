@@ -1,0 +1,48 @@
+services:
+  postgres:
+    image: postgres:latest
+    container_name: madrileno-postgres
+    environment:
+      POSTGRES_DB: madrileno
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - madrileno-postgres:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d madrileno"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: madrileno-mailpit
+    environment:
+      MP_MAX_MESSAGES: 5000
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+    ports:
+      - "127.0.0.1:51025:1025"  # SMTP
+      - "127.0.0.1:58025:8025"  # UI + REST API at http://localhost:58025
+
+  openobserve:
+    image: public.ecr.aws/zinclabs/openobserve:latest
+    container_name: madrileno-openobserve
+    environment:
+      ZO_ROOT_USER_EMAIL: root@example.com
+      ZO_ROOT_USER_PASSWORD: Complexpass#123
+    ports:
+      - "127.0.0.1:55080:5080"  # UI at http://localhost:55080  (login: root@example.com / Complexpass#123)
+    volumes:
+      - madrileno-openobserve:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5080/healthz | grep -q ok || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  madrileno-postgres:
+  madrileno-openobserve:
