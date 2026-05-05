@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:17-alpine
+    image: postgres:latest
     container_name: madrileno-postgres
     environment:
       POSTGRES_DB: madrileno
@@ -9,7 +9,7 @@ services:
     ports:
       - "55432:5432"
     volumes:
-      - madrileno-postgres:/var/lib/postgresql/data
+      - madrileno-postgres:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d madrileno"]
       interval: 5s
@@ -17,7 +17,7 @@ services:
       retries: 10
 
   mailpit:
-    image: axllent/mailpit:v1.21
+    image: axllent/mailpit:latest
     container_name: madrileno-mailpit
     environment:
       MP_MAX_MESSAGES: 5000
@@ -28,7 +28,7 @@ services:
       - "58025:8025"  # UI + REST API at http://localhost:58025
 
   openobserve:
-    image: public.ecr.aws/zinclabs/openobserve:v0.15.0
+    image: public.ecr.aws/zinclabs/openobserve:latest
     container_name: madrileno-openobserve
     environment:
       ZO_ROOT_USER_EMAIL: root@example.com
