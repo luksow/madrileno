@@ -151,11 +151,11 @@ class AuctionService(
                          }
                          .rethrow[IO]
           _ <- auctionRepository.update(cancelled).seal
-        } yield CancelAuctionResult.Cancelled(cancelled.updatedAt)).run
+        } yield CancelAuctionResult.Cancelled(cancelled)).run
       }
       .flatTap {
-        case CancelAuctionResult.Cancelled(at) => publish(AuctionEvent.AuctionCancelled(command.auctionId, at))
-        case _                                 => IO.unit
+        case CancelAuctionResult.Cancelled(auction) => publish(AuctionEvent.auctionCancelled(auction))
+        case _                                      => IO.unit
       }
   }
 
@@ -326,7 +326,7 @@ enum CreateAuctionResult {
 }
 
 enum CancelAuctionResult {
-  case Cancelled(at: Instant)
+  case Cancelled(auction: Auction)
   case AuctionNotFound
   case NotOwner
   case AuctionNotOpen

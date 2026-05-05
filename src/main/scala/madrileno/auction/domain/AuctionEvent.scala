@@ -46,6 +46,9 @@ object AuctionEvent {
       .withFieldRenamed(_.createdAt, _.at)
       .transform
 
+  def auctionCancelled(auction: Auction): AuctionCancelled =
+    AuctionCancelled(auction.id, auction.updatedAt)
+
   def auctionClosed(auction: Auction, winningBid: Option[Bid]): AuctionClosed =
     AuctionClosed(auction.id, winningBid.map(_.amount), auction.updatedAt)
 }

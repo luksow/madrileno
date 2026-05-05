@@ -719,7 +719,9 @@ def wsRoutes(auth: AuthContext, wsb: WebSocketBuilder2[IO]): Route = {
         responses <- Queue.bounded[IO, WebSocketFrame](capacity = 64)
         broadcast  = eventBus.subscribe.map(e => WebSocketFrame.Text(ProductEventEnvelope(e).noSpaces))
         outbound   = Stream.fromQueueUnterminated(responses)
-        send       = broadcast.merge(outbound).droppingBuffer(256)
+        // Apply droppingBuffer to the broadcast only — response frames (acks, validation errors)
+        // are low-volume and per-connection; they should not be droppable by a flood of broadcast events.
+        send       = broadcast.droppingBuffer(256).merge(outbound)
         receive: Pipe[IO, WebSocketFrame, Unit] = _.evalMap {
           case WebSocketFrame.Text(json, _) => handleIncoming(json, auth, responses)
           case _                            => IO.unit
