@@ -1,6 +1,6 @@
 package madrileno.utils.db.transactor
 
-import cats.effect.IO
+import cats.effect.{IO, Resource}
 import fs2.Stream
 import skunk.*
 import skunk.data.{Identifier, Notification}
@@ -28,5 +28,5 @@ trait Transactor {
 
   def notify(channel: Identifier, payload: String): IO[Unit]
 
-  def listen(channel: Identifier, maxQueued: Int): Stream[IO, Notification[String]]
+  def listen(channel: Identifier, maxQueued: Int): Resource[IO, Stream[IO, Notification[String]]]
 }

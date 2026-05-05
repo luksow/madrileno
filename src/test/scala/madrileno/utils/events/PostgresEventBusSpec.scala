@@ -36,7 +36,6 @@ class PostgresEventBusSpec extends AsyncWordSpec with AsyncIOSpec with Matchers 
           .use { stream =>
             for {
               sub <- stream.take(1).compile.lastOrError.start
-              _   <- IO.sleep(300.millis)
               _   <- publisherBus.publish(Sample(1, "hello"))
               got <- sub.joinWithNever
             } yield got shouldBe Sample(1, "hello")
@@ -54,7 +53,6 @@ class PostgresEventBusSpec extends AsyncWordSpec with AsyncIOSpec with Matchers 
             for {
               a  <- sa.take(1).compile.lastOrError.start
               b  <- sb.take(1).compile.lastOrError.start
-              _  <- IO.sleep(300.millis)
               _  <- bus.publish(Sample(42, "broadcast"))
               ra <- a.joinWithNever
               rb <- b.joinWithNever

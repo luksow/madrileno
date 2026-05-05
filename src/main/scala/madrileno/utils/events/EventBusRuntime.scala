@@ -9,6 +9,7 @@ import madrileno.utils.db.transactor.Transactor
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
 import skunk.data.Identifier
 
+import java.util.concurrent.CancellationException
 import scala.concurrent.duration.*
 
 trait EventBusRuntime {
@@ -32,7 +33,7 @@ object EventBusRuntime {
         ref.modify {
           case Some(d) => (Some(d), poll(d.get).rethrow)
           case None =>
-            val cancellation = new java.util.concurrent.CancellationException("memoize: init cancelled")
+            val cancellation = new CancellationException("memoize: init cancelled")
             val attempt =
               poll(init).attempt
                 .flatTap(fresh.complete(_).void)
@@ -70,8 +71,15 @@ object EventBusRuntime {
       Identifier.fromString(name).fold(msg => throw new IllegalArgumentException(s"Invalid channel name '$name': $msg"), identity)
     private val codec = EventCodec[E]
 
-    private val topic: IO[Topic[IO, E]] =
-      memoize(Topic[IO, E].flatTap(t => supervisor.supervise(listenLoop(t).foreverM)))
+    private val listenerReady: Deferred[IO, Unit] = Deferred.unsafe[IO, Unit]
+
+    private val topic: IO[Topic[IO, E]] = memoize {
+      for {
+        t <- Topic[IO, E]
+        _ <- supervisor.supervise(listenLoop(t).foreverM)
+        _ <- listenerReady.get
+      } yield t
+    }
 
     override def publish(event: E): IO[Unit] =
       transactor.notify(identifier, codec.encode(event))
@@ -85,14 +93,18 @@ object EventBusRuntime {
     private def listenLoop(sink: Topic[IO, E]): IO[Unit] =
       transactor
         .listen(identifier, maxQueued)
-        .evalMap { notification =>
-          codec.decode(notification.value) match {
-            case Right(event) => sink.publish1(event).void
-            case Left(err)    => logger.warn(err)(s"Failed to decode notification on $name: ${notification.value}")
-          }
+        .use { stream =>
+          listenerReady.complete(()).attempt.void *>
+            stream
+              .evalMap { notification =>
+                codec.decode(notification.value) match {
+                  case Right(event) => sink.publish1(event).void
+                  case Left(err)    => logger.warn(err)(s"Failed to decode notification on $name: ${notification.value}")
+                }
+              }
+              .compile
+              .drain
         }
-        .compile
-        .drain
         .handleErrorWith(t => logger.warn(t)(s"LISTEN on $name dropped — reconnecting after 1s") *> IO.sleep(1.second))
   }
 }

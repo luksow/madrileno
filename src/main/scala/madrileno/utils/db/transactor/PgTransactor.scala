@@ -22,8 +22,8 @@ class PgTransactor(sessions: Resource[IO, Session[IO]]) extends Transactor {
   override def notify(channel: Identifier, payload: String): IO[Unit] =
     sessions.use(_.channel(channel).notify(payload))
 
-  override def listen(channel: Identifier, maxQueued: Int): Stream[IO, Notification[String]] =
-    Stream.resource(sessions).flatMap(_.channel(channel).listen(maxQueued))
+  override def listen(channel: Identifier, maxQueued: Int): Resource[IO, Stream[IO, Notification[String]]] =
+    sessions.flatMap(_.channel(channel).listenR(maxQueued))
 }
 
 object PgTransactor {
