@@ -608,51 +608,165 @@ new ApplicationLoader(...) {
 
 ### Pub/sub and WebSocket streaming
 
-`EventBusRuntime` is the Transactor analogue for publish/subscribe. Module declares `val eventBusRuntime: EventBusRuntime` and mints its typed topic — the `maxQueued` is the per-subscriber buffer size:
+#### Domain event
+
+Events live in the domain layer and derive `EventCodec` (the project's wrapper over circe `Codec.AsObject`). `EventCodec`'s companion re-exports `JsonProtocol`, so two imports — the type and the givens — give you everything derivation needs:
+
+```scala
+package madrileno.product.domain
+
+import madrileno.utils.events.EventCodec
+import madrileno.utils.events.EventCodec.given
+
+import java.time.Instant
+
+enum ProductEvent derives EventCodec {
+  case Registered(productId: ProductId, name: ProductName, at: Instant)
+}
+```
+
+#### Bus wiring
+
+`EventBusRuntime` is the Transactor analogue for publish/subscribe. Module declares `val eventBusRuntime: EventBusRuntime` and mints its typed topic — `maxQueued` is the per-subscriber buffer:
 
 ```scala
 protected lazy val productEventBus: EventBus[ProductEvent] =
   eventBusRuntime.topic[ProductEvent]("product_events", maxQueued = 64)
 ```
 
-`ProductEvent` derives `EventCodec` (the project's wrapper over circe `Codec.AsObject`):
-
-```scala
-enum ProductEvent derives EventCodec {
-  case Registered(productId: ProductId, name: ProductName, at: Instant)
-}
-```
-
 The `name` becomes the Postgres `LISTEN` / `NOTIFY` channel under the Postgres backend — Skunk's identifier rules apply (matches `[A-Za-z_][A-Za-z_0-9$]*`, no dots).
+
+`subscribe` is **live-only** — there's no replay or durability; subscribers receive events that arrive after their subscription registers. Each subscriber has its own bounded buffer (the `maxQueued` above); the bus does not persist.
+
+#### Service: publish after commit
 
 Service publishes after the commit lands — failures are logged, never raised:
 
 ```scala
 def register(cmd): IO[RegisterResult] =
   transactor.inTransaction { … }.flatTap {
-    case RegisterResult.Registered(p) => eventBus.publish(ProductEvent.Registered(p.id, p.name, now))
+    case RegisterResult.Registered(p) => eventBus.publish(ProductEvent.registered(p))
     case _                            => IO.unit
   }
 ```
 
-WebSocket endpoints live in a separate `wsRoutes(wsb: WebSocketBuilder2[IO]): Route` method on the router, contributed via the module's `WsRouteProvider` (use `AuthWsRouteProvider` if the route needs `AuthContext`). The builder is the one Ember hands to `withHttpWebSocketApp`, threaded through `ApplicationLoader.routes(wsb)` — no DI getter, no mutable reference:
+Domain events should carry minimal references (ids, timestamps), not whole entities — they cross the wire.
+
+#### WS endpoint: separate `wsRoutes`, separate DTOs
+
+WebSocket endpoints live in a `wsRoutes` method on the router, contributed via the module's `WsRouteProvider` (or `AuthWsRouteProvider` for authed):
+
+```scala
+trait WsRouteProvider     { def wsRoutes(wsb: WebSocketBuilder2[IO]): Route }
+trait AuthWsRouteProvider { def wsRoutes(auth: AuthContext, wsb: WebSocketBuilder2[IO]): Route }
+```
+
+The `WebSocketBuilder2` is the one Ember hands to `withHttpWebSocketApp`, threaded directly through `ApplicationLoader.routes(wsb)` — no getter, no mutable reference.
+
+Don't serialize domain events directly to WS clients: the `EventCodec` JSON shape is your *internal* NOTIFY format, not a public contract. Instead, project to flat per-variant DTOs and wrap with a `{kind, data}` envelope — that's the public contract clients depend on:
+
+```scala
+// routers/dto/ProductRegisteredDto.scala
+case class ProductRegisteredDto(productId: ProductId, name: ProductName, at: Instant)
+    derives Encoder.AsObject, Decoder
+
+object ProductRegisteredDto {
+  def apply(e: ProductEvent.Registered): ProductRegisteredDto = {
+    import io.scalaland.chimney.dsl.*
+    e.into[ProductRegisteredDto].transform
+  }
+}
+
+// routers/dto/ProductEventEnvelope.scala
+object ProductEventEnvelope {
+  def apply(event: ProductEvent): Json = {
+    val (kind, data) = event match {
+      case e: ProductEvent.Registered => "ProductRegistered" -> ProductRegisteredDto(e).asJson
+    }
+    Json.obj("kind" -> kind.asJson, "data" -> data)
+  }
+}
+```
+
+The endpoint pipes the bus through `droppingBuffer` (the per-connection bounded queue from `BaseRouter`) so a slow WS client backpressures only its own queue — not the bus's `Topic.publish1`, which would otherwise stall the LISTEN drain for every other subscriber:
 
 ```scala
 def wsRoutes(wsb: WebSocketBuilder2[IO]): Route =
   (get & path("products" / "stream") & pathEndOrSingleSlash) {
-    val send = eventBus.subscribe.map(e => WebSocketFrame.Text(e.asJson.noSpaces))
+    val send = eventBus.subscribe
+                 .droppingBuffer(capacity = 256)
+                 .map(e => WebSocketFrame.Text(ProductEventEnvelope(e).noSpaces))
     handleWebSocketMessages(wsb, send, _.drain)
   }
 ```
 
-In the module, mix in `WsRouteProvider` and contribute via the standard `super` chain:
+In the module, mix in `WsRouteProvider` (or both, if you have a mix of authed and unauthed WS endpoints) and contribute via the standard `super` chain:
 
 ```scala
 override abstract def wsRoutes(wsb: WebSocketBuilder2[IO]): Route =
   super.wsRoutes(wsb) ~ productRouter.wsRoutes(wsb)
 ```
 
-Backend choice is Main's concern: `EventBusRuntime.local` (fs2.Topic, single-process) for dev/tests; `EventBusRuntime.postgres(transactor)` for production. Postgres variant requires a shared `Supervisor[IO]` and a `TelemetryContext`, and reconnects the LISTEN session on failure. NOTIFY payloads are capped at ~8 KB, messages are transient — not a replacement for the scheduler when you need durability.
+#### Duplex WS: receiving commands from clients
+
+If the WS endpoint should also accept client-sent commands, swap `_.drain` for a real receive pipe and allocate a per-connection response queue. The service stays unchanged — the router parses the incoming frame, calls the existing service method, and pushes responses back to the client. Bypass `handleWebSocketMessages` and call `wsb.build` directly so you can allocate state per connection:
+
+```scala
+def wsRoutes(auth: AuthContext, wsb: WebSocketBuilder2[IO]): Route = {
+  (get & path("products" / "stream") & pathEndOrSingleSlash) {
+    complete {
+      for {
+        responses <- Queue.bounded[IO, WebSocketFrame](capacity = 64)
+        broadcast  = eventBus.subscribe.map(e => WebSocketFrame.Text(ProductEventEnvelope(e).noSpaces))
+        outbound   = Stream.fromQueueUnterminated(responses)
+        send       = broadcast.merge(outbound).droppingBuffer(256)
+        receive: Pipe[IO, WebSocketFrame, Unit] = _.evalMap {
+          case WebSocketFrame.Text(json, _) => handleIncoming(json, auth, responses)
+          case _                            => IO.unit
+        }
+        resp <- wsb.build(send, receive)
+      } yield resp
+    }
+  }
+}
+
+private def handleIncoming(json: String, auth: AuthContext, responses: Queue[IO, WebSocketFrame]): IO[Unit] =
+  decode[WsCommand](json).fold(
+    err => responses.offer(WebSocketFrame.Text(errorFrame(err.getMessage))),
+    {
+      case WsCommand.Register(reqId, name) =>
+        productService
+          .register(RegisterCommand(auth.userId, name))
+          .flatMap(r => responses.offer(WebSocketFrame.Text(commandResultFrame(reqId, r))))
+    }
+  )
+```
+
+The send stream merges two sources: the broadcast (everyone gets it, fan-out via the bus) and the per-connection response queue (just this client gets it, correlated by `reqId`). `evalMap` on the receive pipe serializes commands per connection — swap to `parEvalMap(n)` if you want concurrent processing.
+
+#### Backend selection
+
+Backend choice is Main's concern: `EventBusRuntime.local` (fs2.Topic, single-process) for dev/tests; `EventBusRuntime.postgres(transactor)` for production. The Postgres variant requires a shared `Supervisor[IO]` and a `TelemetryContext`, and reconnects the LISTEN session on failure. NOTIFY payloads are capped at 8000 bytes by Postgres, messages are transient — not a replacement for the scheduler when you need durability.
+
+#### Testing pubsub from a service spec
+
+In service specs, wire `EventBusRuntime.local` and use `subscribeAwait` for deterministic readiness — the `Resource` registers the subscriber on acquisition, so there's no "did the fiber start pulling yet?" race. Always wrap the test body in `.timeout(...)` so a regression that parks a fiber fails fast instead of hanging the JVM:
+
+```scala
+private val eventBus: EventBus[ProductEvent] =
+  EventBusRuntime.local.topic[ProductEvent]("product_events_test", maxQueued = 64)
+
+private def withObservedEvent[A](action: IO[A]): IO[(ProductEvent, A)] =
+  eventBus.subscribeAwait.use { stream =>
+    for {
+      subFiber <- stream.take(1).compile.lastOrError.start
+      result   <- action
+      event    <- subFiber.joinWithNever
+    } yield (event, result)
+  }.timeout(5.seconds)
+```
+
+Use `.subscribeAwait` (returns `Resource[IO, Stream[IO, E]]`) over `.subscribe` whenever ordering with respect to publishes matters — `.subscribe` is for fire-and-forget consumers where the registration race doesn't matter.
 
 ## Step 8 — Router spec (Baklava), also your OpenAPI source
 

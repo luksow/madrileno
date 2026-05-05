@@ -2,7 +2,7 @@ package madrileno.utils.events
 
 import cats.effect.kernel.Deferred
 import cats.effect.std.Supervisor
-import cats.effect.{IO, Ref}
+import cats.effect.{IO, Ref, Resource}
 import fs2.Stream
 import fs2.concurrent.Topic
 import madrileno.utils.db.transactor.Transactor
@@ -28,28 +28,32 @@ object EventBusRuntime {
   private def memoize[A](init: IO[A]): IO[A] = {
     val ref = Ref.unsafe[IO, Option[Deferred[IO, Either[Throwable, A]]]](None)
     Deferred[IO, Either[Throwable, A]].flatMap { fresh =>
-      ref.modify {
-        case Some(d) => (Some(d), d.get.rethrow)
-        case None =>
-          val cancellation = new java.util.concurrent.CancellationException("memoize: init cancelled")
-          val attempt = init.attempt
-            .onCancel(ref.set(None) *> fresh.complete(Left(cancellation)).void)
-            .flatTap(fresh.complete(_).void)
-            .flatTap {
-              case Left(_)  => ref.set(None)
-              case Right(_) => IO.unit
-            }
-            .rethrow
-          (Some(fresh), attempt)
-      }.flatten
+      IO.uncancelable { poll =>
+        ref.modify {
+          case Some(d) => (Some(d), poll(d.get).rethrow)
+          case None =>
+            val cancellation = new java.util.concurrent.CancellationException("memoize: init cancelled")
+            val attempt =
+              poll(init).attempt
+                .flatTap(fresh.complete(_).void)
+                .flatTap {
+                  case Left(_)  => ref.set(None)
+                  case Right(_) => IO.unit
+                }
+                .onCancel(ref.set(None) *> fresh.complete(Left(cancellation)).void)
+                .rethrow
+            (Some(fresh), attempt)
+        }.flatten
+      }
     }
   }
 
   private class LocalEventBus[E](maxQueued: Int) extends EventBus[E] {
     private val topic: IO[Topic[IO, E]] = memoize(Topic[IO, E])
 
-    override def publish(event: E): IO[Unit] = topic.flatMap(_.publish1(event)).void
-    override def subscribe: Stream[IO, E]    = Stream.eval(topic).flatMap(_.subscribe(maxQueued))
+    override def publish(event: E): IO[Unit]                 = topic.flatMap(_.publish1(event)).void
+    override def subscribe: Stream[IO, E]                    = Stream.eval(topic).flatMap(_.subscribe(maxQueued))
+    override def subscribeAwait: Resource[IO, Stream[IO, E]] = Resource.eval(topic).flatMap(_.subscribeAwait(maxQueued))
   }
 
   private class PostgresEventBus[E: EventCodec](
@@ -74,6 +78,9 @@ object EventBusRuntime {
 
     override def subscribe: Stream[IO, E] =
       Stream.eval(topic).flatMap(_.subscribe(maxQueued))
+
+    override def subscribeAwait: Resource[IO, Stream[IO, E]] =
+      Resource.eval(topic).flatMap(_.subscribeAwait(maxQueued))
 
     private def listenLoop(sink: Topic[IO, E]): IO[Unit] =
       transactor

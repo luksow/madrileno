@@ -3,6 +3,7 @@ package madrileno.utils.events
 import cats.effect.IO
 import cats.effect.std.Supervisor
 import cats.effect.testing.scalatest.AsyncIOSpec
+import cats.syntax.all.*
 import madrileno.support.TestTransactor
 import madrileno.utils.observability.TelemetryContext
 import org.scalatest.matchers.should.Matchers
@@ -31,12 +32,16 @@ class PostgresEventBusSpec extends AsyncWordSpec with AsyncIOSpec with Matchers 
         val name             = channel("eventbus_crossinst_test")
         val publisherBus     = EventBusRuntime.postgres(transactor).topic[Sample](name, maxQueued = 64)
         val subscriberBus    = EventBusRuntime.postgres(transactor).topic[Sample](name, maxQueued = 64)
-        (for {
-          sub <- subscriberBus.subscribe.take(1).compile.lastOrError.start
-          _   <- IO.sleep(300.millis)
-          _   <- publisherBus.publish(Sample(1, "hello"))
-          got <- sub.joinWithNever
-        } yield got shouldBe Sample(1, "hello")).timeout(testTimeout)
+        subscriberBus.subscribeAwait
+          .use { stream =>
+            for {
+              sub <- stream.take(1).compile.lastOrError.start
+              _   <- IO.sleep(300.millis)
+              _   <- publisherBus.publish(Sample(1, "hello"))
+              got <- sub.joinWithNever
+            } yield got shouldBe Sample(1, "hello")
+          }
+          .timeout(testTimeout)
       }
     }
 
@@ -44,17 +49,21 @@ class PostgresEventBusSpec extends AsyncWordSpec with AsyncIOSpec with Matchers 
       Supervisor[IO].use { sup =>
         given Supervisor[IO] = sup
         val bus              = EventBusRuntime.postgres(transactor).topic[Sample](channel("eventbus_fanout_test"), maxQueued = 64)
-        (for {
-          a  <- bus.subscribe.take(1).compile.lastOrError.start
-          b  <- bus.subscribe.take(1).compile.lastOrError.start
-          _  <- IO.sleep(300.millis)
-          _  <- bus.publish(Sample(42, "broadcast"))
-          ra <- a.joinWithNever
-          rb <- b.joinWithNever
-        } yield {
-          ra shouldBe Sample(42, "broadcast")
-          rb shouldBe Sample(42, "broadcast")
-        }).timeout(testTimeout)
+        (bus.subscribeAwait, bus.subscribeAwait).tupled
+          .use { case (sa, sb) =>
+            for {
+              a  <- sa.take(1).compile.lastOrError.start
+              b  <- sb.take(1).compile.lastOrError.start
+              _  <- IO.sleep(300.millis)
+              _  <- bus.publish(Sample(42, "broadcast"))
+              ra <- a.joinWithNever
+              rb <- b.joinWithNever
+            } yield {
+              ra shouldBe Sample(42, "broadcast")
+              rb shouldBe Sample(42, "broadcast")
+            }
+          }
+          .timeout(testTimeout)
       }
     }
   }

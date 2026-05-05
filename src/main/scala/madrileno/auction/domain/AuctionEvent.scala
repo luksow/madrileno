@@ -2,7 +2,7 @@ package madrileno.auction.domain
 
 import io.scalaland.chimney.dsl.*
 import madrileno.utils.events.EventCodec
-import madrileno.utils.json.JsonProtocol.*
+import madrileno.utils.events.EventCodec.given
 
 import java.time.Instant
 
