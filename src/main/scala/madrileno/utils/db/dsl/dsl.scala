@@ -113,9 +113,9 @@ trait MappingHelpers[BaseType] {
 
   given [H, IH, T <: Tuple, IT <: Tuple](using GetCodecFromElement[H, IH], GetCodecsFromTuple[T, IT]): GetCodecsFromTuple[H *: T, IH *: IT] =
     (tuple: H *: T) => {
-      summon[GetCodecFromElement[H, IH]]
-        .codec(tuple.head) *: summon[GetCodecsFromTuple[T, IT]]
-        .codecs(tuple.tail)
+      val headCodec: Codec[IH] = summon[GetCodecFromElement[H, IH]].codec(tuple.head)
+      val tailCodec: Codec[IT] = summon[GetCodecsFromTuple[T, IT]].codecs(tuple.tail)
+      headCodec.product(tailCodec).imap { case (h, t) => h *: t } { case h *: t => (h, t) }
     }
 
   given [H, IH](using GetCodecFromElement[H, IH]): GetCodecsFromTuple[H *: EmptyTuple, IH *: EmptyTuple] =
