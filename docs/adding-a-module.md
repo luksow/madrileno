@@ -688,7 +688,7 @@ object ProductEventEnvelope {
 }
 ```
 
-The endpoint pipes the bus through `droppingBuffer` (the per-connection bounded queue from `BaseRouter`) so a slow WS client backpressures only its own queue — not the bus's `Topic.publish1`, which would otherwise stall the LISTEN drain for every other subscriber:
+The endpoint pipes the bus through `droppingBuffer` (the per-connection bounded queue from `BaseRouter`) so a slow WS client backpressures only its own queue — not the bus's `Topic.publish1`, which would otherwise stall the LISTEN drain for every other subscriber. **Drop semantics are silent**: when the queue is full, new events are discarded with no error frame and no log line, so a slow client just sees gaps in the stream. That's fine for a live ticker (clients reconnect / refetch); reach for a different design if you need lossless delivery.
 
 ```scala
 def wsRoutes(wsb: WebSocketBuilder2[IO]): Route =
