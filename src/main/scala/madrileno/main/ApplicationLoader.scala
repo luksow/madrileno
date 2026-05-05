@@ -2,6 +2,7 @@ package madrileno.main
 
 import cats.effect.{Clock, IO}
 import com.comcast.ip4s.{Ipv4Address, Port}
+import com.typesafe.config.ConfigFactory
 import madrileno.auction.AuctionModule
 import madrileno.auth.AuthModule
 import madrileno.healthcheck.HealthCheckModule
@@ -13,18 +14,16 @@ import madrileno.utils.http.{ApplicationRouteProvider, Handlers}
 import madrileno.utils.mailer.{MailContext, MailPreviewProvider, MailPreviewRouter, Mailer, MailerConfig, SmtpSender}
 import madrileno.utils.observability.*
 import madrileno.utils.task.{ApplicationTaskProvider, OneTimeTask, SchedulerClient}
-import org.http4s.Headers
 import org.http4s.otel4s.middleware.instances.all.*
 import org.http4s.server.websocket.WebSocketBuilder2
+import org.http4s.{Headers, HttpRoutes, Response, Status}
 import org.typelevel.otel4s.Attribute
+import pl.iterators.baklava.http4s.routes.BaklavaRoutes
 import pl.iterators.stir.server.directives.RouteDirectives
 import pl.iterators.stir.server.{PathMatcher, Route}
 import pureconfig.*
 import pureconfig.module.ip4s.*
 import sttp.capabilities.fs2.Fs2Streams
-import com.typesafe.config.ConfigFactory
-import org.http4s.{HttpRoutes, Response, Status}
-import pl.iterators.baklava.http4s.routes.BaklavaRoutes
 import sttp.client4.logging.{LogConfig, LogLevel, Logger, LoggingBackend}
 import sttp.client4.opentelemetry.OpenTelemetryMetricsBackend
 import sttp.client4.{WebSocketStreamBackend, logging}
@@ -147,7 +146,8 @@ class ApplicationLoader(
                     }
                   }
                 }
-            } ~ (if (appConfig.environment == "dev") new MailPreviewRouter(mailPreviews, mailContext).routes ~ baklavaDocs else RouteDirectives.reject)
+            } ~ (if (appConfig.environment == "dev") new MailPreviewRouter(mailPreviews, mailContext).routes ~ baklavaDocs
+                 else RouteDirectives.reject)
           }
         }
       }
@@ -181,7 +181,8 @@ class ApplicationLoader(
                     }
                   }
                 }
-            } ~ (if (appConfig.environment == "dev") new MailPreviewRouter(mailPreviews, mailContext).routes ~ baklavaDocs else RouteDirectives.reject)
+            } ~ (if (appConfig.environment == "dev") new MailPreviewRouter(mailPreviews, mailContext).routes ~ baklavaDocs
+                 else RouteDirectives.reject)
           }
         }
       }
