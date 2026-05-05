@@ -4,10 +4,12 @@ import madrileno.auction.domain.*
 import madrileno.utils.json.JsonProtocol.*
 
 import java.time.Instant
+import java.util.Currency
 
 case class BidPlacedDto(
   auctionId: AuctionId,
   amount: Price,
+  currency: Currency,
   at: Instant)
     derives Encoder.AsObject,
       Decoder

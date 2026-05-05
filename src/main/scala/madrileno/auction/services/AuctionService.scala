@@ -124,11 +124,11 @@ class AuctionService(
                    .rethrow[IO]
           saved <- bidRepository.save(bid).seal
           _     <- notifyOutbid(previousHighest, auction, saved.amount).seal
-        } yield PlaceBidResult.BidPlaced(saved)).run
+        } yield PlaceBidResult.BidPlaced(saved, auction)).run
       }
       .flatTap {
-        case PlaceBidResult.BidPlaced(bid) => publish(AuctionEvent.bidPlaced(bid))
-        case _                             => IO.unit
+        case PlaceBidResult.BidPlaced(bid, auction) => publish(AuctionEvent.bidPlaced(bid, auction))
+        case _                                      => IO.unit
       }
   }
 
@@ -310,7 +310,7 @@ case class PlaceBidCommand(
 case class CancelAuctionCommand(auctionId: AuctionId, sellerId: UserId)
 
 enum PlaceBidResult {
-  case BidPlaced(bid: Bid)
+  case BidPlaced(bid: Bid, auction: Auction)
   case AuctionNotFound
   case AuctionNotOpen
   case AuctionNotStarted

@@ -71,14 +71,11 @@ object EventBusRuntime {
       Identifier.fromString(name).fold(msg => throw new IllegalArgumentException(s"Invalid channel name '$name': $msg"), identity)
     private val codec = EventCodec[E]
 
-    private val listenerReady: Deferred[IO, Unit] = Deferred.unsafe[IO, Unit]
+    private val listenerReady: Ref[IO, Deferred[IO, Unit]] =
+      Ref.unsafe(Deferred.unsafe[IO, Unit])
 
     private val topic: IO[Topic[IO, E]] = memoize {
-      for {
-        t <- Topic[IO, E]
-        _ <- supervisor.supervise(listenLoop(t).foreverM)
-        _ <- listenerReady.get
-      } yield t
+      Topic[IO, E].flatTap(t => supervisor.supervise(listenLoop(t).foreverM))
     }
 
     override def publish(event: E): IO[Unit] =
@@ -88,13 +85,17 @@ object EventBusRuntime {
       Stream.eval(topic).flatMap(_.subscribe(maxQueued))
 
     override def subscribeAwait: Resource[IO, Stream[IO, E]] =
-      Resource.eval(topic).flatMap(_.subscribeAwait(maxQueued))
+      for {
+        t <- Resource.eval(topic)
+        _ <- Resource.eval(listenerReady.get.flatMap(_.get).timeout(30.seconds))
+        s <- t.subscribeAwait(maxQueued)
+      } yield s
 
     private def listenLoop(sink: Topic[IO, E]): IO[Unit] =
       transactor
         .listen(identifier, maxQueued)
         .use { stream =>
-          listenerReady.complete(()).attempt.void *>
+          listenerReady.get.flatMap(_.complete(()).attempt.void) *>
             stream
               .evalMap { notification =>
                 codec.decode(notification.value) match {
@@ -105,6 +106,10 @@ object EventBusRuntime {
               .compile
               .drain
         }
-        .handleErrorWith(t => logger.warn(t)(s"LISTEN on $name dropped — reconnecting after 1s") *> IO.sleep(1.second))
+        .handleErrorWith { t =>
+          Deferred[IO, Unit].flatMap(listenerReady.set) *>
+            logger.warn(t)(s"LISTEN on $name dropped — reconnecting after 1s") *>
+            IO.sleep(1.second)
+        }
   }
 }

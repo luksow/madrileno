@@ -5,6 +5,7 @@ import madrileno.utils.events.EventCodec
 import madrileno.utils.events.EventCodec.given
 
 import java.time.Instant
+import java.util.Currency
 
 enum AuctionEvent derives EventCodec {
   def auctionId: AuctionId
@@ -14,12 +15,14 @@ enum AuctionEvent derives EventCodec {
     auctionId: AuctionId,
     wineName: WineName,
     startingPrice: Price,
+    currency: Currency,
     endsAt: Instant,
     at: Instant)
 
   case BidPlaced(
     auctionId: AuctionId,
     amount: Price,
+    currency: Currency,
     at: Instant)
 
   case AuctionCancelled(auctionId: AuctionId, at: Instant)
@@ -27,6 +30,7 @@ enum AuctionEvent derives EventCodec {
   case AuctionClosed(
     auctionId: AuctionId,
     winningBid: Option[Price],
+    currency: Currency,
     at: Instant)
 }
 
@@ -40,15 +44,16 @@ object AuctionEvent {
       .withFieldRenamed(_.createdAt, _.at)
       .transform
 
-  def bidPlaced(bid: Bid): BidPlaced =
+  def bidPlaced(bid: Bid, auction: Auction): BidPlaced =
     bid
       .into[BidPlaced]
       .withFieldRenamed(_.createdAt, _.at)
+      .withFieldConst(_.currency, auction.currency)
       .transform
 
   def auctionCancelled(auction: Auction): AuctionCancelled =
     AuctionCancelled(auction.id, auction.updatedAt)
 
   def auctionClosed(auction: Auction, winningBid: Option[Bid]): AuctionClosed =
-    AuctionClosed(auction.id, winningBid.map(_.amount), auction.updatedAt)
+    AuctionClosed(auction.id, winningBid.map(_.amount), auction.currency, auction.updatedAt)
 }
