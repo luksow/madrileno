@@ -51,7 +51,8 @@ trait BaseRouter
 
   extension [A](source: Stream[IO, A])
     def droppingBuffer(capacity: Int): Stream[IO, A] =
-      Stream.eval(Queue.bounded[IO, A](capacity)).flatMap { q =>
-        Stream.fromQueueUnterminated(q).concurrently(source.evalMap(a => q.tryOffer(a).void))
+      Stream.eval(Queue.bounded[IO, Option[A]](capacity)).flatMap { q =>
+        val pump = source.evalMap(a => q.tryOffer(Some(a)).void) ++ Stream.eval(q.offer(None))
+        Stream.fromQueueNoneTerminated(q).concurrently(pump)
       }
 }

@@ -1,6 +1,7 @@
 package madrileno.auction.routers
 
 import cats.effect.IO
+import fs2.Stream
 import madrileno.auction.domain.*
 import madrileno.auction.routers.dto.*
 import madrileno.auction.services.*
@@ -93,7 +94,9 @@ class AuctionRouter(auctionService: AuctionService, eventBus: EventBus[AuctionEv
 
   def wsRoutes(wsb: WebSocketBuilder2[IO]): Route = {
     (get & path("auctions" / "stream") & pathEndOrSingleSlash) {
-      val send = eventBus.subscribe.droppingBuffer(capacity = 256).map(e => WebSocketFrame.Text(AuctionEventEnvelope(e).noSpaces))
+      val send = Stream
+        .resource(eventBus.subscribeAwait)
+        .flatMap(_.droppingBuffer(capacity = 256).map(e => WebSocketFrame.Text(AuctionEventEnvelope(e).noSpaces)))
       handleWebSocketMessages(wsb, send, _.drain)
     }
   }

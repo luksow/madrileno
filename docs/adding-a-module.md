@@ -693,12 +693,14 @@ The endpoint pipes the bus through `droppingBuffer` (the per-connection bounded 
 ```scala
 def wsRoutes(wsb: WebSocketBuilder2[IO]): Route =
   (get & path("products" / "stream") & pathEndOrSingleSlash) {
-    val send = eventBus.subscribe
-                 .droppingBuffer(capacity = 256)
-                 .map(e => WebSocketFrame.Text(ProductEventEnvelope(e).noSpaces))
+    val send = Stream
+      .resource(eventBus.subscribeAwait)
+      .flatMap(_.droppingBuffer(capacity = 256).map(e => WebSocketFrame.Text(ProductEventEnvelope(e).noSpaces)))
     handleWebSocketMessages(wsb, send, _.drain)
   }
 ```
+
+`subscribeAwait` (Resource-shaped) waits for the bus to be ready to receive events before yielding the stream — for the Postgres backend that means LISTEN is registered with the database. Plain `subscribe` returns immediately and silently misses events sent during the registration window; use `subscribeAwait` whenever the WS handler is the entry point.
 
 In the module, mix in `WsRouteProvider` (or both, if you have a mix of authed and unauthed WS endpoints) and contribute via the standard `super` chain:
 
