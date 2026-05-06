@@ -154,9 +154,10 @@ Write **`ProductDomainSpec`** next — pure, fast, covers every opaque type's `v
 ```scala
 package madrileno.product.repositories
 
+import cats.effect.IO
 import madrileno.product.domain.*
 import madrileno.utils.db.dsl.*
-import madrileno.utils.db.transactor.DB
+import madrileno.utils.db.transactor.{DB, DBInTransaction}
 import skunk.*
 import skunk.codec.all.*
 
