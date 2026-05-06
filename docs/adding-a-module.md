@@ -209,7 +209,6 @@ class ProductRepository {
   def save(product: Product): DB[Unit] =
     repository.create(ProductRow(product)).void
 
-  /** Read-only lookup. Modify paths must go through `update(id, f)`. */
   def find(id: ProductId): DB[Option[Product]] =
     repository.findById(id).map(_.map(_.toProduct))
 
@@ -218,7 +217,6 @@ class ProductRepository {
     repository.findByFilter(filter).map(_.map(_.toProduct))
   }
 
-  /** Locks the row, applies `f`, persists the result. `None` = not found, `Some(Left(e))` = transformation rejected, `Some(Right(updated))` = saved. The `find → modify → save` pattern is uncompilable because the persisting overload is private. */
   def update[E](id: ProductId, f: Product => Either[E, Product]): DBInTransaction[Option[Either[E, Product]]] =
     repository.findById(id, Lock.ForUpdate).map(_.map(_.toProduct)).flatMap {
       case None          => IO.pure(None)
