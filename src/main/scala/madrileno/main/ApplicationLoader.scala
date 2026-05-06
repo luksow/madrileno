@@ -2,7 +2,6 @@ package madrileno.main
 
 import cats.effect.{Clock, IO}
 import com.comcast.ip4s.{Ipv4Address, Port}
-import com.typesafe.config.ConfigFactory
 import madrileno.auction.AuctionModule
 import madrileno.auth.AuthModule
 import madrileno.healthcheck.HealthCheckModule
@@ -72,7 +71,7 @@ class ApplicationLoader(
   private lazy val smtpSender                   = new SmtpSender(mailerConfig)
   lazy val mailer: Mailer                       = new Mailer(smtpSender, schedulerClient, mailContext)
 
-  private lazy val baklavaHttpRoutes: HttpRoutes[IO] = BaklavaRoutes.routes(ConfigFactory.load())
+  private lazy val baklavaHttpRoutes: HttpRoutes[IO] = BaklavaRoutes.routes()
   private val baklavaPathSegments: Set[String]       = Set("openapi", "swagger", "swagger-ui", "docs")
 
   lazy val baklavaDocs: Route = httpRoutesOf {
