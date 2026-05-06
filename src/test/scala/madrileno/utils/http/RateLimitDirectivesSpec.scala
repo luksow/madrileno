@@ -15,8 +15,6 @@ import scala.concurrent.duration.DurationInt
 
 class RateLimitDirectivesSpec extends AnyFunSpec with Matchers {
 
-  private given Tracer[IO]       = Tracer.noop[IO]
-  private given Meter[IO]        = Meter.noop[IO]
   private given TelemetryContext = TelemetryContext(Meter.noop[IO], Tracer.noop[IO], io.opentelemetry.api.OpenTelemetry.noop())
   private given IORuntime        = IORuntime.global
 
