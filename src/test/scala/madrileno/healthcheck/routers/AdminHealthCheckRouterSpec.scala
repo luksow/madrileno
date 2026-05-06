@@ -1,6 +1,6 @@
-package madrileno.admin.routers
+package madrileno.healthcheck.routers
 
-import madrileno.admin.routers.dto.{AdminHealthCheckDto, DepStatus}
+import madrileno.healthcheck.routers.dto.{AdminHealthCheckDto, DepStatus}
 import madrileno.support.{BaseRouteSpec, TestApplicationLoader}
 import madrileno.utils.http.Error
 import madrileno.utils.json.JsonProtocol.*
