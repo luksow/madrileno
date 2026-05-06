@@ -2,7 +2,6 @@ package madrileno.auction.repositories
 
 import cats.effect.IO
 import madrileno.auction.domain.*
-import madrileno.auction.repositories.BidRowTable
 import madrileno.user.domain.UserId
 import madrileno.utils.db.dsl.*
 import madrileno.utils.db.transactor.{DB, DBInTransaction}
@@ -13,7 +12,7 @@ import skunk.implicits.*
 import java.time.Instant
 import java.util.Currency
 
-case class AuctionRow(
+private[repositories] case class AuctionRow(
   id: AuctionId,
   sellerId: UserId,
   wineName: WineName,
@@ -39,7 +38,7 @@ case class AuctionRow(
   }
 }
 
-object AuctionRow {
+private[repositories] object AuctionRow {
   def apply(auction: Auction): AuctionRow = {
     import io.scalaland.chimney.dsl.*
     auction
@@ -48,7 +47,11 @@ object AuctionRow {
   }
 }
 
-object AuctionRowTable extends Table[AuctionRow]("auction") with IdTable[AuctionRow, AuctionId] with SoftDeleteTable with ForeignIdTable[UserId] {
+private[repositories] object AuctionRowTable
+    extends Table[AuctionRow]("auction")
+    with IdTable[AuctionRow, AuctionId]
+    with SoftDeleteTable
+    with ForeignIdTable[UserId] {
   override val id: Column[AuctionId]              = column("id", uuid.as[AuctionId])
   val sellerId: Column[UserId]                    = column("seller_id", uuid.as[UserId])
   val wineName: Column[WineName]                  = column("wine_name", text.as[WineName])
@@ -95,7 +98,7 @@ object AuctionRowTable extends Table[AuctionRow]("auction") with IdTable[Auction
     )
 }
 
-case class AuctionRowFilter(
+private[repositories] case class AuctionRowFilter(
   id: SqlPredicate[AuctionId] = p.any,
   sellerId: SqlPredicate[UserId] = p.any,
   status: SqlPredicate[AuctionStatus] = p.any,
@@ -109,25 +112,18 @@ case class AuctionRowFilter(
 }
 
 class AuctionRepository {
-  def save(auction: Auction): DB[AuctionRow] = {
-    val row = AuctionRow(auction)
-    repository.create(row).as(row)
-  }
+  def save(auction: Auction): DB[Unit] =
+    repository.create(AuctionRow(auction)).void
 
-  def find(id: AuctionId): DB[Option[AuctionRow]] = {
-    repository.findById(id)
-  }
+  def find(id: AuctionId): DB[Option[Auction]] =
+    repository.findById(id).map(_.map(_.toAuction))
 
-  def findForUpdate(id: AuctionId): DBInTransaction[Option[AuctionRow]] = {
-    repository.findById(id, Lock.ForUpdate)
-  }
+  def findForUpdate(id: AuctionId): DBInTransaction[Option[Auction]] =
+    repository.findById(id, Lock.ForUpdate).map(_.map(_.toAuction))
 
-  def list(filter: AuctionRowFilter): DB[List[AuctionRow]] = {
-    repository.findByFilter(filter)
-  }
-
-  def listWithCurrentPrice(filter: AuctionRowFilter): DB[List[(AuctionRow, Price)]] = {
+  def list(status: Option[AuctionStatus], sellerId: Option[UserId]): DB[List[(Auction, Price)]] = {
     val session  = summon[Session[IO]]
+    val filter   = AuctionRowFilter(status = status.fold(p.any[AuctionStatus])(p.equal), sellerId = sellerId.fold(p.any[UserId])(p.equal))
     val applied  = filter.filterFragment
     val orderBy  = filter.orderByFragment
     val offLim   = filter.offsetLimitFragment
@@ -146,16 +142,19 @@ class AuctionRepository {
       $orderBy
       ${offLim.fragment}
     """.query(rowCodec)
-    session.execute(query)(applied.argument, offLim.argument).map(_.map { case (row, price) => (row, price) })
+    session.execute(query)(applied.argument, offLim.argument).map(_.map { case (row, price) => (row.toAuction, price) })
   }
 
-  def update(auction: Auction): DB[Unit] = {
+  def listExpired(now: Instant): DB[List[AuctionId]] = {
+    val filter = AuctionRowFilter(status = p.equal(AuctionStatus.Open), endsAt = p.lessThanOrEqual(now))
+    repository.findByFilter(filter).map(_.map(_.id))
+  }
+
+  def update(auction: Auction): DB[Unit] =
     repository.update(AuctionRow(auction))
-  }
 
-  def softDelete(id: AuctionId, now: Instant): DB[Unit] = {
+  def softDelete(id: AuctionId, now: Instant): DB[Unit] =
     repository.softDeleteById(id, now)
-  }
 
   private val repository: IdRepository[AuctionRow, AuctionId] & SoftDeleteRepository[AuctionRow, AuctionId] & ForeignIdRepository[
     AuctionRow,

@@ -4,7 +4,6 @@ import cats.effect.testing.scalatest.AsyncIOSpec
 import madrileno.auction.domain.*
 import madrileno.support.{TestData, TestTransactor}
 import madrileno.user.repositories.UserRepository
-import madrileno.utils.db.dsl.p
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AsyncWordSpec
 
@@ -26,22 +25,14 @@ class AuctionRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matchers
       val (seller, auction) = createAuctionWithSeller()
       for {
         _     <- userRepo.create(seller, Instant.now())
-        row   <- auctionRepo.save(auction)
+        _     <- auctionRepo.save(auction)
         found <- auctionRepo.find(auction.id)
       } yield {
-        row.id shouldBe auction.id
-        row.sellerId shouldBe seller.id
-        row.wineName shouldBe auction.wineName
-        row.vintage shouldBe auction.vintage
-        row.color shouldBe auction.color
-        row.region shouldBe auction.region
-        row.appellation shouldBe auction.appellation
-        row.producerName shouldBe auction.producerName
-        row.startingPrice shouldBe auction.startingPrice
-        row.currency shouldBe auction.currency
-        row.status shouldBe AuctionStatus.Open
         found shouldBe defined
         found.get.id shouldBe auction.id
+        found.get.sellerId shouldBe seller.id
+        found.get.wineName shouldBe auction.wineName
+        found.get.status shouldBe AuctionStatus.Open
       }
     }
 
@@ -57,9 +48,9 @@ class AuctionRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matchers
         _      <- userRepo.create(seller, Instant.now())
         _      <- auctionRepo.save(open)
         _      <- auctionRepo.save(closed)
-        result <- auctionRepo.list(AuctionRowFilter(status = p.equal(AuctionStatus.Open), deletedAt = p.isNull))
+        result <- auctionRepo.list(status = Some(AuctionStatus.Open), sellerId = None)
       } yield {
-        result.map(_.id) should contain only open.id
+        result.map(_._1.id) should contain only open.id
       }
     }
 
@@ -73,9 +64,26 @@ class AuctionRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matchers
         _      <- userRepo.create(seller2, Instant.now())
         _      <- auctionRepo.save(a1)
         _      <- auctionRepo.save(a2)
-        result <- auctionRepo.list(AuctionRowFilter(sellerId = p.equal(seller1.id), deletedAt = p.isNull))
+        result <- auctionRepo.list(status = None, sellerId = Some(seller1.id))
       } yield {
-        result.map(_.id) should contain only a1.id
+        result.map(_._1.id) should contain only a1.id
+      }
+    }
+
+    "listExpired returns open auctions whose end time has passed" in withRollback {
+      val seller  = TestData.user()
+      val now     = Instant.now()
+      val expired = TestData.auction(sellerId = seller.id, status = AuctionStatus.Open, endsAt = now.minusSeconds(60))
+      val ongoing = TestData.auction(sellerId = seller.id, status = AuctionStatus.Open, endsAt = now.plusSeconds(3600))
+      val closed  = TestData.auction(sellerId = seller.id, status = AuctionStatus.Closed, endsAt = now.minusSeconds(60))
+      for {
+        _      <- userRepo.create(seller, Instant.now())
+        _      <- auctionRepo.save(expired)
+        _      <- auctionRepo.save(ongoing)
+        _      <- auctionRepo.save(closed)
+        result <- auctionRepo.listExpired(now)
+      } yield {
+        result should contain only expired.id
       }
     }
 
@@ -124,17 +132,17 @@ class AuctionRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matchers
         _     <- auctionRepo.save(auction)
         found <- auctionRepo.find(auction.id)
       } yield {
-        val row = found.get
-        row.wineName shouldBe WineName("Romanée-Conti")
-        row.vintage shouldBe Some(Vintage(1945))
-        row.color shouldBe WineColor.Red
-        row.region shouldBe Region("Bourgogne")
-        row.appellation shouldBe Appellation("Vosne-Romanée")
-        row.producerName shouldBe ProducerName("Domaine de la Romanée-Conti")
-        row.bottleSize shouldBe BottleSize.Magnum
-        row.bottleCount shouldBe BottleCount(3)
-        row.description shouldBe None
-        row.startingPrice shouldBe Price(BigDecimal(25000.50))
+        val saved = found.get
+        saved.wineName shouldBe WineName("Romanée-Conti")
+        saved.vintage shouldBe Some(Vintage(1945))
+        saved.color shouldBe WineColor.Red
+        saved.region shouldBe Region("Bourgogne")
+        saved.appellation shouldBe Appellation("Vosne-Romanée")
+        saved.producerName shouldBe ProducerName("Domaine de la Romanée-Conti")
+        saved.bottleSize shouldBe BottleSize.Magnum
+        saved.bottleCount shouldBe BottleCount(3)
+        saved.description shouldBe None
+        saved.startingPrice shouldBe Price(BigDecimal(25000.50))
       }
     }
   }
