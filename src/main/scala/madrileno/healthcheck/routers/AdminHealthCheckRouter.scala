@@ -1,7 +1,7 @@
-package madrileno.admin.routers
+package madrileno.healthcheck.routers
 
-import madrileno.admin.routers.dto.{AdminHealthCheckDto, DepStatus}
-import madrileno.admin.services.AdminHealthCheckService
+import madrileno.healthcheck.routers.dto.{AdminHealthCheckDto, DepStatus}
+import madrileno.healthcheck.services.AdminHealthCheckService
 import madrileno.utils.http.BaseRouter
 import org.http4s.Status
 import pl.iterators.stir.marshalling.ToResponseMarshallable

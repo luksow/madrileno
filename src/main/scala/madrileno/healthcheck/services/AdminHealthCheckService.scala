@@ -1,9 +1,9 @@
-package madrileno.admin.services
+package madrileno.healthcheck.services
 
 import cats.effect.{Clock, IO}
 import cats.syntax.all.*
-import madrileno.admin.routers.dto.{AdminHealthCheckDto, DepCheck, DepStatus}
 import madrileno.healthcheck.repositories.HealthCheckRepository
+import madrileno.healthcheck.routers.dto.{AdminHealthCheckDto, DepCheck, DepStatus}
 import madrileno.utils.db.transactor.Transactor
 import madrileno.utils.mailer.MailerConfig
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}

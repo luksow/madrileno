@@ -1,4 +1,4 @@
-package madrileno.admin.routers.dto
+package madrileno.healthcheck.routers.dto
 
 import madrileno.utils.json.JsonProtocol.*
 
