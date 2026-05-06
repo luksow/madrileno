@@ -14,7 +14,6 @@ import org.http4s.EntityDecoder
 import org.http4s.Method.*
 import org.http4s.Status.*
 import org.http4s.circe.CirceEntityCodec.*
-import org.http4s.server.websocket.WebSocketBuilder2
 import pl.iterators.baklava.EmptyBody
 import pl.iterators.stir.server.Route
 
@@ -22,10 +21,6 @@ import java.time.Instant
 import java.util.{Currency, UUID}
 
 class AuctionRouterSpec extends BaseRouteSpec with TestApplicationLoader {
-
-  // Mount with a real WebSocketBuilder2 so /v1/auctions/stream is reachable in tests.
-  // For non-upgrade GETs, http4s' default onNonWebSocketRequest returns 501 — see the spec entry below.
-  private val wsb: WebSocketBuilder2[IO] = WebSocketBuilder2[IO].unsafeRunSync()
 
   override def route: Route = application.routes(wsb)
 
