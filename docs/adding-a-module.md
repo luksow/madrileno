@@ -11,7 +11,7 @@ Every module has the same shape. When you're done, yours will too:
 ```
 src/main/scala/madrileno/<module>/
   domain/        # aggregates, opaque types, enums, domain errors, smart constructors
-  repositories/  # Row + RowTable + RowFilter + Repository
+  repositories/  # Row + RowTable + RowFilter (all `private[repositories]`) + Repository
   services/      # use cases, commands, results, recurring tasks
   routers/       # http4s-stir routes
   routers/dto/   # request/response DTOs
@@ -162,7 +162,7 @@ import skunk.codec.all.*
 
 import java.time.Instant
 
-case class ProductRow(
+private[repositories] case class ProductRow(
   id: ProductId,
   name: ProductName,
   price: Price,
@@ -175,14 +175,14 @@ case class ProductRow(
   }
 }
 
-object ProductRow {
+private[repositories] object ProductRow {
   def apply(product: Product): ProductRow = {
     import io.scalaland.chimney.dsl.*
     product.into[ProductRow].transform
   }
 }
 
-object ProductRowTable
+private[repositories] object ProductRowTable
     extends Table[ProductRow]("product")
     with IdTable[ProductRow, ProductId]
     with SoftDeleteTable {
@@ -196,7 +196,7 @@ object ProductRowTable
   def mapping: (List[Column[?]], Codec[ProductRow]) = (id, name, price, createdAt, updatedAt, deletedAt)
 }
 
-case class ProductRowFilter(
+private[repositories] case class ProductRowFilter(
   id: SqlPredicate[ProductId] = p.any,
   deletedAt: SqlPredicate[Instant] = p.isNull)
     extends SqlFilter {
@@ -211,8 +211,8 @@ class ProductRepository {
   def find(id: ProductId): DB[Option[Product]] =
     repository.findById(id).map(_.map(_.toProduct))
 
-  def list(filter: ProductRowFilter): DB[List[Product]] =
-    repository.findByFilter(filter).map(_.map(_.toProduct))
+  def list(): DB[List[Product]] =
+    repository.findByFilter(ProductRowFilter()).map(_.map(_.toProduct))
 
   def update(product: Product): DB[Unit] =
     repository.update(ProductRow(product))
@@ -233,11 +233,11 @@ class ProductRepository {
 
 Three things to notice:
 
-- **`Row` is a separate type from `Product`**. Chimney makes the round-trip free. The separation matters when the domain evolves (e.g. you add a computed field) — the row stays a faithful mirror of the DB.
+- **`Row` is a separate type from `Product`, and it stays inside the repo.** Chimney makes the round-trip free. `Row`, `RowTable`, `RowFilter`, and `Row.apply` are all `private[repositories]` — the compiler enforces that they never leak. Public methods take and return domain types only; the conversion happens internally.
 - **No `Clock[IO]` at the repo.** `softDelete(id, now)` takes `now` from the caller. The service is the sole clock reader in the stack. This makes repos pure persistence adapters.
-- **`deletedAt = p.isNull` is the default.** `ProductRowFilter()` excludes soft-deleted rows. You have to opt in with `deletedAt = p.any` to see them, which almost never happens outside admin tooling.
+- **Public methods get typed signatures, not raw filters.** When users can compose a query (e.g. by status + seller for an auction list), the public method takes those exact arguments — `def list(status: Option[Status], sellerId: Option[UserId])` — and constructs the `RowFilter` internally. `RowFilter` stays a private mechanism. This keeps the repo API speaking the domain's vocabulary instead of SQL predicates, and means `deletedAt = p.isNull` (the safe-by-default for soft-deleted rows) can never accidentally be turned off by a caller.
 
-Write **`ProductRepositorySpec`** with `extends AsyncWordSpec with AsyncIOSpec with Matchers with TestTransactor`. Use `withRollback { ... }` around each test body — it gives you test isolation without truncate. Cover: save + find, list with filter, soft-delete hides rows, round-trip preserves all fields.
+Write **`ProductRepositorySpec`** with `extends AsyncWordSpec with AsyncIOSpec with Matchers with TestTransactor`. Use `withRollback { ... }` around each test body — it gives you test isolation without truncate. Cover: save + find, list returns saved products, soft-delete hides rows, round-trip preserves all fields. (The spec lives in the same `repositories` package as the repo, so it can still see `private[repositories]` types if you need to assert on the row directly — but prefer asserting on the domain types returned by the public methods.)
 
 ## Step 4 — Service
 
@@ -249,7 +249,7 @@ package madrileno.product.services
 import cats.effect.std.UUIDGen
 import cats.effect.{Clock, IO}
 import madrileno.product.domain.*
-import madrileno.product.repositories.{ProductRepository, ProductRowFilter}
+import madrileno.product.repositories.ProductRepository
 import madrileno.utils.crypto.IdGenerator
 import madrileno.utils.db.transactor.Transactor
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
@@ -280,7 +280,7 @@ class ProductService(
     transactor.inSession { productRepository.find(id) }
 
   def listProducts: IO[List[Product]] =
-    transactor.inSession { productRepository.list(ProductRowFilter()) }
+    transactor.inSession { productRepository.list() }
 
   def renameProduct(command: RenameProductCommand): IO[RenameProductResult] = {
     transactor.inTransaction {
@@ -961,7 +961,7 @@ Run tests as you go — each layer locks in what's below it.
 
 **Scheduled tasks that process many rows should lock and commit per row.** One batch transaction across N rows means one bad row rolls the rest back. Wrap each `closeOne(...).attempt` and log on failure so a bad row doesn't block the batch.
 
-**Default filter values save you.** `deletedAt = p.isNull` on row filters means you get safe-by-default queries. Changing this default (e.g. for a new filter field) needs care.
+**Default filter values save you, and `private[repositories]` enforces it.** `deletedAt = p.isNull` on row filters means safe-by-default queries; making `RowFilter` repo-private means a caller can't override that default by accident. When you want to expose filtering to a list endpoint, give the repo method typed args (`status: Option[Status]`, etc.) and translate them into the row filter inside the repo.
 
 ## The result
 
@@ -991,9 +991,11 @@ Skim this list. Each item is something a reviewer (human or Copilot) has flagged
 
 **Repository**
 - [ ] No `Clock[IO]` — all mutating methods take `now: Instant`
+- [ ] `Row`, `RowTable`, `RowFilter`, `Row.apply` are all `private[repositories]`
+- [ ] Public methods take and return domain types — no `Row` or `RowFilter` at the boundary
+- [ ] Public list/find methods use typed args (e.g. `status: Option[Status]`); the repo builds the `RowFilter` internally
 - [ ] `RowFilter` defaults exclude soft-deleted rows (`deletedAt = p.isNull`)
 - [ ] Any custom raw-SQL query has a matching index in the migration
-- [ ] Repository returns domain types at the boundary; `Row` stays internal
 
 **Service**
 - [ ] Reads use `transactor.inSession`; writes that combine a read + mutate use `inTransaction`
