@@ -6,6 +6,7 @@ import io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppen
 import madrileno.utils.cache.CacheRuntime
 import madrileno.utils.db.transactor.{PgConfig, PgTransactor}
 import madrileno.utils.events.EventBusRuntime
+import madrileno.utils.http.RateLimiterRuntime
 import madrileno.utils.observability.TelemetryContext
 import madrileno.utils.task.{Scheduler, SchedulerConfig}
 import org.http4s.RequestPrelude
@@ -39,11 +40,12 @@ object Main extends IOApp.Simple {
       transactor <- PgTransactor.resource(pgConfig)
       clock = Clock[IO]
       schedulerConfig <- Resource.eval(IO.delay(config.at("scheduler").loadOrThrow[SchedulerConfig]))
-      scheduler    = Scheduler(transactor, schedulerConfig)
-      cacheRuntime = CacheRuntime.scaffeine
+      scheduler          = Scheduler(transactor, schedulerConfig)
+      cacheRuntime       = CacheRuntime.scaffeine
+      rateLimiterRuntime = RateLimiterRuntime.caffeine()
       given Supervisor[IO] <- Supervisor[IO]
       eventBusRuntime = EventBusRuntime.postgres(transactor)
-      application     = ApplicationLoader(config, httpClient, transactor, clock, scheduler.client, cacheRuntime, eventBusRuntime)
+      application     = ApplicationLoader(config, httpClient, transactor, clock, scheduler.client, cacheRuntime, rateLimiterRuntime, eventBusRuntime)
       _ <- scheduler.run(recurringTasks = application.recurringTasks, oneTimeTasks = application.oneTimeTasks, customTasks = application.customTasks)
       metricsOps <- OtelMetrics.serverMetricsOps[IO]().toResource
       redactor = new QueryRedactor.NeverRedact with PathRedactor.NeverRedact

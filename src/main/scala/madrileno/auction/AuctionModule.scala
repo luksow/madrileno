@@ -13,7 +13,7 @@ import madrileno.user.repositories.UserRepository
 import madrileno.utils.cache.CacheRuntime
 import madrileno.utils.db.transactor.Transactor
 import madrileno.utils.events.{EventBus, EventBusRuntime}
-import madrileno.utils.http.{AuthRouteProvider, RouteProvider, WsRouteProvider}
+import madrileno.utils.http.{AuthRouteProvider, RateLimiter, RouteProvider, WsRouteProvider}
 import madrileno.utils.mailer.{MailPreview, MailPreviewProvider, Mailer}
 import madrileno.utils.observability.TelemetryContext
 import madrileno.utils.task.{RecurringTaskProvider, Task}
@@ -27,6 +27,7 @@ trait AuctionModule extends RouteProvider with AuthRouteProvider with WsRoutePro
   val transactor: Transactor
   val cacheRuntime: CacheRuntime
   val eventBusRuntime: EventBusRuntime
+  lazy val rateLimiter: RateLimiter
   lazy val httpClient: WebSocketStreamBackend[IO, Fs2Streams[IO]]
   lazy val userRepository: UserRepository
   lazy val mailer: Mailer
