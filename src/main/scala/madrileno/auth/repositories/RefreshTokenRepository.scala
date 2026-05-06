@@ -12,7 +12,7 @@ import skunk.implicits.*
 
 import java.time.Instant
 
-case class RefreshTokenRow(
+private[repositories] case class RefreshTokenRow(
   id: RefreshTokenId,
   userId: UserId,
   userAgent: UserAgent,
@@ -26,7 +26,7 @@ case class RefreshTokenRow(
   }
 }
 
-object RefreshTokenRow {
+private[repositories] object RefreshTokenRow {
   def apply(refreshToken: RefreshToken): RefreshTokenRow = {
     import io.scalaland.chimney.dsl.*
     refreshToken
@@ -35,7 +35,7 @@ object RefreshTokenRow {
   }
 }
 
-object RefreshTokenRowTable
+private[repositories] object RefreshTokenRowTable
     extends Table[RefreshTokenRow]("refresh_token")
     with IdTable[RefreshTokenRow, RefreshTokenId]
     with SoftDeleteTable
@@ -56,7 +56,7 @@ object RefreshTokenRowTable
   override def mapping: (List[Column[?]], Codec[RefreshTokenRow]) = (id, userId, userAgent, ipAddress, createdAt, usedAt, deletedAt)
 }
 
-case class RefreshTokenRowFilter(
+private[repositories] case class RefreshTokenRowFilter(
   id: SqlPredicate[RefreshTokenId] = p.any,
   userId: SqlPredicate[UserId] = p.any,
   userAgent: SqlPredicate[UserAgent] = p.any,

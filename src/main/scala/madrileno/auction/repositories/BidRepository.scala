@@ -11,7 +11,7 @@ import skunk.implicits.*
 
 import java.time.Instant
 
-case class BidRow(
+private[repositories] case class BidRow(
   id: BidId,
   auctionId: AuctionId,
   bidderId: UserId,
@@ -23,14 +23,14 @@ case class BidRow(
   }
 }
 
-object BidRow {
+private[repositories] object BidRow {
   def apply(bid: Bid): BidRow = {
     import io.scalaland.chimney.dsl.*
     bid.into[BidRow].transform
   }
 }
 
-object BidRowTable extends Table[BidRow]("bid") with IdTable[BidRow, BidId] with ForeignIdTable[AuctionId] {
+private[repositories] object BidRowTable extends Table[BidRow]("bid") with IdTable[BidRow, BidId] with ForeignIdTable[AuctionId] {
   override val id: Column[BidId]   = column("id", uuid.as[BidId])
   val auctionId: Column[AuctionId] = column("auction_id", uuid.as[AuctionId])
   val bidderId: Column[UserId]     = column("bidder_id", uuid.as[UserId])
@@ -43,7 +43,7 @@ object BidRowTable extends Table[BidRow]("bid") with IdTable[BidRow, BidId] with
     (id, auctionId, bidderId, amount, createdAt)
 }
 
-case class BidRowFilter(
+private[repositories] case class BidRowFilter(
   id: SqlPredicate[BidId] = p.any,
   auctionId: SqlPredicate[AuctionId] = p.any,
   bidderId: SqlPredicate[UserId] = p.any)

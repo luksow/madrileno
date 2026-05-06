@@ -12,6 +12,7 @@ import java.time.Instant
 class AuctionRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matchers with TestTransactor {
 
   private lazy val auctionRepo = new AuctionRepository
+  private lazy val bidRepo     = new BidRepository
   private lazy val userRepo    = new UserRepository
 
   private def createAuctionWithSeller() = {
@@ -40,9 +41,9 @@ class AuctionRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matchers
       auctionRepo.find(TestData.randomAuctionId()).map(_ shouldBe None)
     }
 
-    "list auctions by status" in withRollback {
+    "list auctions by status returns startingPrice when no bids exist" in withRollback {
       val seller = TestData.user()
-      val open   = TestData.auction(sellerId = seller.id, status = AuctionStatus.Open)
+      val open   = TestData.auction(sellerId = seller.id, status = AuctionStatus.Open, startingPrice = Price(BigDecimal(100)))
       val closed = TestData.auction(sellerId = seller.id, status = AuctionStatus.Closed)
       for {
         _      <- userRepo.create(seller, Instant.now())
@@ -51,22 +52,30 @@ class AuctionRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matchers
         result <- auctionRepo.list(status = Some(AuctionStatus.Open), sellerId = None)
       } yield {
         result.map(_._1.id) should contain only open.id
+        result.map(_._2) should contain only Price(BigDecimal(100))
       }
     }
 
-    "list auctions by seller" in withRollback {
+    "list auctions by seller returns the highest bid when bids exist" in withRollback {
       val seller1 = TestData.user()
       val seller2 = TestData.user()
-      val a1      = TestData.auction(sellerId = seller1.id)
+      val bidder  = TestData.user()
+      val a1      = TestData.auction(sellerId = seller1.id, startingPrice = Price(BigDecimal(100)))
       val a2      = TestData.auction(sellerId = seller2.id)
+      val lowBid  = TestData.bid(auctionId = a1.id, bidderId = bidder.id, amount = Price(BigDecimal(150)))
+      val highBid = TestData.bid(auctionId = a1.id, bidderId = bidder.id, amount = Price(BigDecimal(225)))
       for {
         _      <- userRepo.create(seller1, Instant.now())
         _      <- userRepo.create(seller2, Instant.now())
+        _      <- userRepo.create(bidder, Instant.now())
         _      <- auctionRepo.save(a1)
         _      <- auctionRepo.save(a2)
+        _      <- bidRepo.save(lowBid)
+        _      <- bidRepo.save(highBid)
         result <- auctionRepo.list(status = None, sellerId = Some(seller1.id))
       } yield {
         result.map(_._1.id) should contain only a1.id
+        result.map(_._2) should contain only Price(BigDecimal(225))
       }
     }
 
