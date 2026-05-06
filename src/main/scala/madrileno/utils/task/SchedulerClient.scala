@@ -14,5 +14,5 @@ class SchedulerClient private[task] (repository: ClientSchedulerRepository, tran
     repository.save(task)
 
   private[task] def listTasks: IO[List[TaskRow]] =
-    transactor.inSession(repository.listAll)
+    transactor.inSession(repository.list)
 }
