@@ -115,9 +115,15 @@ class AuctionRepository {
   def save(auction: Auction): DB[Unit] =
     repository.create(AuctionRow(auction)).void
 
+  /** Read-only lookup. For modify paths use `update(id, f)` so the row is locked. Use `findForUpdate` when you need to lock but not modify (e.g.
+    * read-side serialization).
+    */
   def find(id: AuctionId): DB[Option[Auction]] =
     repository.findById(id).map(_.map(_.toAuction))
 
+  /** Locking lookup for callers that hold the row but do not modify the auction itself (e.g. `placeBid` serializes concurrent bids by locking the
+    * auction row while writing to the bid table). For modify paths prefer `update(id, f)`.
+    */
   def findForUpdate(id: AuctionId): DBInTransaction[Option[Auction]] =
     repository.findById(id, Lock.ForUpdate).map(_.map(_.toAuction))
 
@@ -150,11 +156,28 @@ class AuctionRepository {
     repository.findByFilter(filter).map(_.map(_.id))
   }
 
-  def update(auction: Auction): DB[Unit] =
-    repository.update(AuctionRow(auction))
+  /** Locks the row, applies `f`, persists the result. Returns:
+    *   - `None` if no auction with that id exists
+    *   - `Some(Left(e))` if `f` rejected the transformation (`e: E` carries the rejection)
+    *   - `Some(Right(updated))` if `f` accepted and the row was updated
+    *
+    * Modify paths must go through this method — `find → modify → save` is not a possible code path because the persisting overload is private.
+    */
+  def update[E](id: AuctionId, f: Auction => Either[E, Auction]): DBInTransaction[Option[Either[E, Auction]]] =
+    findForUpdate(id).flatMap {
+      case None => IO.pure(None)
+      case Some(auction) =>
+        f(auction) match {
+          case Left(e)        => IO.pure(Some(Left(e)))
+          case Right(updated) => persist(updated).as(Some(Right(updated)))
+        }
+    }
 
   def softDelete(id: AuctionId, now: Instant): DB[Unit] =
     repository.softDeleteById(id, now)
+
+  private def persist(auction: Auction): DB[Unit] =
+    repository.update(AuctionRow(auction))
 
   private val repository: IdRepository[AuctionRow, AuctionId] & SoftDeleteRepository[AuctionRow, AuctionId] & ForeignIdRepository[
     AuctionRow,

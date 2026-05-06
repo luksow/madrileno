@@ -87,17 +87,36 @@ class AuctionRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matchers
       }
     }
 
-    "update auction status" in withRollback {
+    "update applies the transformation and persists it" in withRollback {
       val (seller, auction) = createAuctionWithSeller()
       for {
         _       <- userRepo.create(seller, Instant.now())
         _       <- auctionRepo.save(auction)
-        _       <- auctionRepo.update(auction.copy(status = AuctionStatus.Closed))
+        result  <- auctionRepo.update[Nothing](auction.id, a => Right(a.copy(status = AuctionStatus.Closed)))
         updated <- auctionRepo.find(auction.id)
       } yield {
-        updated shouldBe defined
+        result.flatMap(_.toOption).map(_.status) shouldBe Some(AuctionStatus.Closed)
         updated.get.status shouldBe AuctionStatus.Closed
       }
+    }
+
+    "update returns Some(Left(e)) when the transformation rejects, leaving the row untouched" in withRollback {
+      val (seller, auction) = createAuctionWithSeller()
+      case object Rejected
+      for {
+        _      <- userRepo.create(seller, Instant.now())
+        _      <- auctionRepo.save(auction)
+        result <- auctionRepo.update[Rejected.type](auction.id, _ => Left(Rejected))
+        found  <- auctionRepo.find(auction.id)
+      } yield {
+        result shouldBe Some(Left(Rejected))
+        found.get.status shouldBe AuctionStatus.Open
+      }
+    }
+
+    "update returns None for a non-existent auction" in withRollback {
+      val missingId = TestData.randomAuctionId()
+      auctionRepo.update[Nothing](missingId, a => Right(a)).map(_ shouldBe None)
     }
 
     "soft delete hides auction from find" in withRollback {

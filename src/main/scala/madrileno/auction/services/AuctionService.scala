@@ -131,22 +131,15 @@ class AuctionService(
   def cancelAuction(command: CancelAuctionCommand): IO[CancelAuctionResult] = {
     transactor
       .inTransaction {
-        (for {
-          auction <- auctionRepository
-                       .findForUpdate(command.auctionId)
-                       .valueOr[CancelAuctionResult](CancelAuctionResult.AuctionNotFound)
-          now <- Clock[IO].realTimeInstant.seal
-          cancelled <- auction
-                         .cancel(command.sellerId, now)
-                         .left
-                         .map {
-                           case CancellationRejection.NotOwner       => CancelAuctionResult.NotOwner
-                           case CancellationRejection.AuctionNotOpen => CancelAuctionResult.AuctionNotOpen
-                           case CancellationRejection.AuctionEnded   => CancelAuctionResult.AuctionEnded
-                         }
-                         .rethrow[IO]
-          _ <- auctionRepository.update(cancelled).seal
-        } yield CancelAuctionResult.Cancelled(cancelled)).run
+        Clock[IO].realTimeInstant.flatMap { now =>
+          auctionRepository.update(command.auctionId, _.cancel(command.sellerId, now)).map {
+            case None                                             => CancelAuctionResult.AuctionNotFound
+            case Some(Left(CancellationRejection.NotOwner))       => CancelAuctionResult.NotOwner
+            case Some(Left(CancellationRejection.AuctionNotOpen)) => CancelAuctionResult.AuctionNotOpen
+            case Some(Left(CancellationRejection.AuctionEnded))   => CancelAuctionResult.AuctionEnded
+            case Some(Right(cancelled))                           => CancelAuctionResult.Cancelled(cancelled)
+          }
+        }
       }
       .flatTap {
         case CancelAuctionResult.Cancelled(auction) => publish(AuctionEvent.auctionCancelled(auction))
@@ -155,26 +148,18 @@ class AuctionService(
   }
 
   val closeExpiredAuctionsTask: Task[Unit] = {
-    def performClose(closed: Auction): DBInTransaction[Option[Bid]] = {
-      for {
-        winner <- bidRepository.highestBid(closed.id)
-        _      <- auctionRepository.update(closed)
-        seller <- userRepository.find(closed.sellerId)
-        _      <- notifyAuctionClosed(closed, seller, winner)
-        _      <- logger.info(s"Closed auction ${closed.id}, winner: ${winner.map(_.bidderId)}")
-      } yield winner
-    }
-
     def closeOne(auctionId: AuctionId, now: Instant): IO[Unit] = {
       transactor
         .inTransaction {
-          auctionRepository.findForUpdate(auctionId).flatMap {
-            case Some(auction) =>
-              auction.close(now) match {
-                case Right(closed)                       => performClose(closed).map(winner => Some((closed, winner)))
-                case Left(CloseRejection.AuctionNotOpen) => IO.pure(None)
-              }
-            case None => IO.pure(None)
+          auctionRepository.update(auctionId, _.close(now)).flatMap {
+            case Some(Right(closed)) =>
+              for {
+                winner <- bidRepository.highestBid(closed.id)
+                seller <- userRepository.find(closed.sellerId)
+                _      <- notifyAuctionClosed(closed, seller, winner)
+                _      <- logger.info(s"Closed auction ${closed.id}, winner: ${winner.map(_.bidderId)}")
+              } yield Some((closed, winner))
+            case _ => IO.pure(None)
           }
         }
         .flatTap {

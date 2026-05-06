@@ -198,27 +198,42 @@ private[repositories] object ProductRowTable
 
 private[repositories] case class ProductRowFilter(
   id: SqlPredicate[ProductId] = p.any,
+  name: SqlPredicate[ProductName] = p.any,
   deletedAt: SqlPredicate[Instant] = p.isNull)
     extends SqlFilter {
   override def filterFragment: AppliedFragment =
-    SqlFilterDerivation.filterFragment(this, (ProductRowTable.id, ProductRowTable.deletedAt))
+    SqlFilterDerivation.filterFragment(this, (ProductRowTable.id, ProductRowTable.name, ProductRowTable.deletedAt))
 }
 
 class ProductRepository {
   def save(product: Product): DB[Unit] =
     repository.create(ProductRow(product)).void
 
+  /** Read-only lookup. Modify paths must go through `update(id, f)`. */
   def find(id: ProductId): DB[Option[Product]] =
     repository.findById(id).map(_.map(_.toProduct))
 
-  def list(): DB[List[Product]] =
-    repository.findByFilter(ProductRowFilter()).map(_.map(_.toProduct))
+  def list(name: Option[ProductName]): DB[List[Product]] = {
+    val filter = ProductRowFilter(name = name.fold(p.any[ProductName])(p.equal))
+    repository.findByFilter(filter).map(_.map(_.toProduct))
+  }
 
-  def update(product: Product): DB[Unit] =
-    repository.update(ProductRow(product))
+  /** Locks the row, applies `f`, persists the result. `None` = not found, `Some(Left(e))` = transformation rejected, `Some(Right(updated))` = saved. The `find → modify → save` pattern is uncompilable because the persisting overload is private. */
+  def update[E](id: ProductId, f: Product => Either[E, Product]): DBInTransaction[Option[Either[E, Product]]] =
+    repository.findById(id, Lock.ForUpdate).map(_.map(_.toProduct)).flatMap {
+      case None          => IO.pure(None)
+      case Some(product) =>
+        f(product) match {
+          case Left(e)        => IO.pure(Some(Left(e)))
+          case Right(updated) => persist(updated).as(Some(Right(updated)))
+        }
+    }
 
   def softDelete(id: ProductId, now: Instant): DB[Unit] =
     repository.softDeleteById(id, now)
+
+  private def persist(product: Product): DB[Unit] =
+    repository.update(ProductRow(product))
 
   private val repository: IdRepository[ProductRow, ProductId]
     & SoftDeleteRepository[ProductRow, ProductId]
@@ -231,11 +246,15 @@ class ProductRepository {
 }
 ```
 
-Three things to notice:
+Things to notice:
 
 - **`Row` is a separate type from `Product`, and it stays inside the repo.** Chimney makes the round-trip free. `Row`, `RowTable`, `RowFilter`, and `Row.apply` are all `private[repositories]` — the compiler enforces that they never leak. Public methods take and return domain types only; the conversion happens internally.
+- **What `Row` carries that `Product` doesn't:** persistence-only fields — `createdAt`, `updatedAt`, `deletedAt`. (Future additions might be `version` for optimistic locking, etc.) Keeping them off the domain entity means the aggregate stays free of "the database remembers when this happened" pollution; the repo is the only place that reads or writes those fields.
+- **`private[repositories]` rather than `private`.** Package-private (not class-private) so the repo's own spec — which lives in the same package — can poke `Row` directly when a test really needs to (rare, but the escape hatch exists). Code outside the package can never see it.
 - **No `Clock[IO]` at the repo.** `softDelete(id, now)` takes `now` from the caller. The service is the sole clock reader in the stack. This makes repos pure persistence adapters.
-- **Public methods get typed signatures, not raw filters.** When users can compose a query (e.g. by status + seller for an auction list), the public method takes those exact arguments — `def list(status: Option[Status], sellerId: Option[UserId])` — and constructs the `RowFilter` internally. `RowFilter` stays a private mechanism. This keeps the repo API speaking the domain's vocabulary instead of SQL predicates, and means `deletedAt = p.isNull` (the safe-by-default for soft-deleted rows) can never accidentally be turned off by a caller.
+- **Public list/find methods get typed signatures, not raw filters.** When users can compose a query (e.g. by name for products, or status + seller for an auction list), the public method takes those exact arguments — `def list(name: Option[ProductName])` — and constructs the `RowFilter` internally. `RowFilter` stays a private mechanism. This keeps the repo API speaking the domain's vocabulary instead of SQL predicates, and means `deletedAt = p.isNull` (the safe-by-default for soft-deleted rows) can never accidentally be turned off by a caller.
+- **Naming convention: `find` returns `Option`, `list` returns `List`.** Consistent across the codebase. A method that returns at most one thing is a `find`; a method that returns zero-or-more is a `list`.
+- **Modify paths go through `update(id, f)`, not `find → modify → save`.** The callback variant locks the row (`SELECT ... FOR UPDATE`), applies the transformation, and persists in one transaction — there's no possibility of a lost-update race because the unsafe pattern can't be expressed (the persisting overload is `private`). The callback also handles the rejection-vs-not-found distinction in the return type. Read-only lookups still use `find`; locking-without-modifying (e.g. read-side serialization across two tables) uses `findForUpdate` if you need it — see `AuctionRepository` for that pattern.
 
 Write **`ProductRepositorySpec`** with `extends AsyncWordSpec with AsyncIOSpec with Matchers with TestTransactor`. Use `withRollback { ... }` around each test body — it gives you test isolation without truncate. Cover: save + find, list returns saved products, soft-delete hides rows, round-trip preserves all fields. (The spec lives in the same `repositories` package as the repo, so it can still see `private[repositories]` types if you need to assert on the row directly — but prefer asserting on the domain types returned by the public methods.)
 
@@ -279,36 +298,30 @@ class ProductService(
   def getProduct(id: ProductId): IO[Option[Product]] =
     transactor.inSession { productRepository.find(id) }
 
-  def listProducts: IO[List[Product]] =
-    transactor.inSession { productRepository.list() }
+  def listProducts(name: Option[ProductName]): IO[List[Product]] =
+    transactor.inSession { productRepository.list(name) }
 
   def renameProduct(command: RenameProductCommand): IO[RenameProductResult] = {
     transactor.inTransaction {
-      (for {
-        product <- productRepository.find(command.id).valueOr[RenameProductResult](RenameProductResult.NotFound)
-        now     <- Clock[IO].realTimeInstant.seal
-        renamed <- product
-                     .rename(command.newName, now)
-                     .left
-                     .map { case RenameRejection.NameUnchanged => RenameProductResult.NameUnchanged }
-                     .rethrow[IO]
-        _ <- productRepository.update(renamed).seal
-      } yield RenameProductResult.Renamed).run
+      Clock[IO].realTimeInstant.flatMap { now =>
+        productRepository.update(command.id, _.rename(command.newName, now)).map {
+          case None                                       => RenameProductResult.NotFound
+          case Some(Left(RenameRejection.NameUnchanged))  => RenameProductResult.NameUnchanged
+          case Some(Right(_))                             => RenameProductResult.Renamed
+        }
+      }
     }
   }
 
   def repriceProduct(command: RepriceProductCommand): IO[RepriceProductResult] = {
     transactor.inTransaction {
-      (for {
-        product <- productRepository.find(command.id).valueOr[RepriceProductResult](RepriceProductResult.NotFound)
-        now     <- Clock[IO].realTimeInstant.seal
-        updated <- product
-                     .reprice(command.newPrice, now)
-                     .left
-                     .map { case RepriceRejection.PriceUnchanged => RepriceProductResult.PriceUnchanged }
-                     .rethrow[IO]
-        _ <- productRepository.update(updated).seal
-      } yield RepriceProductResult.Repriced).run
+      Clock[IO].realTimeInstant.flatMap { now =>
+        productRepository.update(command.id, _.reprice(command.newPrice, now)).map {
+          case None                                          => RepriceProductResult.NotFound
+          case Some(Left(RepriceRejection.PriceUnchanged))   => RepriceProductResult.PriceUnchanged
+          case Some(Right(_))                                => RepriceProductResult.Repriced
+        }
+      }
     }
   }
 
@@ -396,9 +409,9 @@ import pl.iterators.stir.server.Route
 class ProductRouter(productService: ProductService)(using TelemetryContext) extends BaseRouter {
 
   val routes: Route = {
-    (get & path("products") & pathEndOrSingleSlash) {
+    (get & path("products") & parameter("name".as[ProductName].?) & pathEndOrSingleSlash) { name =>
       complete {
-        productService.listProducts.map[ToResponseMarshallable] { products =>
+        productService.listProducts(name).map[ToResponseMarshallable] { products =>
           Ok -> products.map(ProductDto(_))
         }
       }
@@ -995,6 +1008,8 @@ Skim this list. Each item is something a reviewer (human or Copilot) has flagged
 - [ ] Public methods take and return domain types — no `Row` or `RowFilter` at the boundary
 - [ ] Public list/find methods use typed args (e.g. `status: Option[Status]`); the repo builds the `RowFilter` internally
 - [ ] `RowFilter` defaults exclude soft-deleted rows (`deletedAt = p.isNull`)
+- [ ] Modify paths go through `update(id, f: Aggregate => Either[E, Aggregate])`; the persisting overload is `private`
+- [ ] Naming: `find` returns `Option`, `list` returns `List`
 - [ ] Any custom raw-SQL query has a matching index in the migration
 
 **Service**
