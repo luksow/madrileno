@@ -19,7 +19,6 @@ class AdminHealthCheckService(
 )(using TelemetryContext)
     extends LoggingSupport {
 
-  // Probes run in parallel — neither blocks the other; latency is per-dep.
   def check(): IO[AdminHealthCheckDto] = {
     (postgresCheck, smtpCheck).parTupled.map { case (pg, smtp) =>
       val overall = if (pg.status == DepStatus.Up && smtp.status == DepStatus.Up) DepStatus.Up else DepStatus.Down

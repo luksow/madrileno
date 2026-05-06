@@ -59,7 +59,6 @@ trait TestApplicationLoader extends TestContainersForAll with TestMailpit { self
       override protected lazy val externalAuthVerifier: ExternalAuthVerifier =
         FakeAuthVerifier(firebaseToken)
       override protected lazy val vivinoGateway: VivinoGateway = (_, _) => IO.pure(None)
-      // Point the SMTP-probing admin health check at the mailpit testcontainer instead of whatever's in .env.
       override protected lazy val mailerConfig: MailerConfig =
         MailerConfig(host = mailpitHost, port = mailpitSmtpPort, fromAddress = "test@example.com", tls = false)
     }
