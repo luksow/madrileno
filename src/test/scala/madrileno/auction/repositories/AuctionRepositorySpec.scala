@@ -4,7 +4,6 @@ import cats.effect.testing.scalatest.AsyncIOSpec
 import madrileno.auction.domain.*
 import madrileno.support.{TestData, TestTransactor}
 import madrileno.user.repositories.UserRepository
-import madrileno.utils.db.dsl.p
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AsyncWordSpec
 
@@ -13,6 +12,7 @@ import java.time.Instant
 class AuctionRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matchers with TestTransactor {
 
   private lazy val auctionRepo = new AuctionRepository
+  private lazy val bidRepo     = new BidRepository
   private lazy val userRepo    = new UserRepository
 
   private def createAuctionWithSeller() = {
@@ -26,22 +26,14 @@ class AuctionRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matchers
       val (seller, auction) = createAuctionWithSeller()
       for {
         _     <- userRepo.create(seller, Instant.now())
-        row   <- auctionRepo.save(auction)
+        _     <- auctionRepo.save(auction)
         found <- auctionRepo.find(auction.id)
       } yield {
-        row.id shouldBe auction.id
-        row.sellerId shouldBe seller.id
-        row.wineName shouldBe auction.wineName
-        row.vintage shouldBe auction.vintage
-        row.color shouldBe auction.color
-        row.region shouldBe auction.region
-        row.appellation shouldBe auction.appellation
-        row.producerName shouldBe auction.producerName
-        row.startingPrice shouldBe auction.startingPrice
-        row.currency shouldBe auction.currency
-        row.status shouldBe AuctionStatus.Open
         found shouldBe defined
         found.get.id shouldBe auction.id
+        found.get.sellerId shouldBe seller.id
+        found.get.wineName shouldBe auction.wineName
+        found.get.status shouldBe AuctionStatus.Open
       }
     }
 
@@ -49,47 +41,91 @@ class AuctionRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matchers
       auctionRepo.find(TestData.randomAuctionId()).map(_ shouldBe None)
     }
 
-    "list auctions by status" in withRollback {
+    "list auctions by status returns startingPrice when no bids exist" in withRollback {
       val seller = TestData.user()
-      val open   = TestData.auction(sellerId = seller.id, status = AuctionStatus.Open)
+      val open   = TestData.auction(sellerId = seller.id, status = AuctionStatus.Open, startingPrice = Price(BigDecimal(100)))
       val closed = TestData.auction(sellerId = seller.id, status = AuctionStatus.Closed)
       for {
         _      <- userRepo.create(seller, Instant.now())
         _      <- auctionRepo.save(open)
         _      <- auctionRepo.save(closed)
-        result <- auctionRepo.list(AuctionRowFilter(status = p.equal(AuctionStatus.Open), deletedAt = p.isNull))
+        result <- auctionRepo.list(status = Some(AuctionStatus.Open), sellerId = None)
       } yield {
-        result.map(_.id) should contain only open.id
+        result.map(_._1.id) should contain only open.id
+        result.map(_._2) should contain only Price(BigDecimal(100))
       }
     }
 
-    "list auctions by seller" in withRollback {
+    "list auctions by seller returns the highest bid when bids exist" in withRollback {
       val seller1 = TestData.user()
       val seller2 = TestData.user()
-      val a1      = TestData.auction(sellerId = seller1.id)
+      val bidder  = TestData.user()
+      val a1      = TestData.auction(sellerId = seller1.id, startingPrice = Price(BigDecimal(100)))
       val a2      = TestData.auction(sellerId = seller2.id)
+      val lowBid  = TestData.bid(auctionId = a1.id, bidderId = bidder.id, amount = Price(BigDecimal(150)))
+      val highBid = TestData.bid(auctionId = a1.id, bidderId = bidder.id, amount = Price(BigDecimal(225)))
       for {
         _      <- userRepo.create(seller1, Instant.now())
         _      <- userRepo.create(seller2, Instant.now())
+        _      <- userRepo.create(bidder, Instant.now())
         _      <- auctionRepo.save(a1)
         _      <- auctionRepo.save(a2)
-        result <- auctionRepo.list(AuctionRowFilter(sellerId = p.equal(seller1.id), deletedAt = p.isNull))
+        _      <- bidRepo.save(lowBid)
+        _      <- bidRepo.save(highBid)
+        result <- auctionRepo.list(status = None, sellerId = Some(seller1.id))
       } yield {
-        result.map(_.id) should contain only a1.id
+        result.map(_._1.id) should contain only a1.id
+        result.map(_._2) should contain only Price(BigDecimal(225))
       }
     }
 
-    "update auction status" in withRollback {
+    "listExpired returns open auctions whose end time has passed" in withRollback {
+      val seller  = TestData.user()
+      val now     = Instant.now()
+      val expired = TestData.auction(sellerId = seller.id, status = AuctionStatus.Open, endsAt = now.minusSeconds(60))
+      val ongoing = TestData.auction(sellerId = seller.id, status = AuctionStatus.Open, endsAt = now.plusSeconds(3600))
+      val closed  = TestData.auction(sellerId = seller.id, status = AuctionStatus.Closed, endsAt = now.minusSeconds(60))
+      for {
+        _      <- userRepo.create(seller, Instant.now())
+        _      <- auctionRepo.save(expired)
+        _      <- auctionRepo.save(ongoing)
+        _      <- auctionRepo.save(closed)
+        result <- auctionRepo.listExpired(now)
+      } yield {
+        result should contain only expired.id
+      }
+    }
+
+    "update applies the transformation and persists it" in withRollback {
       val (seller, auction) = createAuctionWithSeller()
       for {
         _       <- userRepo.create(seller, Instant.now())
         _       <- auctionRepo.save(auction)
-        _       <- auctionRepo.update(auction.copy(status = AuctionStatus.Closed))
+        result  <- auctionRepo.update[Nothing](auction.id, a => Right(a.copy(status = AuctionStatus.Closed)))
         updated <- auctionRepo.find(auction.id)
       } yield {
-        updated shouldBe defined
+        result.flatMap(_.toOption).map(_.status) shouldBe Some(AuctionStatus.Closed)
         updated.get.status shouldBe AuctionStatus.Closed
       }
+    }
+
+    "update returns Some(Left(e)) when the transformation rejects, leaving the row untouched" in withRollback {
+      val (seller, auction) = createAuctionWithSeller()
+      case object Rejected
+      for {
+        _      <- userRepo.create(seller, Instant.now())
+        _      <- auctionRepo.save(auction)
+        result <- auctionRepo.update[Rejected.type](auction.id, _ => Left(Rejected))
+        found  <- auctionRepo.find(auction.id)
+      } yield {
+        result shouldBe Some(Left(Rejected))
+        found.get.status shouldBe AuctionStatus.Open
+      }
+    }
+
+    "update returns None for a non-existent auction" in withRollback {
+      val missingId = TestData.randomAuctionId()
+      auctionRepo.update[Nothing](missingId, a => Right(a)).map(_ shouldBe None)
     }
 
     "soft delete hides auction from find" in withRollback {
@@ -124,17 +160,17 @@ class AuctionRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matchers
         _     <- auctionRepo.save(auction)
         found <- auctionRepo.find(auction.id)
       } yield {
-        val row = found.get
-        row.wineName shouldBe WineName("Romanée-Conti")
-        row.vintage shouldBe Some(Vintage(1945))
-        row.color shouldBe WineColor.Red
-        row.region shouldBe Region("Bourgogne")
-        row.appellation shouldBe Appellation("Vosne-Romanée")
-        row.producerName shouldBe ProducerName("Domaine de la Romanée-Conti")
-        row.bottleSize shouldBe BottleSize.Magnum
-        row.bottleCount shouldBe BottleCount(3)
-        row.description shouldBe None
-        row.startingPrice shouldBe Price(BigDecimal(25000.50))
+        val saved = found.get
+        saved.wineName shouldBe WineName("Romanée-Conti")
+        saved.vintage shouldBe Some(Vintage(1945))
+        saved.color shouldBe WineColor.Red
+        saved.region shouldBe Region("Bourgogne")
+        saved.appellation shouldBe Appellation("Vosne-Romanée")
+        saved.producerName shouldBe ProducerName("Domaine de la Romanée-Conti")
+        saved.bottleSize shouldBe BottleSize.Magnum
+        saved.bottleCount shouldBe BottleCount(3)
+        saved.description shouldBe None
+        saved.startingPrice shouldBe Price(BigDecimal(25000.50))
       }
     }
   }

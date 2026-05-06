@@ -10,7 +10,7 @@ import skunk.codec.all.*
 
 import java.time.Instant
 
-case class UserAuthRow(
+private[repositories] case class UserAuthRow(
   id: UserAuthId,
   userId: UserId,
   provider: Provider,
@@ -26,7 +26,7 @@ case class UserAuthRow(
   }
 }
 
-object UserAuthRow {
+private[repositories] object UserAuthRow {
   def apply(userAuth: UserAuth, now: Instant): UserAuthRow = {
     import io.scalaland.chimney.dsl.*
     userAuth
@@ -38,7 +38,7 @@ object UserAuthRow {
   }
 }
 
-object UserAuthRowTable
+private[repositories] object UserAuthRowTable
     extends Table[UserAuthRow]("user_auth")
     with IdTable[UserAuthRow, UserAuthId]
     with SoftDeleteTable
@@ -59,7 +59,7 @@ object UserAuthRowTable
     (id, userId, provider, providerUserId, credential, metadata, createdAt, updatedAt, deletedAt)
 }
 
-case class UserAuthRowFilter(
+private[repositories] case class UserAuthRowFilter(
   id: SqlPredicate[UserAuthId] = p.any,
   userId: SqlPredicate[UserId] = p.any,
   provider: SqlPredicate[Provider] = p.any,

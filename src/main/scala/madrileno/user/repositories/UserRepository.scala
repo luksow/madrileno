@@ -9,7 +9,7 @@ import skunk.codec.all.*
 import java.net.URI
 import java.time.Instant
 
-case class UserRow(
+private[repositories] case class UserRow(
   id: UserId,
   fullName: Option[FullName],
   emailAddress: Option[EmailAddress],
@@ -30,7 +30,7 @@ case class UserRow(
   }
 }
 
-object UserRow {
+private[repositories] object UserRow {
   def apply(user: User, now: Instant): UserRow = {
     import io.scalaland.chimney.dsl.*
     user
@@ -42,7 +42,7 @@ object UserRow {
   }
 }
 
-object UserRowTable extends Table[UserRow]("\"user\"") with IdTable[UserRow, UserId] with SoftDeleteTable {
+private[repositories] object UserRowTable extends Table[UserRow]("\"user\"") with IdTable[UserRow, UserId] with SoftDeleteTable {
   override val id: Column[UserId]                 = column("id", uuid.as[UserId])
   val fullName: Column[Option[FullName]]          = column("full_name", text.as[FullName].opt)
   val emailAddress: Column[Option[EmailAddress]]  = column("email", text.as[EmailAddress].opt)
@@ -57,7 +57,7 @@ object UserRowTable extends Table[UserRow]("\"user\"") with IdTable[UserRow, Use
     (id, fullName, emailAddress, emailVerified, avatarUrl, createdAt, updatedAt, deletedAt, blockedAt)
 }
 
-case class UserRowFilter(
+private[repositories] case class UserRowFilter(
   id: SqlPredicate[UserId] = p.any,
   emailAddress: SqlPredicate[Option[EmailAddress]] = p.any,
   emailVerified: SqlPredicate[Boolean] = p.any,

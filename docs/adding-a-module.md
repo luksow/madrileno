@@ -11,7 +11,7 @@ Every module has the same shape. When you're done, yours will too:
 ```
 src/main/scala/madrileno/<module>/
   domain/        # aggregates, opaque types, enums, domain errors, smart constructors
-  repositories/  # Row + RowTable + RowFilter + Repository
+  repositories/  # Row + RowTable + RowFilter (all `private[repositories]`) + Repository
   services/      # use cases, commands, results, recurring tasks
   routers/       # http4s-stir routes
   routers/dto/   # request/response DTOs
@@ -154,15 +154,16 @@ Write **`ProductDomainSpec`** next — pure, fast, covers every opaque type's `v
 ```scala
 package madrileno.product.repositories
 
+import cats.effect.IO
 import madrileno.product.domain.*
 import madrileno.utils.db.dsl.*
-import madrileno.utils.db.transactor.DB
+import madrileno.utils.db.transactor.{DB, DBInTransaction}
 import skunk.*
 import skunk.codec.all.*
 
 import java.time.Instant
 
-case class ProductRow(
+private[repositories] case class ProductRow(
   id: ProductId,
   name: ProductName,
   price: Price,
@@ -175,14 +176,14 @@ case class ProductRow(
   }
 }
 
-object ProductRow {
+private[repositories] object ProductRow {
   def apply(product: Product): ProductRow = {
     import io.scalaland.chimney.dsl.*
     product.into[ProductRow].transform
   }
 }
 
-object ProductRowTable
+private[repositories] object ProductRowTable
     extends Table[ProductRow]("product")
     with IdTable[ProductRow, ProductId]
     with SoftDeleteTable {
@@ -196,12 +197,13 @@ object ProductRowTable
   def mapping: (List[Column[?]], Codec[ProductRow]) = (id, name, price, createdAt, updatedAt, deletedAt)
 }
 
-case class ProductRowFilter(
+private[repositories] case class ProductRowFilter(
   id: SqlPredicate[ProductId] = p.any,
+  name: SqlPredicate[ProductName] = p.any,
   deletedAt: SqlPredicate[Instant] = p.isNull)
     extends SqlFilter {
   override def filterFragment: AppliedFragment =
-    SqlFilterDerivation.filterFragment(this, (ProductRowTable.id, ProductRowTable.deletedAt))
+    SqlFilterDerivation.filterFragment(this, (ProductRowTable.id, ProductRowTable.name, ProductRowTable.deletedAt))
 }
 
 class ProductRepository {
@@ -211,14 +213,26 @@ class ProductRepository {
   def find(id: ProductId): DB[Option[Product]] =
     repository.findById(id).map(_.map(_.toProduct))
 
-  def list(filter: ProductRowFilter): DB[List[Product]] =
+  def list(name: Option[ProductName]): DB[List[Product]] = {
+    val filter = ProductRowFilter(name = name.fold(p.any[ProductName])(p.equal))
     repository.findByFilter(filter).map(_.map(_.toProduct))
+  }
 
-  def update(product: Product): DB[Unit] =
-    repository.update(ProductRow(product))
+  def update[E](id: ProductId, f: Product => Either[E, Product]): DBInTransaction[Option[Either[E, Product]]] =
+    repository.findById(id, Lock.ForUpdate).map(_.map(_.toProduct)).flatMap {
+      case None          => IO.pure(None)
+      case Some(product) =>
+        f(product) match {
+          case Left(e)        => IO.pure(Some(Left(e)))
+          case Right(updated) => persist(updated).as(Some(Right(updated)))
+        }
+    }
 
   def softDelete(id: ProductId, now: Instant): DB[Unit] =
     repository.softDeleteById(id, now)
+
+  private def persist(product: Product): DB[Unit] =
+    repository.update(ProductRow(product))
 
   private val repository: IdRepository[ProductRow, ProductId]
     & SoftDeleteRepository[ProductRow, ProductId]
@@ -231,13 +245,17 @@ class ProductRepository {
 }
 ```
 
-Three things to notice:
+Things to notice:
 
-- **`Row` is a separate type from `Product`**. Chimney makes the round-trip free. The separation matters when the domain evolves (e.g. you add a computed field) — the row stays a faithful mirror of the DB.
+- **`Row` is a separate type from `Product`, and it stays inside the repo.** Chimney makes the round-trip free. `Row`, `RowTable`, `RowFilter`, and `Row.apply` are all `private[repositories]` — the compiler enforces that they never leak. Public methods take and return domain types only; the conversion happens internally.
+- **Why two types if they share fields?** Today `Product` and `ProductRow` carry the same fields — chimney's transform is identity-shaped. The split exists for *boundary discipline*: the compiler tracks where each type lives, so an `AuctionRow` can never accidentally land where a service expects an `Auction`. It also gives the domain and the schema room to evolve independently — a future computed field on `Product`, or a column rename in storage, doesn't force the other side to follow.
+- **`private[repositories]` rather than `private`.** Package-private (not class-private) so the repo's own spec — which lives in the same package — can poke `Row` directly when a test really needs to (rare, but the escape hatch exists). Code outside the package can never see it.
 - **No `Clock[IO]` at the repo.** `softDelete(id, now)` takes `now` from the caller. The service is the sole clock reader in the stack. This makes repos pure persistence adapters.
-- **`deletedAt = p.isNull` is the default.** `ProductRowFilter()` excludes soft-deleted rows. You have to opt in with `deletedAt = p.any` to see them, which almost never happens outside admin tooling.
+- **Public list/find methods get typed signatures, not raw filters.** When users can compose a query (e.g. by name for products, or status + seller for an auction list), the public method takes those exact arguments — `def list(name: Option[ProductName])` — and constructs the `RowFilter` internally. `RowFilter` stays a private mechanism. This keeps the repo API speaking the domain's vocabulary instead of SQL predicates, and means `deletedAt = p.isNull` (the safe-by-default for soft-deleted rows) can never accidentally be turned off by a caller.
+- **Naming convention: `find` returns `Option`, `list` returns `List`.** Consistent across the codebase. A method that returns at most one thing is a `find`; a method that returns zero-or-more is a `list`.
+- **Modify paths go through `update(id, f)`, not `find → modify → save`.** The callback variant locks the row (`SELECT ... FOR UPDATE`), applies the transformation, and persists in one transaction — there's no possibility of a lost-update race because the unsafe pattern can't be expressed (the persisting overload is `private`). The callback also handles the rejection-vs-not-found distinction in the return type. Read-only lookups still use `find`; locking-without-modifying (e.g. read-side serialization across two tables) uses `findForUpdate` if you need it — see `AuctionRepository` for that pattern.
 
-Write **`ProductRepositorySpec`** with `extends AsyncWordSpec with AsyncIOSpec with Matchers with TestTransactor`. Use `withRollback { ... }` around each test body — it gives you test isolation without truncate. Cover: save + find, list with filter, soft-delete hides rows, round-trip preserves all fields.
+Write **`ProductRepositorySpec`** with `extends AsyncWordSpec with AsyncIOSpec with Matchers with TestTransactor`. Use `withRollback { ... }` around each test body — it gives you test isolation without truncate. Cover: save + find, list returns saved products, soft-delete hides rows, round-trip preserves all fields. (The spec lives in the same `repositories` package as the repo, so it can still see `private[repositories]` types if you need to assert on the row directly — but prefer asserting on the domain types returned by the public methods.)
 
 ## Step 4 — Service
 
@@ -249,7 +267,7 @@ package madrileno.product.services
 import cats.effect.std.UUIDGen
 import cats.effect.{Clock, IO}
 import madrileno.product.domain.*
-import madrileno.product.repositories.{ProductRepository, ProductRowFilter}
+import madrileno.product.repositories.ProductRepository
 import madrileno.utils.crypto.IdGenerator
 import madrileno.utils.db.transactor.Transactor
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
@@ -279,36 +297,30 @@ class ProductService(
   def getProduct(id: ProductId): IO[Option[Product]] =
     transactor.inSession { productRepository.find(id) }
 
-  def listProducts: IO[List[Product]] =
-    transactor.inSession { productRepository.list(ProductRowFilter()) }
+  def listProducts(name: Option[ProductName]): IO[List[Product]] =
+    transactor.inSession { productRepository.list(name) }
 
   def renameProduct(command: RenameProductCommand): IO[RenameProductResult] = {
     transactor.inTransaction {
-      (for {
-        product <- productRepository.find(command.id).valueOr[RenameProductResult](RenameProductResult.NotFound)
-        now     <- Clock[IO].realTimeInstant.seal
-        renamed <- product
-                     .rename(command.newName, now)
-                     .left
-                     .map { case RenameRejection.NameUnchanged => RenameProductResult.NameUnchanged }
-                     .rethrow[IO]
-        _ <- productRepository.update(renamed).seal
-      } yield RenameProductResult.Renamed).run
+      Clock[IO].realTimeInstant.flatMap { now =>
+        productRepository.update(command.id, _.rename(command.newName, now)).map {
+          case None                                       => RenameProductResult.NotFound
+          case Some(Left(RenameRejection.NameUnchanged))  => RenameProductResult.NameUnchanged
+          case Some(Right(_))                             => RenameProductResult.Renamed
+        }
+      }
     }
   }
 
   def repriceProduct(command: RepriceProductCommand): IO[RepriceProductResult] = {
     transactor.inTransaction {
-      (for {
-        product <- productRepository.find(command.id).valueOr[RepriceProductResult](RepriceProductResult.NotFound)
-        now     <- Clock[IO].realTimeInstant.seal
-        updated <- product
-                     .reprice(command.newPrice, now)
-                     .left
-                     .map { case RepriceRejection.PriceUnchanged => RepriceProductResult.PriceUnchanged }
-                     .rethrow[IO]
-        _ <- productRepository.update(updated).seal
-      } yield RepriceProductResult.Repriced).run
+      Clock[IO].realTimeInstant.flatMap { now =>
+        productRepository.update(command.id, _.reprice(command.newPrice, now)).map {
+          case None                                          => RepriceProductResult.NotFound
+          case Some(Left(RepriceRejection.PriceUnchanged))   => RepriceProductResult.PriceUnchanged
+          case Some(Right(_))                                => RepriceProductResult.Repriced
+        }
+      }
     }
   }
 
@@ -396,9 +408,9 @@ import pl.iterators.stir.server.Route
 class ProductRouter(productService: ProductService)(using TelemetryContext) extends BaseRouter {
 
   val routes: Route = {
-    (get & path("products") & pathEndOrSingleSlash) {
+    (get & path("products") & parameter("name".as[ProductName].?) & pathEndOrSingleSlash) { name =>
       complete {
-        productService.listProducts.map[ToResponseMarshallable] { products =>
+        productService.listProducts(name).map[ToResponseMarshallable] { products =>
           Ok -> products.map(ProductDto(_))
         }
       }
@@ -961,7 +973,7 @@ Run tests as you go — each layer locks in what's below it.
 
 **Scheduled tasks that process many rows should lock and commit per row.** One batch transaction across N rows means one bad row rolls the rest back. Wrap each `closeOne(...).attempt` and log on failure so a bad row doesn't block the batch.
 
-**Default filter values save you.** `deletedAt = p.isNull` on row filters means you get safe-by-default queries. Changing this default (e.g. for a new filter field) needs care.
+**Default filter values save you, and `private[repositories]` enforces it.** `deletedAt = p.isNull` on row filters means safe-by-default queries; making `RowFilter` repo-private means a caller can't override that default by accident. When you want to expose filtering to a list endpoint, give the repo method typed args (`status: Option[Status]`, etc.) and translate them into the row filter inside the repo.
 
 ## The result
 
@@ -991,9 +1003,13 @@ Skim this list. Each item is something a reviewer (human or Copilot) has flagged
 
 **Repository**
 - [ ] No `Clock[IO]` — all mutating methods take `now: Instant`
+- [ ] `Row`, `RowTable`, `RowFilter`, `Row.apply` are all `private[repositories]`
+- [ ] Public methods take and return domain types — no `Row` or `RowFilter` at the boundary
+- [ ] Public list/find methods use typed args (e.g. `status: Option[Status]`); the repo builds the `RowFilter` internally
 - [ ] `RowFilter` defaults exclude soft-deleted rows (`deletedAt = p.isNull`)
+- [ ] Modify paths go through `update(id, f: Aggregate => Either[E, Aggregate])`; the persisting overload is `private`
+- [ ] Naming: `find` returns `Option`, `list` returns `List`
 - [ ] Any custom raw-SQL query has a matching index in the migration
-- [ ] Repository returns domain types at the boundary; `Row` stays internal
 
 **Service**
 - [ ] Reads use `transactor.inSession`; writes that combine a read + mutate use `inTransaction`
