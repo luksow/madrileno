@@ -10,6 +10,7 @@ import madrileno.auth.services.{ExternalAuthVerifier, JwtService}
 import madrileno.main.ApplicationLoader
 import madrileno.utils.db.transactor.{PgConfig, PgTransactor}
 import madrileno.utils.events.EventBusRuntime
+import madrileno.utils.mailer.MailerConfig
 import madrileno.utils.observability.TelemetryContext
 import madrileno.utils.task.{Scheduler, SchedulerConfig}
 import org.flywaydb.core.Flyway
@@ -58,6 +59,8 @@ trait TestApplicationLoader extends TestContainersForAll with TestMailpit { self
       override protected lazy val externalAuthVerifier: ExternalAuthVerifier =
         FakeAuthVerifier(firebaseToken)
       override protected lazy val vivinoGateway: VivinoGateway = (_, _) => IO.pure(None)
+      override protected lazy val mailerConfig: MailerConfig =
+        MailerConfig(host = mailpitHost, port = mailpitSmtpPort, fromAddress = "test@example.com", tls = false)
     }
   }
 

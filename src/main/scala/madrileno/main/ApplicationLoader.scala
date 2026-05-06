@@ -3,6 +3,7 @@ package madrileno.main
 import cats.effect.{Clock, IO}
 import com.comcast.ip4s.{Ipv4Address, Port}
 import com.typesafe.config.ConfigFactory
+import madrileno.admin.AdminModule
 import madrileno.auction.AuctionModule
 import madrileno.auth.AuthModule
 import madrileno.healthcheck.HealthCheckModule
@@ -19,7 +20,7 @@ import org.http4s.server.websocket.WebSocketBuilder2
 import org.http4s.{Headers, HttpRoutes, Response, Status}
 import org.typelevel.otel4s.Attribute
 import pl.iterators.baklava.http4s.routes.BaklavaRoutes
-import pl.iterators.stir.server.directives.RouteDirectives
+import pl.iterators.stir.server.directives.{CredentialsHelper, RouteDirectives}
 import pl.iterators.stir.server.{PathMatcher, Route}
 import pureconfig.*
 import pureconfig.module.ip4s.*
@@ -42,6 +43,7 @@ final case class AppConfig(
   version: String,
   apiVersion: String)
     derives ConfigReader
+final case class AdminConfig(user: String, password: String) derives ConfigReader
 
 class ApplicationLoader(
   val config: ConfigSource,
@@ -60,15 +62,17 @@ class ApplicationLoader(
     with AuthModule
     with UserModule
     with AuctionModule
-    with HealthCheckModule {
+    with HealthCheckModule
+    with AdminModule {
   lazy val httpConfig: HttpConfig             = config.at("http").loadOrThrow[HttpConfig]
   lazy val appConfig: AppConfig               = config.at("app").loadOrThrow[AppConfig]
+  lazy val adminConfig: AdminConfig           = config.at("admin").loadOrThrow[AdminConfig]
   lazy val telemetryContext: TelemetryContext = summon[TelemetryContext]
   lazy val mailContext: MailContext           = MailContext(httpConfig.baseUrl)
 
-  private lazy val mailerConfig: MailerConfig = config.at("mailer").loadOrThrow[MailerConfig]
-  private lazy val smtpSender                 = new SmtpSender(mailerConfig)
-  lazy val mailer: Mailer                     = new Mailer(smtpSender, schedulerClient, mailContext)
+  protected lazy val mailerConfig: MailerConfig = config.at("mailer").loadOrThrow[MailerConfig]
+  private lazy val smtpSender                   = new SmtpSender(mailerConfig)
+  lazy val mailer: Mailer                       = new Mailer(smtpSender, schedulerClient, mailContext)
 
   private lazy val baklavaHttpRoutes: HttpRoutes[IO] = BaklavaRoutes.routes(ConfigFactory.load())
   private val baklavaPathSegments: Set[String]       = Set("openapi", "swagger", "swagger-ui", "docs")
@@ -76,6 +80,17 @@ class ApplicationLoader(
   lazy val baklavaDocs: Route = httpRoutesOf {
     case req if baklavaPathSegments.contains(req.uri.path.segments.headOption.fold("")(_.encoded)) =>
       baklavaHttpRoutes.run(req).getOrElseF(IO.pure(Response[IO](Status.NotFound)))
+  }
+
+  private val adminAuthenticator: CredentialsHelper => Option[Unit] = {
+    case p @ CredentialsHelper.Provided(id) if id == adminConfig.user && p.verify(adminConfig.password) => Some(())
+    case _                                                                                              => None
+  }
+
+  lazy val adminRoutes: Route = pathPrefix("admin") {
+    authenticateBasic(realm = "madrileno-admin", authenticator = adminAuthenticator) { _ =>
+      adminRoute
+    }
   }
 
   override def oneTimeTasks: List[OneTimeTask[?]] = super.oneTimeTasks :+ mailer.sendMailTask
@@ -146,8 +161,8 @@ class ApplicationLoader(
                     }
                   }
                 }
-            } ~ (if (appConfig.environment == "dev") new MailPreviewRouter(mailPreviews, mailContext).routes ~ baklavaDocs
-                 else RouteDirectives.reject)
+            } ~ adminRoutes ~ (if (appConfig.environment == "dev") new MailPreviewRouter(mailPreviews, mailContext).routes ~ baklavaDocs
+                               else RouteDirectives.reject)
           }
         }
       }
@@ -181,8 +196,8 @@ class ApplicationLoader(
                     }
                   }
                 }
-            } ~ (if (appConfig.environment == "dev") new MailPreviewRouter(mailPreviews, mailContext).routes ~ baklavaDocs
-                 else RouteDirectives.reject)
+            } ~ adminRoutes ~ (if (appConfig.environment == "dev") new MailPreviewRouter(mailPreviews, mailContext).routes ~ baklavaDocs
+                               else RouteDirectives.reject)
           }
         }
       }

@@ -1,0 +1,21 @@
+package madrileno.admin.routers.dto
+
+import madrileno.utils.json.JsonProtocol.*
+
+enum DepStatus derives Encoder, Decoder {
+  case Up, Down
+}
+
+final case class DepCheck(
+  status: DepStatus,
+  latencyMs: Option[Long],
+  error: Option[String])
+    derives Encoder.AsObject,
+      Decoder
+
+final case class AdminHealthCheckDto(
+  status: DepStatus,
+  postgres: DepCheck,
+  smtp: DepCheck)
+    derives Encoder.AsObject,
+      Decoder
