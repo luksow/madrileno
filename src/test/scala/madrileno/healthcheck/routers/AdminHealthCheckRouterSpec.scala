@@ -11,7 +11,7 @@ import pl.iterators.baklava.{HttpBasic, SecurityScheme}
 import pl.iterators.stir.server.Route
 
 class AdminHealthCheckRouterSpec extends BaseRouteSpec with TestApplicationLoader {
-  override def route: Route = application.routes
+  override def route: Route = application.routes(wsb)
 
   // Defaults from application.conf — the test loader doesn't override them.
   private val basic       = HttpBasic()

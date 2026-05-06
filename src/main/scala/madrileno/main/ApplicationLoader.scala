@@ -165,39 +165,4 @@ class ApplicationLoader(
         }
       }
     }
-
-  def routes: Route =
-    onSuccess(telemetryContext.tracer.propagate(Map.empty)) { initialCtx =>
-      logRequest(logAction = Some(logAction(initialCtx))) {
-        handleExceptions(exceptionHandler(logResult(logAction = Some(logAction(initialCtx))))) {
-          handleRejections(rejectionHandler(logResult(logAction = Some(logAction(initialCtx))))) {
-            rawPathPrefix(pathPrefixMatcher) {
-              authenticateOrRejectWithChallenge(userAuthenticator) { auth =>
-                handleExceptions(exceptionHandler(logResult(logAction = Some(logAction(initialCtx))))) {
-                  handleRejections(rejectionHandler(logResult(logAction = Some(logAction(initialCtx))))) {
-                    onSuccess(telemetryContext.tracer.currentSpanOrNoop.flatMap(_.addAttribute(Attribute("app.user.id", auth.userId.toString)))) {
-                      logResult(logAction = Some(logAction(initialCtx))) {
-                        onSuccess(telemetryContext.tracer.propagate(Headers.empty)) { newHeaders =>
-                          mapResponseHeaders(_ ++ newHeaders) {
-                            route(auth) ~ route
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              } ~
-                logResult(logAction = Some(logAction(initialCtx))) {
-                  onSuccess(telemetryContext.tracer.propagate(Headers.empty)) { newHeaders =>
-                    mapResponseHeaders(_ ++ newHeaders) {
-                      route
-                    }
-                  }
-                }
-            } ~ adminRoutes ~ (if (appConfig.environment == "dev") new MailPreviewRouter(mailPreviews, mailContext).routes ~ baklavaDocs
-                               else RouteDirectives.reject)
-          }
-        }
-      }
-    }
 }

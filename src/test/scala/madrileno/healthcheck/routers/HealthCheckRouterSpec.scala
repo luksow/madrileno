@@ -8,7 +8,7 @@ import org.http4s.circe.CirceEntityCodec.*
 import pl.iterators.stir.server.Route
 
 class HealthCheckRouterSpec extends BaseRouteSpec with TestApplicationLoader {
-  override def route: Route = application.routes
+  override def route: Route = application.routes(wsb)
 
   path("/v1/health-check")(
     supports(GET, description = "Liveness probe — does not touch dependencies", summary = "Returns app metadata", tags = Seq("Health Check"))(

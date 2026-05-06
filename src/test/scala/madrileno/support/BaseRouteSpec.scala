@@ -3,6 +3,7 @@ package madrileno.support
 import cats.effect.IO
 import cats.effect.unsafe.IORuntime
 import madrileno.utils.http.Error
+import org.http4s.server.websocket.WebSocketBuilder2
 import org.http4s.{HttpRoutes, Request}
 import org.scalatest.funspec.AnyFunSpec
 import org.scalatest.matchers.should.Matchers
@@ -32,6 +33,8 @@ trait BaseRouteSpec
   lazy val allRoutes: HttpRoutes[IO] = route.toHttpRoutes
 
   override implicit val runtime: IORuntime = IORuntime.global
+
+  protected val wsb: WebSocketBuilder2[IO] = WebSocketBuilder2[IO].unsafeRunSync()
 
   override def strictHeaderCheckDefault: Boolean = false
 

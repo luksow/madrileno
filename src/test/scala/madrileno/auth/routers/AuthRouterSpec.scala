@@ -18,7 +18,7 @@ import java.util.UUID
 
 class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
 
-  override def route: Route = application.routes
+  override def route: Route = application.routes(wsb)
 
   private def seedFirebaseUser(blockedAt: Option[Instant] = None): UserId = {
     val userAuthRepository = new UserAuthRepository()
