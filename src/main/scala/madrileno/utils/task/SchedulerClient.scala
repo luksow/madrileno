@@ -12,4 +12,7 @@ class SchedulerClient private[task] (repository: ClientSchedulerRepository, tran
 
   def scheduleTransactionally[A](task: Task[A]): DBInTransaction[Boolean] =
     repository.save(task)
+
+  private[task] def listTasks: IO[List[TaskRow]] =
+    transactor.inSession(repository.listAll)
 }

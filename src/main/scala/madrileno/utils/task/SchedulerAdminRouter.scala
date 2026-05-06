@@ -1,14 +1,11 @@
 package madrileno.utils.task
 
 import cats.effect.IO
-import madrileno.utils.db.transactor.{DB, Transactor}
 import madrileno.utils.http.BaseRouter
 import org.http4s.headers.`Content-Type`
 import org.http4s.{EntityEncoder, MediaType, Response}
 import pl.iterators.stir.server.Route
 import scalatags.Text.TypedTag
-import skunk.Session
-import skunk.implicits.*
 
 import java.time.Instant
 
@@ -16,22 +13,16 @@ class SchedulerAdminRouter(
   recurringTasks: List[Task[?]],
   oneTimeTasks: List[OneTimeTask[?]],
   customTasks: List[CustomTask[?]],
-  transactor: Transactor)
+  schedulerClient: SchedulerClient)
     extends BaseRouter {
 
   val routes: Route = (get & path("jobs") & pathEndOrSingleSlash) {
     complete {
-      transactor.inSession(allRows).map { taskRows =>
+      schedulerClient.listTasks.map { taskRows =>
         Response[IO]()
           .withEntity(jobsPage(taskRows))(using EntityEncoder.stringEncoder[IO].withContentType(`Content-Type`(MediaType.text.html)))
       }
     }
-  }
-
-  private def allRows: DB[List[TaskRow]] = {
-    val table = TaskRowTable
-    val q     = sql"""SELECT ${table.*} FROM ${table.n}""".query(table.c)
-    summon[Session[IO]].execute(q)
   }
 
   private def jobsPage(taskRows: List[TaskRow]): String = {
@@ -50,14 +41,30 @@ class SchedulerAdminRouter(
     html(
       stHead(meta(charset := "UTF-8"), title("Jobs")),
       body(style := "font-family:system-ui,sans-serif;max-width:1100px;margin:24px auto;padding:0 16px;color:#222")(
-        h1(style := "margin:0 0 4px 0")("Jobs"),
-        p(style := "color:#666;margin:0 0 24px 0;font-size:13px")("Read-only view of the scheduler. Times are UTC."),
+        h1(style := "margin:0 0 24px 0")("Jobs"),
         recurringSection(recurringEntries),
         runningSection(running),
         failingSection(failing),
-        if (orphaned.nonEmpty) orphanedSection(orphaned) else emptyFrag
+        if (orphaned.nonEmpty) orphanedSection(orphaned) else emptyFrag,
+        registeredTypesSection()
       )
     ).render
+  }
+
+  private def registeredTypesSection(): TypedTag[String] = {
+    import scalatags.Text.all.*
+    val recurringNames = recurringTasks.map(t => s"${t.descriptor.taskName} (${renderSchedule(t.schedule)})").sorted
+    val oneTimeNames   = oneTimeTasks.map(_.descriptor.taskName).sorted
+    val customNames    = customTasks.map(_.descriptor.taskName).sorted
+    div(
+      h2("Registered task types"),
+      sectionTable(
+        List("Kind", "Name"),
+        recurringNames.map(n => List("recurring", n)) ++
+          oneTimeNames.map(n => List("one-time", n)) ++
+          customNames.map(n => List("custom", n))
+      )
+    )
   }
 
   private def recurringSection(entries: List[(Task[?], Option[TaskRow])]): TypedTag[String] = {

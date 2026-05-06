@@ -20,6 +20,8 @@ class SchedulerAdminRouterSpec extends BaseRouteSpec with TestApplicationLoader 
       val body = response.bodyText.compile.string.unsafeRunSync()
       body should include("close-expired-auctions")
       body should include("Recurring tasks")
+      body should include("Registered task types")
+      body should include("send-mail")
     }
 
     it("rejects requests without credentials with 401") {
