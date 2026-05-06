@@ -107,6 +107,11 @@ private[task] class ClientSchedulerRepository(using clock: Clock[IO]) {
     }
   }
 
+  def list: DB[List[TaskRow]] = {
+    val q = sql"""SELECT ${table.*} FROM ${table.n}""".query(table.c)
+    summon[Session[IO]].execute(q)
+  }
+
   protected val table = TaskRowTable
 }
 
