@@ -48,16 +48,13 @@ class RateLimitDirectivesSpec extends AnyFunSpec with Matchers {
     }
 
     it("isolates buckets by discriminator key") {
-      // Different X-Client headers → different buckets, independent counters.
       val rl = RateLimiterRuntime.caffeine().rateLimiter
-      val byClientHeader: Request[IO] => String =
-        req => req.headers.get(CIString("X-Client")).map(_.head.value).getOrElse("unknown")
       val withKey: String => Route = clientId => {
         val router = new BaseRouter with RateLimitDirectives {
           override protected val rateLimiter: RateLimiter = rl
         }
         import router.*
-        rateLimited("isolated", RateLimit(to = 1, within = 1.minute), by = byClientHeader) {
+        rateLimited("isolated", RateLimit(to = 1, within = 1.minute), by = byHeader("X-Client")) {
           (get & path("hello") & pathEndOrSingleSlash) { complete(router.Ok -> clientId) }
         }
       }
@@ -65,6 +62,46 @@ class RateLimitDirectivesSpec extends AnyFunSpec with Matchers {
       hit(withKey("a"), Some("X-Client" -> "a")).status shouldBe Status.Ok
       hit(withKey("a"), Some("X-Client" -> "a")).status shouldBe Status.TooManyRequests
       hit(withKey("b"), Some("X-Client" -> "b")).status shouldBe Status.Ok
+    }
+
+    it("does not increment the counter for branches that don't match the method/path") {
+      val rl            = RateLimiterRuntime.caffeine().rateLimiter
+      val routes: Route = {
+        val router = new BaseRouter with RateLimitDirectives {
+          override protected val rateLimiter: RateLimiter = rl
+        }
+        import router.*
+        (get & path("hello") & pathEndOrSingleSlash & rateLimited("get-bucket", RateLimit(to = 1, within = 1.minute))) {
+          complete(router.Ok -> "got")
+        } ~
+          (post & path("hello") & pathEndOrSingleSlash & rateLimited("post-bucket", RateLimit(to = 1, within = 1.minute))) {
+            complete(router.Created -> "posted")
+          }
+      }
+
+      (1 to 100).foreach { _ =>
+        val req = Request[IO](Method.POST, Uri.unsafeFromString("/hello"))
+        routes.toHttpRoutes.orNotFound.run(req).unsafeRunSync()
+      }
+      val getResp = routes.toHttpRoutes.orNotFound.run(Request[IO](Method.GET, Uri.unsafeFromString("/hello"))).unsafeRunSync()
+      getResp.status shouldBe Status.Ok
+    }
+
+    it("byClientIp prefers X-Forwarded-For over the socket address") {
+      val rl            = RateLimiterRuntime.caffeine().rateLimiter
+      val routes: Route = {
+        val router = new BaseRouter with RateLimitDirectives {
+          override protected val rateLimiter: RateLimiter = rl
+        }
+        import router.*
+        (get & path("hello") & pathEndOrSingleSlash & rateLimited("xff", RateLimit(to = 1, within = 1.minute), by = byClientIp)) {
+          complete(router.Ok -> "ok")
+        }
+      }
+
+      hit(routes, Some("X-Forwarded-For" -> "1.2.3.4")).status shouldBe Status.Ok
+      hit(routes, Some("X-Forwarded-For" -> "5.6.7.8")).status shouldBe Status.Ok
+      hit(routes, Some("X-Forwarded-For" -> "1.2.3.4")).status shouldBe Status.TooManyRequests
     }
   }
 }

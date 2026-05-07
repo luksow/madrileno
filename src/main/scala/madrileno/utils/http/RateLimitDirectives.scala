@@ -10,13 +10,20 @@ import pl.iterators.stir.server.Directive0
 trait RateLimitDirectives { self: BaseRouter =>
   protected def rateLimiter: RateLimiter
 
-  protected val byClientIp: Request[IO] => String =
-    req => req.remoteAddr.fold("unknown")(_.toString)
+  val byClientIp: Request[IO] => String = { req =>
+    def header(name: String): Option[String] = req.headers.get(CIString(name)).map(_.head.value)
+    val xff: Option[String]                  = header("X-Forwarded-For").flatMap(_.split(",").headOption.map(_.trim).filter(_.nonEmpty))
+    xff
+      .orElse(header("X-Real-Ip"))
+      .orElse(header("Remote-Address"))
+      .orElse(req.remoteAddr.map(_.toString))
+      .getOrElse("unknown")
+  }
 
-  protected def byAuthedUser(auth: AuthContext): Request[IO] => String =
+  def byAuthedUser(auth: AuthContext): Request[IO] => String =
     _ => s"user:${auth.userId}"
 
-  protected def byHeader(name: String): Request[IO] => String =
+  def byHeader(name: String): Request[IO] => String =
     req => req.headers.get(CIString(name)).map(_.head.value).getOrElse("unknown")
 
   def rateLimited(
