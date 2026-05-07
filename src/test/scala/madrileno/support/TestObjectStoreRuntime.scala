@@ -17,8 +17,8 @@ object TestObjectStoreRuntime {
           key: StorageKey,
           metadata: ObjectMetadata,
           body: Stream[IO, Byte]
-        ): IO[Unit] =
-          body.compile.to(ByteVector).flatMap(bytes => state.update(_.updated(key, metadata.contentType -> bytes)))
+        ): IO[Long] =
+          body.compile.to(ByteVector).flatMap(bytes => state.update(_.updated(key, metadata.contentType -> bytes)).as(bytes.size.toLong))
 
         override def get(
           key: StorageKey,

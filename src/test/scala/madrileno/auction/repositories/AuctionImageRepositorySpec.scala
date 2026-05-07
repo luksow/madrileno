@@ -54,17 +54,19 @@ class AuctionImageRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Mat
       }
     }
 
-    "setPosition updates the image position" in withRollback {
+    "bulkSetPositions swaps positions atomically without violating the unique index" in withRollback {
       val (seller, auction) = setup()
-      val image             = TestData.auctionImage(auctionId = auction.id, position = ImagePosition(0))
+      val img0              = TestData.auctionImage(auctionId = auction.id, position = ImagePosition(0))
+      val img1              = TestData.auctionImage(auctionId = auction.id, position = ImagePosition(1))
       for {
         _     <- userRepo.create(seller, Instant.now())
         _     <- auctionRepo.save(auction)
-        _     <- imageRepo.save(image)
-        _     <- imageRepo.setPosition(image.id, ImagePosition(5))
-        found <- imageRepo.find(image.id)
+        _     <- imageRepo.save(img0)
+        _     <- imageRepo.save(img1)
+        _     <- imageRepo.bulkSetPositions(List(img1.id -> ImagePosition(0), img0.id -> ImagePosition(1)))
+        found <- imageRepo.listByAuction(auction.id)
       } yield {
-        found.map(_.position) shouldBe Some(ImagePosition(5))
+        found.map(_.id) shouldBe List(img1.id, img0.id)
       }
     }
 

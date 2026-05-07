@@ -1,8 +1,7 @@
 package madrileno.auction.services
 
 import cats.effect.std.UUIDGen
-import cats.effect.{Clock, IO, Ref}
-import cats.syntax.all.*
+import cats.effect.{Clock, IO}
 import fs2.Stream
 import madrileno.auction.domain.*
 import madrileno.auction.repositories.{AuctionImageRepository, AuctionRepository}
@@ -37,34 +36,37 @@ class AuctionImageService(
     sizeBytesHint: Long,
     content: Stream[IO, Byte]
   ): IO[AttachImageResult] = {
-    (for {
-      _ <- transactor
-             .inSession(auctionRepository.find(auctionId))
-             .valueOr[AttachImageResult](AttachImageResult.AuctionNotFound)
-             .ensure(_.sellerId == sellerId, AttachImageResult.NotOwner)
-      id      <- IdGenerator.generateId(AuctionImageId).seal
-      now     <- Clock[IO].realTimeInstant.seal
-      counter <- Ref.of[IO, Long](0L).seal
-      key         = StorageKey(s"auctions/$auctionId/images/$id")
-      countedBody = content.chunks.evalTap(c => counter.update(_ + c.size)).unchunks
-      _          <- objectStore.put(key, ObjectMetadata(contentType, sizeBytesHint), countedBody).seal
-      actualSize <- counter.get.seal
-      image      <- persistAttached(auctionId, id, key, fileName, contentType, actualSize, now).seal
-    } yield AttachImageResult.Attached(image)).run
+    for {
+      id  <- IdGenerator.generateId(AuctionImageId)
+      now <- Clock[IO].realTimeInstant
+      key = StorageKey(s"auctions/$auctionId/images/$id")
+      actualSize <- objectStore.put(key, ObjectMetadata(contentType, sizeBytesHint), content)
+      result <- persistAttached(auctionId, sellerId, id, key, fileName, contentType, actualSize, now).attempt.flatMap {
+                  case Right(AttachImageResult.Attached(image)) => IO.pure(AttachImageResult.Attached(image))
+                  case Right(other)                             => objectStore.delete(key).attempt.as(other)
+                  case Left(t) =>
+                    objectStore.delete(key).attempt *> logger.error(t)(s"Persist failed for ${key.render}, storage cleaned up") *> IO.raiseError(t)
+                }
+    } yield result
   }
 
   private def persistAttached(
     auctionId: AuctionId,
+    sellerId: UserId,
     id: AuctionImageId,
     key: StorageKey,
     fileName: String,
     contentType: `Content-Type`,
     actualSize: Long,
     now: java.time.Instant
-  ): IO[AuctionImage] = {
-    val persist = transactor.inTransaction {
-      for {
-        pos <- auctionImageRepository.nextPosition(auctionId)
+  ): IO[AttachImageResult] = {
+    transactor.inTransaction {
+      (for {
+        _ <- auctionRepository
+               .findForUpdate(auctionId)
+               .valueOr[AttachImageResult](AttachImageResult.AuctionNotFound)
+               .ensure(_.sellerId == sellerId, AttachImageResult.NotOwner)
+        pos <- auctionImageRepository.nextPosition(auctionId).seal
         image = AuctionImage(
                   id = id,
                   auctionId = auctionId,
@@ -76,10 +78,9 @@ class AuctionImageService(
                   uploadedAt = now,
                   deletedAt = None
                 )
-        _ <- auctionImageRepository.save(image)
-      } yield image
+        _ <- auctionImageRepository.save(image).seal
+      } yield AttachImageResult.Attached(image)).run
     }
-    persist.onError(t => objectStore.delete(key).attempt *> logger.error(t)(s"Persist failed for $key, storage cleaned up"))
   }
 
   def detachImage(
@@ -125,7 +126,8 @@ class AuctionImageService(
                .pure(orderedIds)
                .seal
                .ensure(ids => ids.toSet == current.map(_.id).toSet && ids.length == current.length, ReorderImagesResult.MismatchedIds)
-        _ <- orderedIds.zipWithIndex.traverse_ { case (id, idx) => auctionImageRepository.setPosition(id, ImagePosition(idx)) }.seal
+        updates = orderedIds.zipWithIndex.map { case (id, idx) => (id, ImagePosition(idx)) }
+        _ <- auctionImageRepository.bulkSetPositions(updates).seal
       } yield ReorderImagesResult.Reordered).run
     }
   }

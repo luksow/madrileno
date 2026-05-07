@@ -16,15 +16,15 @@ class DiskObjectStore(root: FsPath) extends ObjectStore {
     key: StorageKey,
     metadata: ObjectMetadata,
     body: Stream[IO, Byte]
-  ): IO[Unit] = {
+  ): IO[Long] = {
     val target = pathFor(key)
-    Files[IO].createDirectories(target.parent.getOrElse(root)) *>
-      body.through(Files[IO].writeAll(target)).compile.drain *>
-      Stream
-        .emits(metadata.asJson.noSpaces.getBytes("UTF-8"))
-        .through(Files[IO].writeAll(metaPathFor(key)))
-        .compile
-        .drain
+    for {
+      _    <- Files[IO].createDirectories(target.parent.getOrElse(root))
+      _    <- body.through(Files[IO].writeAll(target)).compile.drain
+      size <- Files[IO].size(target)
+      written = metadata.copy(sizeBytes = size)
+      _ <- Stream.emits(written.asJson.noSpaces.getBytes("UTF-8")).through(Files[IO].writeAll(metaPathFor(key))).compile.drain
+    } yield size
   }
 
   override def get(

@@ -18,7 +18,7 @@ trait ObjectStore {
     key: StorageKey,
     metadata: ObjectMetadata,
     body: Stream[IO, Byte]
-  ): IO[Unit]
+  ): IO[Long]
   def get(
     key: StorageKey,
     ttl: SignedUrlTtl,

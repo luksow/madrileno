@@ -1,6 +1,6 @@
 package madrileno.utils.storage
 
-import cats.effect.IO
+import cats.effect.{IO, Ref}
 import fs2.Stream
 import fs2.interop.reactivestreams.*
 import org.http4s.headers.`Content-Type`
@@ -33,12 +33,15 @@ class S3ObjectStore(
     key: StorageKey,
     metadata: ObjectMetadata,
     body: Stream[IO, Byte]
-  ): IO[Unit] = {
+  ): IO[Long] = {
     val ctValue = Header[`Content-Type`].value(metadata.contentType)
-    body.chunks.map(c => ByteBuffer.wrap(c.toArray)).toUnicastPublisher.use { publisher =>
-      val builder = PutObjectRequest.builder().bucket(bucket).key(key.render).contentType(ctValue)
-      val request = if (metadata.sizeBytes > 0) builder.contentLength(metadata.sizeBytes).build() else builder.build()
-      IO.fromCompletableFuture(IO(client.putObject(request, AsyncRequestBody.fromPublisher(publisher)))).void
+    Ref.of[IO, Long](0L).flatMap { counter =>
+      val counted = body.chunks.evalTap(c => counter.update(_ + c.size))
+      counted.map(c => ByteBuffer.wrap(c.toArray)).toUnicastPublisher.use { publisher =>
+        val builder = PutObjectRequest.builder().bucket(bucket).key(key.render).contentType(ctValue)
+        val request = if (metadata.sizeBytes > 0) builder.contentLength(metadata.sizeBytes).build() else builder.build()
+        IO.fromCompletableFuture(IO(client.putObject(request, AsyncRequestBody.fromPublisher(publisher)))).void
+      } *> counter.get
     }
   }
 

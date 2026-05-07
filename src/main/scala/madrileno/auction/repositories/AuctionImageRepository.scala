@@ -1,6 +1,7 @@
 package madrileno.auction.repositories
 
 import cats.effect.IO
+import cats.syntax.all.*
 import madrileno.auction.domain.*
 import madrileno.utils.db.dsl.*
 import madrileno.utils.db.transactor.{DB, DBInTransaction}
@@ -92,15 +93,18 @@ class AuctionImageRepository {
     summon[Session[IO]].unique(query)(auctionId)
   }
 
-  def setPosition(id: AuctionImageId, position: ImagePosition): DB[Unit] = {
-    val table = AuctionImageRowTable
-    val command = sql"""UPDATE ${table.n} SET ${table.position.n} = ${table.position.c}
-                        WHERE ${table.id.n} = ${table.id.c}""".command
-    summon[Session[IO]].execute(command)((position, id)).void
-  }
-
   def softDelete(id: AuctionImageId, now: Instant): DB[Unit] =
     repository.softDeleteById(id, now)
+
+  def bulkSetPositions(updates: List[(AuctionImageId, ImagePosition)]): DBInTransaction[Unit] = {
+    val table = AuctionImageRowTable
+    val command = sql"""UPDATE ${table.n} SET ${table.position.n} = $int4
+                        WHERE ${table.id.n} = ${table.id.c}""".command
+    val session = summon[Session[IO]]
+    val phase1  = updates.zipWithIndex.traverse_ { case ((id, _), idx) => session.execute(command)((-(idx + 1), id)).void }
+    val phase2  = updates.traverse_ { case (id, pos) => session.execute(command)((pos.unwrap, id)).void }
+    phase1 >> phase2
+  }
 
   private val repository: IdRepository[AuctionImageRow, AuctionImageId] & SoftDeleteRepository[AuctionImageRow, AuctionImageId] & ForeignIdRepository[
     AuctionImageRow,
