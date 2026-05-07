@@ -8,7 +8,7 @@ import madrileno.auction.services.*
 import madrileno.auth.domain.AuthContext
 import madrileno.user.domain.UserId
 import madrileno.utils.events.EventBus
-import madrileno.utils.http.{BaseRouter, RateLimit, RateLimitDirectives, RateLimiter}
+import madrileno.utils.http.{BaseRouter, RateLimit, RateLimitDirectives, RateLimiter, RateLimiterRuntime}
 import madrileno.utils.observability.TelemetryContext
 import org.http4s.server.websocket.WebSocketBuilder2
 import org.http4s.websocket.WebSocketFrame
@@ -20,10 +20,12 @@ import scala.concurrent.duration.DurationInt
 class AuctionRouter(
   auctionService: AuctionService,
   eventBus: EventBus[AuctionEvent],
-  protected val rateLimiter: RateLimiter
+  rateLimiterRuntime: RateLimiterRuntime
 )(using TelemetryContext)
     extends BaseRouter
     with RateLimitDirectives {
+
+  override protected val rateLimiter: RateLimiter = rateLimiterRuntime.rateLimiter
 
   val routes: Route = {
     (get & path("auctions") & pathEndOrSingleSlash & rateLimited("auctions.list", RateLimit(to = 60, within = 1.minute)) &

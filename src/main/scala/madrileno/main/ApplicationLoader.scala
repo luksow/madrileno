@@ -9,7 +9,7 @@ import madrileno.user.UserModule
 import madrileno.utils.cache.CacheRuntime
 import madrileno.utils.db.transactor.Transactor
 import madrileno.utils.events.EventBusRuntime
-import madrileno.utils.http.{ApplicationRouteProvider, Handlers, RateLimiter, RateLimiterRuntime}
+import madrileno.utils.http.{ApplicationRouteProvider, Handlers, RateLimiterRuntime}
 import madrileno.utils.mailer.{MailContext, MailPreviewProvider, MailPreviewRouter, Mailer, MailerConfig, SmtpSender}
 import madrileno.utils.observability.*
 import madrileno.utils.task.{ApplicationTaskProvider, OneTimeTask, SchedulerAdminRouter, SchedulerClient}
@@ -67,7 +67,6 @@ class ApplicationLoader(
   lazy val adminConfig: AdminConfig           = config.at("admin").loadOrThrow[AdminConfig]
   lazy val telemetryContext: TelemetryContext = summon[TelemetryContext]
   lazy val mailContext: MailContext           = MailContext(httpConfig.baseUrl)
-  lazy val rateLimiter: RateLimiter           = rateLimiterRuntime.rateLimiter
 
   protected lazy val mailerConfig: MailerConfig = config.at("mailer").loadOrThrow[MailerConfig]
   private lazy val smtpSender                   = new SmtpSender(mailerConfig)

@@ -42,7 +42,7 @@ object Main extends IOApp.Simple {
       schedulerConfig <- Resource.eval(IO.delay(config.at("scheduler").loadOrThrow[SchedulerConfig]))
       scheduler          = Scheduler(transactor, schedulerConfig)
       cacheRuntime       = CacheRuntime.scaffeine
-      rateLimiterRuntime = RateLimiterRuntime.caffeine()
+      rateLimiterRuntime = RateLimiterRuntime.scaffeine()
       given Supervisor[IO] <- Supervisor[IO]
       eventBusRuntime = EventBusRuntime.postgres(transactor)
       application     = ApplicationLoader(config, httpClient, transactor, clock, scheduler.client, cacheRuntime, rateLimiterRuntime, eventBusRuntime)
