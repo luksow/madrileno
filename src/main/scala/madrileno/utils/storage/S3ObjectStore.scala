@@ -19,7 +19,9 @@ import software.amazon.awssdk.services.s3.model.{
 import software.amazon.awssdk.services.s3.presigner.S3Presigner
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest
 
+import java.net.URLEncoder
 import java.nio.ByteBuffer
+import java.nio.charset.StandardCharsets
 import java.time.Duration as JDuration
 
 final case class S3Config(
@@ -76,7 +78,9 @@ class S3ObjectStore(
     IO.fromCompletableFuture(IO(client.deleteObject(DeleteObjectRequest.builder().bucket(bucket).key(key.render).build()))).void
 
   private def contentDisposition(name: String): String = {
-    val sanitized = name.filter(c => c >= 0x20 && c != 0x7f && c != '"' && c != '\\')
-    s"""attachment; filename="$sanitized""""
+    val sanitized = name.filter(c => c >= 0x20 && c != 0x7f)
+    val asciiSafe = sanitized.filter(c => c < 0x80 && c != '"' && c != '\\')
+    val rfc5987   = URLEncoder.encode(sanitized, StandardCharsets.UTF_8).replace("+", "%20")
+    s"""attachment; filename="$asciiSafe"; filename*=UTF-8''$rfc5987"""
   }
 }

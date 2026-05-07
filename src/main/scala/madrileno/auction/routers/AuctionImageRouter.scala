@@ -84,5 +84,5 @@ class AuctionImageRouter(auctionImageService: AuctionImageService, apiPrefix: St
   }
 
   private def firstFilePart(multipart: Multipart[IO]): Option[Part[IO]] =
-    multipart.parts.find(_.filename.isDefined).orElse(multipart.parts.find(_.name.contains("file"))).orElse(multipart.parts.headOption)
+    multipart.parts.find(_.filename.isDefined).orElse(multipart.parts.find(_.name.contains("file")))
 }

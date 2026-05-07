@@ -8,6 +8,13 @@ import pl.iterators.kebs.opaque.Opaque
 
 opaque type StorageKey = String
 object StorageKey extends Opaque[StorageKey, String] {
+  override def validate(value: String): Either[String, StorageKey] =
+    if (value.isEmpty) Left("StorageKey must not be empty")
+    else if (value.startsWith("/") || value.startsWith("\\")) Left("StorageKey must be relative")
+    else if (value.split(Array('/', '\\')).contains("..")) Left("StorageKey must not contain '..' segments")
+    else if (value.contains('\u0000')) Left("StorageKey must not contain null bytes")
+    else Right(value)
+
   extension (key: StorageKey) def render: String = key.unwrap
 }
 

@@ -36,18 +36,24 @@ class AuctionImageService(
     sizeBytesHint: Long,
     content: Stream[IO, Byte]
   ): IO[AttachImageResult] = {
-    for {
-      id  <- IdGenerator.generateId(AuctionImageId)
-      now <- Clock[IO].realTimeInstant
-      key = StorageKey(s"auctions/$auctionId/images/$id")
-      actualSize <- objectStore.put(key, ObjectMetadata(contentType, sizeBytesHint), content)
-      result <- persistAttached(auctionId, sellerId, id, key, fileName, contentType, actualSize, now).attempt.flatMap {
-                  case Right(AttachImageResult.Attached(image)) => IO.pure(AttachImageResult.Attached(image))
-                  case Right(other)                             => objectStore.delete(key).attempt.as(other)
-                  case Left(t) =>
-                    objectStore.delete(key).attempt *> logger.error(t)(s"Persist failed for ${key.render}, storage cleaned up") *> IO.raiseError(t)
-                }
-    } yield result
+    transactor.inSession(auctionRepository.find(auctionId)).flatMap {
+      case None                                          => IO.pure(AttachImageResult.AuctionNotFound)
+      case Some(auction) if auction.sellerId != sellerId => IO.pure(AttachImageResult.NotOwner)
+      case Some(_) =>
+        for {
+          id  <- IdGenerator.generateId(AuctionImageId)
+          now <- Clock[IO].realTimeInstant
+          key = StorageKey(s"auctions/$auctionId/images/$id")
+          actualSize <- objectStore.put(key, ObjectMetadata(contentType, sizeBytesHint), content)
+          result <- persistAttached(auctionId, sellerId, id, key, fileName, contentType, actualSize, now).attempt.flatMap {
+                      case Right(AttachImageResult.Attached(image)) => IO.pure(AttachImageResult.Attached(image))
+                      case Right(other)                             => objectStore.delete(key).attempt.as(other)
+                      case Left(t) =>
+                        objectStore.delete(key).attempt *> logger.error(t)(s"Persist failed for ${key.render}, storage cleaned up") *> IO
+                          .raiseError(t)
+                    }
+        } yield result
+    }
   }
 
   private def persistAttached(
@@ -88,26 +94,34 @@ class AuctionImageService(
     sellerId: UserId,
     imageId: AuctionImageId
   ): IO[DetachImageResult] = {
-    (for {
-      _ <- transactor
-             .inSession(auctionRepository.find(auctionId))
-             .valueOr[DetachImageResult](DetachImageResult.NotFound)
-             .ensure(_.sellerId == sellerId, DetachImageResult.NotOwner)
-      image <- transactor
-                 .inSession(auctionImageRepository.find(imageId))
-                 .valueOr[DetachImageResult](DetachImageResult.NotFound)
-                 .ensure(_.auctionId == auctionId, DetachImageResult.NotFound)
-      now <- Clock[IO].realTimeInstant.seal
-      _   <- transactor.inSession(auctionImageRepository.softDelete(imageId, now)).seal
-      _ <- objectStore
-             .delete(image.storageKey)
-             .attempt
-             .flatMap {
-               case Left(t)  => logger.warn(t)(s"Storage delete failed for ${image.storageKey.render}; row already soft-deleted")
-               case Right(_) => IO.unit
-             }
-             .seal
-    } yield DetachImageResult.Detached).run
+    type Outcome = Either[DetachImageResult, AuctionImage]
+    transactor
+      .inTransaction {
+        (for {
+          _ <- auctionRepository
+                 .findForUpdate(auctionId)
+                 .valueOr[Outcome](Left(DetachImageResult.NotFound))
+                 .ensure(_.sellerId == sellerId, Left(DetachImageResult.NotOwner))
+          image <- auctionImageRepository
+                     .find(imageId)
+                     .valueOr[Outcome](Left(DetachImageResult.NotFound))
+                     .ensure(_.auctionId == auctionId, Left(DetachImageResult.NotFound))
+          now <- Clock[IO].realTimeInstant.seal
+          _   <- auctionImageRepository.softDelete(imageId, now).seal
+        } yield Right(image): Outcome).run
+      }
+      .flatMap {
+        case Right(image) =>
+          objectStore
+            .delete(image.storageKey)
+            .attempt
+            .flatMap {
+              case Left(t)  => logger.warn(t)(s"Storage delete failed for ${image.storageKey.render}; row already soft-deleted")
+              case Right(_) => IO.unit
+            }
+            .as(DetachImageResult.Detached)
+        case Left(outcome) => IO.pure(outcome)
+      }
   }
 
   def reorderImages(
