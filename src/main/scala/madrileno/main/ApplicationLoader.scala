@@ -12,6 +12,7 @@ import madrileno.utils.events.EventBusRuntime
 import madrileno.utils.http.{ApplicationRouteProvider, Handlers, RateLimiterRuntime}
 import madrileno.utils.mailer.{MailContext, MailPreviewProvider, MailPreviewRouter, Mailer, MailerConfig, SmtpSender}
 import madrileno.utils.observability.*
+import madrileno.utils.storage.{ObjectStoreRuntime, StorageConfig}
 import madrileno.utils.task.{ApplicationTaskProvider, OneTimeTask, SchedulerAdminRouter, SchedulerClient}
 import org.http4s.otel4s.middleware.instances.all.*
 import org.http4s.server.websocket.WebSocketBuilder2
@@ -28,6 +29,7 @@ import sttp.client4.opentelemetry.OpenTelemetryMetricsBackend
 import sttp.client4.{WebSocketStreamBackend, logging}
 
 import java.net.URI
+import scala.concurrent.duration.FiniteDuration
 
 final case class HttpConfig(
   host: Ipv4Address,
@@ -51,6 +53,7 @@ class ApplicationLoader(
   val schedulerClient: SchedulerClient,
   val cacheRuntime: CacheRuntime,
   val rateLimiterRuntime: RateLimiterRuntime,
+  val objectStoreRuntime: ObjectStoreRuntime,
   val eventBusRuntime: EventBusRuntime
 )(using TelemetryContext)
     extends ApplicationRouteProvider
@@ -65,8 +68,11 @@ class ApplicationLoader(
   lazy val httpConfig: HttpConfig             = config.at("http").loadOrThrow[HttpConfig]
   lazy val appConfig: AppConfig               = config.at("app").loadOrThrow[AppConfig]
   lazy val adminConfig: AdminConfig           = config.at("admin").loadOrThrow[AdminConfig]
+  lazy val storageConfig: StorageConfig       = config.at("storage").loadOrThrow[StorageConfig]
   lazy val telemetryContext: TelemetryContext = summon[TelemetryContext]
   lazy val mailContext: MailContext           = MailContext(httpConfig.baseUrl)
+
+  override protected def signedUrlTtl: FiniteDuration = storageConfig.signedUrlTtl
 
   protected lazy val mailerConfig: MailerConfig = config.at("mailer").loadOrThrow[MailerConfig]
   private lazy val smtpSender                   = new SmtpSender(mailerConfig)

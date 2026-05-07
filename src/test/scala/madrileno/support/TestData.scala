@@ -4,6 +4,7 @@ import com.comcast.ip4s.IpAddress
 import madrileno.auction.domain.*
 import madrileno.auth.domain.{AuthContext, *}
 import madrileno.user.domain.*
+import madrileno.utils.storage.StorageKey
 
 import java.time.Instant
 import java.util.{Currency, UUID}
@@ -14,6 +15,7 @@ object TestData {
   def randomUserAuthId(): UserAuthId         = UserAuthId(UUID.randomUUID())
   def randomAuctionId(): AuctionId           = AuctionId(UUID.randomUUID())
   def randomBidId(): BidId                   = BidId(UUID.randomUUID())
+  def randomAuctionImageId(): AuctionImageId = AuctionImageId(UUID.randomUUID())
 
   def authContext(): AuthContext = AuthContext(user = user())
 
@@ -102,4 +104,15 @@ object TestData {
     amount: Price = Price(BigDecimal(150)),
     createdAt: Instant = Instant.now()
   ): Bid = Bid(id, auctionId, bidderId, amount, createdAt)
+
+  def auctionImage(
+    id: AuctionImageId = randomAuctionImageId(),
+    auctionId: AuctionId = randomAuctionId(),
+    storageKey: StorageKey = StorageKey(s"auctions/test/images/${UUID.randomUUID()}"),
+    contentType: ContentType = ContentType("image/jpeg"),
+    sizeBytes: SizeBytes = SizeBytes(1024L),
+    position: ImagePosition = ImagePosition(0),
+    uploadedAt: Instant = Instant.now(),
+    deletedAt: Option[Instant] = None
+  ): AuctionImage = AuctionImage(id, auctionId, storageKey, contentType, sizeBytes, position, uploadedAt, deletedAt)
 }

@@ -1,0 +1,85 @@
+package madrileno.auction.repositories
+
+import cats.effect.testing.scalatest.AsyncIOSpec
+import madrileno.auction.domain.*
+import madrileno.support.{TestData, TestTransactor}
+import madrileno.user.repositories.UserRepository
+import org.scalatest.matchers.should.Matchers
+import org.scalatest.wordspec.AsyncWordSpec
+
+import java.time.Instant
+
+class AuctionImageRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matchers with TestTransactor {
+
+  private lazy val auctionRepo = new AuctionRepository
+  private lazy val imageRepo   = new AuctionImageRepository
+  private lazy val userRepo    = new UserRepository
+
+  private def setup() = {
+    val seller  = TestData.user()
+    val auction = TestData.auction(sellerId = seller.id)
+    (seller, auction)
+  }
+
+  "AuctionImageRepository" should {
+    "save and list images by auction in position order" in withRollback {
+      val (seller, auction) = setup()
+      val img0              = TestData.auctionImage(auctionId = auction.id, position = ImagePosition(0))
+      val img1              = TestData.auctionImage(auctionId = auction.id, position = ImagePosition(1))
+      for {
+        _      <- userRepo.create(seller, Instant.now())
+        _      <- auctionRepo.save(auction)
+        _      <- imageRepo.save(img1)
+        _      <- imageRepo.save(img0)
+        result <- imageRepo.listByAuction(auction.id)
+      } yield {
+        result.map(_.id) shouldBe List(img0.id, img1.id)
+      }
+    }
+
+    "nextPosition returns 0 when no images exist, then increments" in withRollback {
+      val (seller, auction) = setup()
+      for {
+        _    <- userRepo.create(seller, Instant.now())
+        _    <- auctionRepo.save(auction)
+        pos0 <- imageRepo.nextPosition(auction.id)
+        _    <- imageRepo.save(TestData.auctionImage(auctionId = auction.id, position = ImagePosition(pos0)))
+        pos1 <- imageRepo.nextPosition(auction.id)
+        _    <- imageRepo.save(TestData.auctionImage(auctionId = auction.id, position = ImagePosition(pos1)))
+        pos2 <- imageRepo.nextPosition(auction.id)
+      } yield {
+        pos0 shouldBe 0
+        pos1 shouldBe 1
+        pos2 shouldBe 2
+      }
+    }
+
+    "setPosition updates the image position" in withRollback {
+      val (seller, auction) = setup()
+      val image             = TestData.auctionImage(auctionId = auction.id, position = ImagePosition(0))
+      for {
+        _     <- userRepo.create(seller, Instant.now())
+        _     <- auctionRepo.save(auction)
+        _     <- imageRepo.save(image)
+        _     <- imageRepo.setPosition(image.id, ImagePosition(5))
+        found <- imageRepo.find(image.id)
+      } yield {
+        found.map(_.position) shouldBe Some(ImagePosition(5))
+      }
+    }
+
+    "softDelete removes image from listByAuction but find still returns it" in withRollback {
+      val (seller, auction) = setup()
+      val image             = TestData.auctionImage(auctionId = auction.id)
+      for {
+        _      <- userRepo.create(seller, Instant.now())
+        _      <- auctionRepo.save(auction)
+        _      <- imageRepo.save(image)
+        _      <- imageRepo.softDelete(image.id, Instant.now())
+        listed <- imageRepo.listByAuction(auction.id)
+      } yield {
+        listed shouldBe empty
+      }
+    }
+  }
+}

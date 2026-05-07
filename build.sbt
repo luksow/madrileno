@@ -36,6 +36,7 @@ libraryDependencies ++= {
   val baklavaV           = "1.3.0"
   val swaggerUiV         = "5.21.0"
   val flywayV            = "12.0.1"
+  val awsSdkV            = "2.34.9"
   val scalatestV         = "3.2.20"
   Seq(
     "org.http4s"                      %% "http4s-ember-server"                       % http4sV,
@@ -82,6 +83,7 @@ libraryDependencies ++= {
     "com.google.firebase"              % "firebase-admin"                            % firebaseV,
     "pl.iterators"                    %% "baklava-http4s-routes"                     % baklavaV,
     "org.webjars"                      % "swagger-ui"                                % swaggerUiV,
+    "software.amazon.awssdk"           % "s3"                                        % awsSdkV,
     "pl.iterators"                    %% "http4s-stir-testkit"                       % http4sStirV        % "test",
     "pl.iterators"                    %% "baklava-http4s"                            % baklavaV           % "test",
     "pl.iterators"                    %% "baklava-scalatest"                         % baklavaV           % "test",
