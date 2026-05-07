@@ -22,7 +22,6 @@ import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignReques
 import java.net.URLEncoder
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
-import java.time.Duration as JDuration
 
 final case class S3Config(
   endpoint: String,
@@ -63,9 +62,8 @@ class S3ObjectStore(
     val presign = IO.blocking {
       val builder  = GetObjectRequest.builder().bucket(bucket).key(key.render)
       val withDisp = fileName.fold(builder)(name => builder.responseContentDisposition(contentDisposition(name)))
-      val signed = presigner.presignGetObject(
-        GetObjectPresignRequest.builder().signatureDuration(JDuration.ofSeconds(ttl.unwrap.toSeconds)).getObjectRequest(withDisp.build()).build()
-      )
+      val signed =
+        presigner.presignGetObject(GetObjectPresignRequest.builder().signatureDuration(ttl.asJavaDuration).getObjectRequest(withDisp.build()).build())
       ObjectStore.GetResult.Redirected(Uri.unsafeFromString(signed.url().toString))
     }
     head.flatMap(_ => presign).recover {
@@ -80,7 +78,7 @@ class S3ObjectStore(
   private def contentDisposition(name: String): String = {
     val sanitized = name.filter(c => c >= 0x20 && c != 0x7f)
     val asciiSafe = sanitized.filter(c => c < 0x80 && c != '"' && c != '\\')
-    val rfc5987   = URLEncoder.encode(sanitized, StandardCharsets.UTF_8).replace("+", "%20")
+    val rfc5987   = URLEncoder.encode(sanitized, StandardCharsets.UTF_8).replace("+", "%20").replace("*", "%2A")
     s"""attachment; filename="$asciiSafe"; filename*=UTF-8''$rfc5987"""
   }
 }
