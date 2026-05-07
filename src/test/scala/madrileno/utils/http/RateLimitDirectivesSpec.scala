@@ -65,7 +65,7 @@ class RateLimitDirectivesSpec extends AnyFunSpec with Matchers {
     }
 
     it("does not increment the counter for branches that don't match the method/path") {
-      val rl            = RateLimiterRuntime.caffeine().rateLimiter
+      val rl = RateLimiterRuntime.caffeine().rateLimiter
       val routes: Route = {
         val router = new BaseRouter with RateLimitDirectives {
           override protected val rateLimiter: RateLimiter = rl
@@ -88,7 +88,7 @@ class RateLimitDirectivesSpec extends AnyFunSpec with Matchers {
     }
 
     it("byClientIp prefers X-Forwarded-For over the socket address") {
-      val rl            = RateLimiterRuntime.caffeine().rateLimiter
+      val rl = RateLimiterRuntime.caffeine().rateLimiter
       val routes: Route = {
         val router = new BaseRouter with RateLimitDirectives {
           override protected val rateLimiter: RateLimiter = rl
