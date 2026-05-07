@@ -8,7 +8,7 @@ import madrileno.auction.services.*
 import madrileno.auth.domain.AuthContext
 import madrileno.user.domain.UserId
 import madrileno.utils.events.EventBus
-import madrileno.utils.http.{BaseRouter, RateLimit, RateLimitDirectives, RateLimiter, RateLimiterRuntime}
+import madrileno.utils.http.{BaseRouter, RateLimitDirectives, RateLimiter, RateLimiterRuntime}
 import madrileno.utils.observability.TelemetryContext
 import org.http4s.Request
 import org.http4s.server.websocket.WebSocketBuilder2
@@ -30,7 +30,7 @@ class AuctionRouter(
 
   val routes: Route = {
     (get & path("auctions") & pathEndOrSingleSlash & parameters("status".as[AuctionStatus].?, "seller-id".as[UserId].?)) { (status, sellerId) =>
-      rateLimited("auctions.list", RateLimit(to = 60, within = 1.minute)) {
+      rateLimited("auctions.list", to = 60, within = 1.minute) {
         complete {
           val filter = ListAuctionsFilter(status = status, sellerId = sellerId)
           auctionService.listAuctions(filter).map[ToResponseMarshallable] { views =>
@@ -40,7 +40,7 @@ class AuctionRouter(
       }
     } ~
       (get & path("auctions" / JavaUUID.as[AuctionId]) & pathEndOrSingleSlash) { auctionId =>
-        rateLimited("auctions.get", RateLimit(to = 120, within = 1.minute)) {
+        rateLimited("auctions.get", to = 120, within = 1.minute) {
           complete {
             auctionService.getAuction(auctionId).map[ToResponseMarshallable] {
               case Some(view) => Ok -> AuctionDto(view)
@@ -54,7 +54,7 @@ class AuctionRouter(
   def authedRoutes(authContext: AuthContext): Route = {
     val byUser: Request[IO] => String = _ => s"user:${authContext.userId}"
     (post & path("auctions") & pathEndOrSingleSlash & entity(as[CreateAuctionRequest])) { request =>
-      rateLimited("auctions.create", RateLimit(to = 10, within = 1.minute), by = byUser) {
+      rateLimited("auctions.create", to = 10, within = 1.minute, by = byUser) {
         complete {
           val command = CreateAuctionCommand(
             sellerId = authContext.userId,
@@ -81,7 +81,7 @@ class AuctionRouter(
       }
     } ~
       (delete & path("auctions" / JavaUUID.as[AuctionId]) & pathEndOrSingleSlash) { auctionId =>
-        rateLimited("auctions.cancel", RateLimit(to = 30, within = 1.minute), by = byUser) {
+        rateLimited("auctions.cancel", to = 30, within = 1.minute, by = byUser) {
           complete {
             val command = CancelAuctionCommand(auctionId, authContext.userId)
             auctionService.cancelAuction(command).map[ToResponseMarshallable] {
@@ -95,7 +95,7 @@ class AuctionRouter(
         }
       } ~
       (post & path("auctions" / JavaUUID.as[AuctionId] / "bids") & pathEndOrSingleSlash & entity(as[PlaceBidRequest])) { (auctionId, request) =>
-        rateLimited("auctions.bid", RateLimit(to = 30, within = 1.minute), by = byUser) {
+        rateLimited("auctions.bid", to = 30, within = 1.minute, by = byUser) {
           complete {
             val command = PlaceBidCommand(auctionId, authContext.userId, request.amount)
             auctionService.placeBid(command).map[ToResponseMarshallable] {
