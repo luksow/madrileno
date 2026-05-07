@@ -40,7 +40,7 @@ final case class AppConfig(
   name: String,
   environment: String,
   version: String,
-  apiPrefix: String)
+  apiVersion: String)
     derives ConfigReader
 final case class AdminConfig(user: String, password: String) derives ConfigReader
 
@@ -134,8 +134,8 @@ class ApplicationLoader(
     }
   }
 
-  private val apiPrefix: String                    = appConfig.apiPrefix
-  private val pathPrefixMatcher: PathMatcher[Unit] = Slash ~ apiPrefix
+  private val apiVersion: String                   = appConfig.apiVersion
+  private val pathPrefixMatcher: PathMatcher[Unit] = Slash ~ apiVersion
 
   def routes(wsb: WebSocketBuilder2[IO]): Route =
     onSuccess(telemetryContext.tracer.propagate(Map.empty)) { initialCtx =>
