@@ -54,7 +54,7 @@ class AuctionImageServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matche
     sellerId: madrileno.user.domain.UserId,
     bytes: Array[Byte] = "data".getBytes("UTF-8")
   ): IO[AttachImageResult] =
-    service.attachImage(auctionId, sellerId, "wine.jpg", jpeg, bytes.length.toLong, Stream.emits(bytes))
+    service.attachImage(auctionId, sellerId, "wine.jpg", jpeg, Stream.emits(bytes))
 
   "AuctionImageService.attachImage" should {
     "attach an image and return Attached with computed size" in {
@@ -63,7 +63,7 @@ class AuctionImageServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matche
       for {
         seller  <- seedUser()
         auction <- seedAuction(seller.id)
-        result  <- service.attachImage(auction.id, seller.id, "photo.jpg", jpeg, bytes.length.toLong, Stream.emits(bytes))
+        result  <- service.attachImage(auction.id, seller.id, "photo.jpg", jpeg, Stream.emits(bytes))
       } yield result match {
         case AttachImageResult.Attached(image) =>
           image.auctionId shouldBe auction.id

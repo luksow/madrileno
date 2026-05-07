@@ -9,7 +9,7 @@ import madrileno.user.domain.UserId
 import madrileno.utils.crypto.IdGenerator
 import madrileno.utils.db.transactor.Transactor
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
-import madrileno.utils.storage.{ObjectMetadata, ObjectStore, SignedUrlTtl, StorageKey}
+import madrileno.utils.storage.{ObjectStore, SignedUrlTtl, StorageKey}
 import org.http4s.headers.`Content-Type`
 import pl.iterators.sealedmonad.syntax.*
 
@@ -33,7 +33,6 @@ class AuctionImageService(
     sellerId: UserId,
     fileName: String,
     contentType: `Content-Type`,
-    sizeBytesHint: Long,
     content: Stream[IO, Byte]
   ): IO[AttachImageResult] = {
     transactor.inSession(auctionRepository.find(auctionId)).flatMap {
@@ -44,7 +43,7 @@ class AuctionImageService(
           id  <- IdGenerator.generateId(AuctionImageId)
           now <- Clock[IO].realTimeInstant
           key = StorageKey(s"auctions/$auctionId/images/$id")
-          actualSize <- objectStore.put(key, ObjectMetadata(contentType, sizeBytesHint), content)
+          actualSize <- objectStore.put(key, contentType, content)
           result <- persistAttached(auctionId, sellerId, id, key, fileName, contentType, actualSize, now).attempt.flatMap {
                       case Right(AttachImageResult.Attached(image)) => IO.pure(AttachImageResult.Attached(image))
                       case Right(other)                             => objectStore.delete(key).attempt.as(other)

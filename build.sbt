@@ -37,7 +37,6 @@ libraryDependencies ++= {
   val swaggerUiV         = "5.21.0"
   val flywayV            = "12.0.1"
   val awsSdkV            = "2.34.9"
-  val fs2V               = "3.13.0"
   val scalatestV         = "3.2.20"
   Seq(
     "org.http4s"                      %% "http4s-ember-server"                       % http4sV,
@@ -62,7 +61,6 @@ libraryDependencies ++= {
     "com.github.pureconfig"           %% "pureconfig-ip4s"                           % pureconfigV,
     "com.github.pureconfig"           %% "pureconfig-generic-scala3"                 % pureconfigV,
     "com.softwaremill.sttp.client4"   %% "fs2"                                       % sttpV,
-    "co.fs2"                          %% "fs2-reactive-streams"                      % fs2V,
     "com.softwaremill.sttp.client4"   %% "circe"                                     % sttpV,
     "com.softwaremill.sttp.client4"   %% "opentelemetry-backend"                     % sttpV,
     "org.tpolecat"                    %% "skunk-core"                                % skunkV,

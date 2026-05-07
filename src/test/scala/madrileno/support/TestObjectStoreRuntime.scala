@@ -2,7 +2,7 @@ package madrileno.support
 
 import cats.effect.{IO, Ref}
 import fs2.Stream
-import madrileno.utils.storage.{ObjectMetadata, ObjectStore, ObjectStoreRuntime, SignedUrlTtl, StorageKey}
+import madrileno.utils.storage.{ObjectStore, ObjectStoreRuntime, SignedUrlTtl, StorageKey}
 import org.http4s.headers.`Content-Type`
 import scodec.bits.ByteVector
 
@@ -15,10 +15,10 @@ object TestObjectStoreRuntime {
       override val objectStore: ObjectStore = new ObjectStore {
         override def put(
           key: StorageKey,
-          metadata: ObjectMetadata,
+          contentType: `Content-Type`,
           body: Stream[IO, Byte]
         ): IO[Long] =
-          body.compile.to(ByteVector).flatMap(bytes => state.update(_.updated(key, metadata.contentType -> bytes)).as(bytes.size.toLong))
+          body.compile.to(ByteVector).flatMap(bytes => state.update(_.updated(key, contentType -> bytes)).as(bytes.size.toLong))
 
         override def get(
           key: StorageKey,

@@ -10,14 +10,13 @@ class DiskObjectStore(root: FsPath) extends ObjectStore {
 
   override def put(
     key: StorageKey,
-    metadata: ObjectMetadata,
+    contentType: `Content-Type`,
     body: Stream[IO, Byte]
   ): IO[Long] = {
     val target = pathFor(key)
     for {
-      _ <- Files[IO].createDirectories(target.parent.getOrElse(root))
-      _ <-
-        Stream.emits(Header[`Content-Type`].value(metadata.contentType).getBytes("UTF-8")).through(Files[IO].writeAll(metaPathFor(key))).compile.drain
+      _    <- Files[IO].createDirectories(target.parent.getOrElse(root))
+      _    <- Stream.emits(Header[`Content-Type`].value(contentType).getBytes("UTF-8")).through(Files[IO].writeAll(metaPathFor(key))).compile.drain
       _    <- body.through(Files[IO].writeAll(target)).compile.drain
       size <- Files[IO].size(target)
     } yield size

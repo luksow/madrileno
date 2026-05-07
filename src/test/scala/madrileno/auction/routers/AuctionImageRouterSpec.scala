@@ -11,7 +11,7 @@ import madrileno.user.domain.{User, UserId}
 import madrileno.utils.db.transactor.DB
 import madrileno.utils.http.Error
 import madrileno.utils.json.JsonProtocol.*
-import madrileno.utils.storage.{ObjectMetadata, StorageKey}
+import madrileno.utils.storage.StorageKey
 import org.http4s.Method.*
 import org.http4s.Status.*
 import org.http4s.circe.CirceEntityCodec.*
@@ -63,7 +63,7 @@ class AuctionImageRouterSpec extends BaseRouteSpec with TestApplicationLoader {
       position = position
     )
     application.transactor.inSession(imageRepository.save(image)) *>
-      application.objectStore.put(image.storageKey, ObjectMetadata(jpeg, bytes.length.toLong), Stream.emits(bytes)) *>
+      application.objectStore.put(image.storageKey, jpeg, Stream.emits(bytes)) *>
       IO.pure(image)
   }
 

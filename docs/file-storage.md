@@ -6,7 +6,8 @@ The codebase ships an object-storage abstraction with two backends — local dis
 
 ```
 src/main/scala/madrileno/utils/storage/
-  ObjectStore.scala        # the trait + StorageKey + ObjectMetadata + GetResult ADT
+  ObjectStore.scala        # the trait + StorageKey (validated) + GetResult ADT
+  ContentDispositions.scala # RFC 6266 / 5987 helper for attachment headers
   DiskObjectStore.scala    # local filesystem impl
   S3ObjectStore.scala      # AWS SDK v2 impl + S3Config
   ObjectStoreRuntime.scala # disk(...) / s3(...) factories (s3 is Resource-shaped)
@@ -43,7 +44,7 @@ If you want the disk backend instead (e.g. zero-deps local dev or running tests 
 
 ```scala
 trait ObjectStore {
-  def put(key: StorageKey, metadata: ObjectMetadata, body: Stream[IO, Byte]): IO[Long]
+  def put(key: StorageKey, contentType: `Content-Type`, body: Stream[IO, Byte]): IO[Long]
   def get(key: StorageKey, ttl: SignedUrlTtl, fileName: Option[String]): IO[ObjectStore.GetResult]
   def delete(key: StorageKey): IO[Unit]
 }
@@ -61,8 +62,8 @@ A few decisions worth flagging:
 
 - **`get` returns an ADT, not `Response[IO]`.** Each backend picks the access mode that fits. `S3ObjectStore` returns `Redirected` (a presigned URL — the client downloads from S3 directly, the API never proxies bytes). `DiskObjectStore` returns `Streamed` (we have the bytes locally; cheaper than redirecting to ourselves). The router maps either result to an http4s response.
 - **`fileName` is per-fetch, not stored on the object.** S3 bakes it into the presign via `responseContentDisposition`; disk passes it through to the router which sets the header. That's why the storage layer doesn't persist filenames — the *caller* knows what to name the download (e.g. the auction's `auction_image.file_name` column).
-- **`put` streams.** S3 uses fs2 reactive-streams interop (`toUnicastPublisher`) to feed the AWS SDK without buffering. Disk uses `Files[IO].writeAll`. Both report the actual byte count.
-- **`StorageKey.render` over `.unwrap`.** A small extension method gives the storage code a domain-aware name when it has to surface the raw string for SDK calls.
+- **`put` returns the actual byte count.** Disk streams via `Files[IO].writeAll` and reads `Files.size` after the write. S3 buffers via `body.compile.to(ByteVector)` because `S3.putObject` requires a known `Content-Length`; the buffer is bounded by `http.max-request-size` (10 MiB default). For larger streamed uploads, swap to `S3TransferManager` (multipart) — out of scope for the template.
+- **`StorageKey` is validated at the opaque-type boundary.** `StorageKey.apply` rejects empty / absolute / `..`-segment / NUL-containing keys, so the disk backend can't be coerced into writing outside `root` regardless of the caller. `StorageKey.render` is the domain-aware accessor for code that needs the raw string.
 
 ## Wiring it into a module
 
@@ -93,7 +94,7 @@ for {
   id         <- IdGenerator.generateId(AuctionImageId)
   now        <- Clock[IO].realTimeInstant
   key         = StorageKey(s"auctions/$auctionId/images/$id")
-  actualSize <- objectStore.put(key, ObjectMetadata(contentType, sizeBytesHint), content)
+  actualSize <- objectStore.put(key, contentType, content)
   result     <- persistAttached(...).attempt.flatMap {
                   case Right(AttachImageResult.Attached(image)) => IO.pure(AttachImageResult.Attached(image))
                   case Right(other)                             => objectStore.delete(key).attempt.as(other)
@@ -104,7 +105,7 @@ for {
 
 The persist runs inside `transactor.inTransaction` and locks the auction row via `auctionRepository.findForUpdate(auctionId)` — this serializes concurrent uploads to the same auction so `nextPosition` doesn't race.
 
-`sizeBytesHint` is what the multipart `Content-Length` header claimed (often unreliable / `0`); `actualSize` is what we actually wrote. The DB row uses the actual size.
+`actualSize` is what we actually wrote (`put` returns it). The DB row uses that, not any client-provided `Content-Length` header — multipart parts frequently lie about size or omit the header entirely.
 
 ## Serving a file
 
@@ -155,6 +156,6 @@ The `ImagePosition` opaque type still rejects negatives in the domain — the ne
   - Crash before meta lands → no files, `get` returns `NotFound`.
   - Crash between meta and data → orphan `.meta`, no data file, `get` returns `NotFound` (the `dataExists` check catches this); a subsequent `put` for the same key overwrites the orphan meta.
   - Crash mid-data-write → orphan `.meta` + truncated data file, `get` returns `Streamed` with corrupt bytes. Production deployments should run a sweeper or rely on filesystem-level integrity; this is the demo-grade tradeoff.
-- **`metadata.sizeBytes` on `put` is a hint, not a contract.** Multipart parts often have no `Content-Length` header. The S3 backend uses it for `contentLength` when set (single-PUT optimization); when `0`, it falls back to chunked upload. Use the `IO[Long]` returned from `put` for accurate sizes.
+- **S3 uploads buffer.** `S3.putObject` requires a known `Content-Length`, so the S3 backend compiles the body to a `ByteVector` before the PUT. That works fine for the demo's image-sized uploads bounded by `max-request-size = 10 MiB`. If you need streamed uploads at larger sizes, replace the body construction with `S3TransferManager.uploadPart` / multipart-upload — it's a meaningful chunk of code and out of scope for this template.
 - **`StorageKey` is just a string.** No leading slash, no scheme, no bucket prefix — just an object key relative to the configured bucket / disk root. Build it from your domain (e.g. `s"auctions/$auctionId/images/$id"`).
 - **The redirect goes to S3, not back to the API.** Browsers download directly from S3 using the presigned URL. If your CORS / network setup blocks that, you'll see a working `303` followed by a failed download — the API never sees the second request.
