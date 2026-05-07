@@ -100,6 +100,10 @@ See [`docs/testing-guide.md`](docs/testing-guide.md) for the full testing philos
 
 See [`docs/adding-a-module.md`](docs/adding-a-module.md) — a complete vertical slice from migration to OpenAPI.
 
+## File storage
+
+See [`docs/file-storage.md`](docs/file-storage.md) — disk + S3-compatible object storage, with auction images as the worked example.
+
 ## Things that catch people out
 
 - **sbt caches `.env` at JVM startup.** If you change `.env`, exit sbt and start it again. Same goes for the long-lived sbt server (`~/.sbt/1.0/server/...`).
