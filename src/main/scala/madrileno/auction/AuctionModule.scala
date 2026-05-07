@@ -42,13 +42,13 @@ trait AuctionModule extends RouteProvider with AuthRouteProvider with WsRoutePro
   protected lazy val auctionEventBus: EventBus[AuctionEvent] = eventBusRuntime.topic[AuctionEvent]("auction_events", maxQueued = 64)
   protected lazy val signedUrlTtl: SignedUrlTtl              = SignedUrlTtl(5.minutes)
 
-  private val auctionRepository      = wire[AuctionRepository]
-  private val bidRepository          = wire[BidRepository]
-  private val auctionImageRepository = wire[AuctionImageRepository]
-  private val auctionService         = wire[AuctionService]
-  private val auctionImageService    = wire[AuctionImageService]
-  private val auctionRouter          = wire[AuctionRouter]
-  private val auctionImageRouter     = new AuctionImageRouter(auctionImageService, appConfig.apiVersion)
+  private val auctionRepository        = wire[AuctionRepository]
+  private val bidRepository            = wire[BidRepository]
+  private val auctionImageRepository   = wire[AuctionImageRepository]
+  private val auctionService           = wire[AuctionService]
+  private lazy val auctionImageService = wire[AuctionImageService]
+  private val auctionRouter            = wire[AuctionRouter]
+  private lazy val auctionImageRouter  = new AuctionImageRouter(auctionImageService, appConfig.apiVersion)
 
   override abstract def route(auth: AuthContext): Route = {
     super.route(auth) ~ auctionRouter.authedRoutes(auth) ~ auctionImageRouter.authedRoutes(auth)
