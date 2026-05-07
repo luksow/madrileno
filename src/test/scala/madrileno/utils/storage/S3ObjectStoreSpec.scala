@@ -1,7 +1,7 @@
 package madrileno.utils.storage
 
-import cats.effect.IO
 import cats.effect.testing.scalatest.AsyncIOSpec
+import cats.effect.{IO, Resource}
 import com.dimafeng.testcontainers.GenericContainer
 import com.dimafeng.testcontainers.scalatest.TestContainerForAll
 import fs2.Stream
@@ -36,18 +36,20 @@ class S3ObjectStoreSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wit
     secretAccessKey = "minioadmin"
   )
 
-  private def createBucket(config: S3Config): IO[Unit] = IO.fromCompletableFuture {
-    IO {
-      val client = S3AsyncClient
+  private def createBucket(config: S3Config): IO[Unit] = {
+    val clientResource = Resource.fromAutoCloseable(IO {
+      S3AsyncClient
         .builder()
         .endpointOverride(new URI(config.endpoint))
         .region(Region.of(config.region))
         .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create(config.accessKeyId, config.secretAccessKey)))
         .forcePathStyle(true)
         .build()
-      client.createBucket(CreateBucketRequest.builder().bucket(config.bucket).build())
+    })
+    clientResource.use { client =>
+      IO.fromCompletableFuture(IO(client.createBucket(CreateBucketRequest.builder().bucket(config.bucket).build()))).void
     }
-  }.void
+  }
 
   private val plainText = `Content-Type`(MediaType.text.plain)
 
