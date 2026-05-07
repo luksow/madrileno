@@ -3,7 +3,7 @@ package madrileno.auction.repositories
 import cats.effect.IO
 import madrileno.auction.domain.*
 import madrileno.utils.db.dsl.*
-import madrileno.utils.db.transactor.DB
+import madrileno.utils.db.transactor.{DB, DBInTransaction}
 import madrileno.utils.storage.StorageKey
 import org.http4s.Header
 import org.http4s.headers.`Content-Type`
@@ -77,14 +77,11 @@ class AuctionImageRepository {
   def find(id: AuctionImageId): DB[Option[AuctionImage]] =
     repository.findById(id).map(_.map(_.toAuctionImage))
 
-  def listByAuction(auctionId: AuctionId): DB[List[AuctionImage]] = {
-    val table = AuctionImageRowTable
-    val query = sql"""SELECT ${table.*} FROM ${table.n}
-                      WHERE ${table.auctionId.n} = ${table.auctionId.c}
-                        AND ${table.deletedAt.n} IS NULL
-                      ORDER BY ${table.position.n} ASC""".query(table.c)
-    summon[Session[IO]].execute(query)(auctionId).map(_.map(_.toAuctionImage))
-  }
+  def listByAuction(auctionId: AuctionId): DB[List[AuctionImage]] =
+    repository.findByForeignId(auctionId).map(_.sortBy(_.position.unwrap).map(_.toAuctionImage))
+
+  def listByAuctionForUpdate(auctionId: AuctionId): DBInTransaction[List[AuctionImage]] =
+    repository.findByForeignId(auctionId, Lock.ForUpdate).map(_.sortBy(_.position.unwrap).map(_.toAuctionImage))
 
   def nextPosition(auctionId: AuctionId): DB[Int] = {
     val table = AuctionImageRowTable
