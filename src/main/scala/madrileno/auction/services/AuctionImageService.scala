@@ -11,7 +11,6 @@ import madrileno.utils.crypto.IdGenerator
 import madrileno.utils.db.transactor.Transactor
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
 import madrileno.utils.storage.{ObjectMetadata, ObjectStore, SignedUrlTtl, StorageKey}
-import org.http4s.Uri
 import org.http4s.headers.`Content-Type`
 import pl.iterators.sealedmonad.syntax.*
 
@@ -46,7 +45,7 @@ class AuctionImageService(
       id      <- IdGenerator.generateId(AuctionImageId).seal
       now     <- Clock[IO].realTimeInstant.seal
       counter <- Ref.of[IO, Long](0L).seal
-      key         = StorageKey(s"auctions/${auctionId.unwrap}/images/${id.unwrap}")
+      key         = StorageKey(s"auctions/$auctionId/images/$id")
       countedBody = content.chunks.evalTap(c => counter.update(_ + c.size)).unchunks
       _          <- objectStore.put(key, ObjectMetadata(contentType, sizeBytesHint), countedBody).seal
       actualSize <- counter.get.seal
@@ -103,7 +102,7 @@ class AuctionImageService(
              .delete(image.storageKey)
              .attempt
              .flatMap {
-               case Left(t)  => logger.warn(t)(s"Storage delete failed for ${image.storageKey.unwrap}; row already soft-deleted")
+               case Left(t)  => logger.warn(t)(s"Storage delete failed for ${image.storageKey.render}; row already soft-deleted")
                case Right(_) => IO.unit
              }
              .seal
@@ -131,13 +130,12 @@ class AuctionImageService(
     }
   }
 
-  def serveImage(auctionId: AuctionId, imageId: AuctionImageId): IO[Option[ServeImageResult]] =
+  def serveImage(auctionId: AuctionId, imageId: AuctionImageId): IO[Option[ObjectStore.GetResult]] =
     transactor.inSession(auctionImageRepository.find(imageId)).flatMap {
       case Some(image) if image.auctionId == auctionId =>
-        objectStore.get(image.storageKey, signedUrlTtl.unwrap, Some(image.fileName)).map {
-          case ObjectStore.GetResult.Streamed(ct, body) => Some(ServeImageResult.Streamed(ct, image.fileName, body))
-          case ObjectStore.GetResult.Redirected(url)    => Some(ServeImageResult.Redirected(url))
-          case ObjectStore.GetResult.NotFound           => None
+        objectStore.get(image.storageKey, signedUrlTtl, Some(image.fileName)).map {
+          case ObjectStore.GetResult.NotFound => None
+          case other                          => Some(other)
         }
       case _ => IO.pure(None)
     }
@@ -160,12 +158,4 @@ enum ReorderImagesResult {
   case AuctionNotFound
   case NotOwner
   case MismatchedIds
-}
-
-enum ServeImageResult {
-  case Streamed(
-    contentType: `Content-Type`,
-    fileName: String,
-    body: Stream[IO, Byte])
-  case Redirected(url: Uri)
 }

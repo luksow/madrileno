@@ -2,11 +2,9 @@ package madrileno.support
 
 import cats.effect.{IO, Ref}
 import fs2.Stream
-import madrileno.utils.storage.{ObjectMetadata, ObjectStore, ObjectStoreRuntime, StorageKey}
+import madrileno.utils.storage.{ObjectMetadata, ObjectStore, ObjectStoreRuntime, SignedUrlTtl, StorageKey}
 import org.http4s.headers.`Content-Type`
 import scodec.bits.ByteVector
-
-import scala.concurrent.duration.FiniteDuration
 
 object TestObjectStoreRuntime {
 
@@ -24,12 +22,12 @@ object TestObjectStoreRuntime {
 
         override def get(
           key: StorageKey,
-          ttl: FiniteDuration,
+          ttl: SignedUrlTtl,
           fileName: Option[String]
         ): IO[ObjectStore.GetResult] = {
-          val _ = (ttl, fileName)
+          val _ = ttl
           state.get.map(_.get(key)).map {
-            case Some((ct, bytes)) => ObjectStore.GetResult.Streamed(ct, Stream.chunk(fs2.Chunk.byteVector(bytes)))
+            case Some((ct, bytes)) => ObjectStore.GetResult.Streamed(ct, fileName, Stream.chunk(fs2.Chunk.byteVector(bytes)))
             case None              => ObjectStore.GetResult.NotFound
           }
         }

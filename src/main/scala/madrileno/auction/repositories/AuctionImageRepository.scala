@@ -78,10 +78,10 @@ class AuctionImageRepository {
     repository.findById(id).map(_.map(_.toAuctionImage))
 
   def listByAuction(auctionId: AuctionId): DB[List[AuctionImage]] =
-    repository.findByForeignId(auctionId).map(_.sortBy(_.position.unwrap).map(_.toAuctionImage))
+    repository.findByForeignId(auctionId).map(_.sortBy(_.position).map(_.toAuctionImage))
 
   def listByAuctionForUpdate(auctionId: AuctionId): DBInTransaction[List[AuctionImage]] =
-    repository.findByForeignId(auctionId, Lock.ForUpdate).map(_.sortBy(_.position.unwrap).map(_.toAuctionImage))
+    repository.findByForeignId(auctionId, Lock.ForUpdate).map(_.sortBy(_.position).map(_.toAuctionImage))
 
   def nextPosition(auctionId: AuctionId): DB[Int] = {
     val table = AuctionImageRowTable

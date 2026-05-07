@@ -7,6 +7,7 @@ import madrileno.auction.services.*
 import madrileno.auth.domain.AuthContext
 import madrileno.utils.http.BaseRouter
 import madrileno.utils.observability.TelemetryContext
+import madrileno.utils.storage.ObjectStore
 import org.http4s.headers.{Location, `Content-Disposition`, `Content-Length`, `Content-Type`}
 import org.http4s.multipart.{Multipart, Part}
 import org.http4s.{Headers, MediaType, Response, Status}
@@ -28,16 +29,13 @@ class AuctionImageRouter(auctionImageService: AuctionImageService, apiPrefix: St
         (auctionId, imageId) =>
           complete {
             auctionImageService.serveImage(auctionId, imageId).map[ToResponseMarshallable] {
-              case None => error(NotFound, "image-not-found", "Image not found")
-              case Some(ServeImageResult.Redirected(url)) =>
-                Response[IO](Status.SeeOther, headers = Headers(Location(url)))
-              case Some(ServeImageResult.Streamed(ct, fileName, body)) =>
-                Response[IO](
-                  Status.Ok,
-                  headers =
-                    Headers(`Content-Type`(ct.mediaType, ct.charset), `Content-Disposition`("attachment", Map(CIString("filename") -> fileName))),
-                  body = body
-                )
+              case None | Some(ObjectStore.GetResult.NotFound) => error(NotFound, "image-not-found", "Image not found")
+              case Some(ObjectStore.GetResult.Redirected(url)) => Response[IO](Status.SeeOther, headers = Headers(Location(url)))
+              case Some(ObjectStore.GetResult.Streamed(ct, fileName, body)) =>
+                val baseHeaders = Headers(`Content-Type`(ct.mediaType, ct.charset))
+                val headers =
+                  fileName.fold(baseHeaders)(name => baseHeaders.put(`Content-Disposition`("attachment", Map(CIString("filename") -> name))))
+                Response[IO](Status.Ok, headers = headers, body = body)
             }
           }
       }

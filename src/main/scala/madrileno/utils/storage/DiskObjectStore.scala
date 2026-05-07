@@ -9,8 +9,6 @@ import io.circe.{Decoder, Encoder}
 import org.http4s.Header
 import org.http4s.headers.`Content-Type`
 
-import scala.concurrent.duration.FiniteDuration
-
 class DiskObjectStore(root: FsPath) extends ObjectStore {
   import DiskObjectStore.given
 
@@ -31,12 +29,12 @@ class DiskObjectStore(root: FsPath) extends ObjectStore {
 
   override def get(
     key: StorageKey,
-    ttl: FiniteDuration,
+    ttl: SignedUrlTtl,
     fileName: Option[String]
   ): IO[ObjectStore.GetResult] = {
-    val _ = (ttl, fileName) // disk streams locally — caller sets Content-Disposition itself
+    val _ = ttl
     readMeta(key).map {
-      case Some(metadata) => ObjectStore.GetResult.Streamed(metadata.contentType, Files[IO].readAll(pathFor(key)))
+      case Some(metadata) => ObjectStore.GetResult.Streamed(metadata.contentType, fileName, Files[IO].readAll(pathFor(key)))
       case None           => ObjectStore.GetResult.NotFound
     }
   }
@@ -44,8 +42,8 @@ class DiskObjectStore(root: FsPath) extends ObjectStore {
   override def delete(key: StorageKey): IO[Unit] =
     Files[IO].deleteIfExists(pathFor(key)) *> Files[IO].deleteIfExists(metaPathFor(key)).void
 
-  private def pathFor(key: StorageKey): FsPath     = root / key.unwrap
-  private def metaPathFor(key: StorageKey): FsPath = root / s"${key.unwrap}.meta"
+  private def pathFor(key: StorageKey): FsPath     = root / key.render
+  private def metaPathFor(key: StorageKey): FsPath = root / s"${key.render}.meta"
 
   private def readMeta(key: StorageKey): IO[Option[ObjectMetadata]] = {
     val path = metaPathFor(key)

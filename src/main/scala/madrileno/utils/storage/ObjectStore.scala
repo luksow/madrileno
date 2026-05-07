@@ -6,10 +6,10 @@ import org.http4s.Uri
 import org.http4s.headers.`Content-Type`
 import pl.iterators.kebs.opaque.Opaque
 
-import scala.concurrent.duration.FiniteDuration
-
 opaque type StorageKey = String
-object StorageKey extends Opaque[StorageKey, String]
+object StorageKey extends Opaque[StorageKey, String] {
+  extension (key: StorageKey) def render: String = key.unwrap
+}
 
 final case class ObjectMetadata(contentType: `Content-Type`, sizeBytes: Long)
 
@@ -21,7 +21,7 @@ trait ObjectStore {
   ): IO[Unit]
   def get(
     key: StorageKey,
-    ttl: FiniteDuration,
+    ttl: SignedUrlTtl,
     fileName: Option[String]
   ): IO[ObjectStore.GetResult]
   def delete(key: StorageKey): IO[Unit]
@@ -29,7 +29,10 @@ trait ObjectStore {
 
 object ObjectStore {
   enum GetResult {
-    case Streamed(contentType: `Content-Type`, body: Stream[IO, Byte])
+    case Streamed(
+      contentType: `Content-Type`,
+      fileName: Option[String],
+      body: Stream[IO, Byte])
     case Redirected(url: Uri)
     case NotFound
   }

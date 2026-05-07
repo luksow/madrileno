@@ -20,6 +20,8 @@ opaque type ImagePosition = Int
 object ImagePosition extends Opaque[ImagePosition, Int] {
   override def validate(value: Int): Either[String, ImagePosition] =
     if (value >= 0) Right(value) else Left("Position must be non-negative")
+
+  given Ordering[ImagePosition] = Ordering[Int].on(_.unwrap)
 }
 
 final case class AuctionImage(

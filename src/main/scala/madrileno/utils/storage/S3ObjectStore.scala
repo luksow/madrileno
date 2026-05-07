@@ -14,7 +14,6 @@ import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignReques
 
 import java.nio.ByteBuffer
 import java.time.Duration as JDuration
-import scala.concurrent.duration.FiniteDuration
 
 final case class S3Config(
   endpoint: String,
@@ -37,7 +36,7 @@ class S3ObjectStore(
   ): IO[Unit] = {
     val ctValue = Header[`Content-Type`].value(metadata.contentType)
     body.chunks.map(c => ByteBuffer.wrap(c.toArray)).toUnicastPublisher.use { publisher =>
-      val builder = PutObjectRequest.builder().bucket(bucket).key(key.unwrap).contentType(ctValue)
+      val builder = PutObjectRequest.builder().bucket(bucket).key(key.render).contentType(ctValue)
       val request = if (metadata.sizeBytes > 0) builder.contentLength(metadata.sizeBytes).build() else builder.build()
       IO.fromCompletableFuture(IO(client.putObject(request, AsyncRequestBody.fromPublisher(publisher)))).void
     }
@@ -45,19 +44,19 @@ class S3ObjectStore(
 
   override def get(
     key: StorageKey,
-    ttl: FiniteDuration,
+    ttl: SignedUrlTtl,
     fileName: Option[String]
   ): IO[ObjectStore.GetResult] = IO.blocking {
-    val builder  = GetObjectRequest.builder().bucket(bucket).key(key.unwrap)
+    val builder  = GetObjectRequest.builder().bucket(bucket).key(key.render)
     val withDisp = fileName.fold(builder)(name => builder.responseContentDisposition(contentDisposition(name)))
     val signed = presigner.presignGetObject(
-      GetObjectPresignRequest.builder().signatureDuration(JDuration.ofSeconds(ttl.toSeconds)).getObjectRequest(withDisp.build()).build()
+      GetObjectPresignRequest.builder().signatureDuration(JDuration.ofSeconds(ttl.unwrap.toSeconds)).getObjectRequest(withDisp.build()).build()
     )
     ObjectStore.GetResult.Redirected(Uri.unsafeFromString(signed.url().toString))
   }
 
   override def delete(key: StorageKey): IO[Unit] =
-    IO.fromCompletableFuture(IO(client.deleteObject(DeleteObjectRequest.builder().bucket(bucket).key(key.unwrap).build()))).void
+    IO.fromCompletableFuture(IO(client.deleteObject(DeleteObjectRequest.builder().bucket(bucket).key(key.render).build()))).void
 
   private def contentDisposition(name: String): String = {
     val sanitized = name.replace("\\", "").replace("\"", "")

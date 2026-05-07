@@ -24,7 +24,7 @@ object AuctionImageDto {
     AuctionImageDto(
       id = image.id,
       auctionId = image.auctionId,
-      url = s"/$apiPrefix/auctions/${image.auctionId.unwrap}/images/${image.id.unwrap}/content",
+      url = s"/$apiPrefix/auctions/${image.auctionId}/images/${image.id}/content",
       fileName = image.fileName,
       contentType = Header[`Content-Type`].value(image.contentType),
       sizeBytes = image.sizeBytes,
