@@ -55,7 +55,16 @@ trait TestApplicationLoader extends TestContainersForAll with TestMailpit { self
     val config          = ConfigSource.default
     val schedulerConfig = SchedulerConfig()
     val scheduler       = Scheduler(transactor, schedulerConfig)
-    new ApplicationLoader(config, httpClient, transactor, Clock[IO], scheduler.client, TestCacheRuntime.unbounded, EventBusRuntime.local) {
+    new ApplicationLoader(
+      config,
+      httpClient,
+      transactor,
+      Clock[IO],
+      scheduler.client,
+      TestCacheRuntime.unbounded,
+      TestRateLimiterRuntime.unbounded,
+      EventBusRuntime.local
+    ) {
       override protected lazy val externalAuthVerifier: ExternalAuthVerifier =
         FakeAuthVerifier(firebaseToken)
       override protected lazy val vivinoGateway: VivinoGateway = (_, _) => IO.pure(None)

@@ -9,7 +9,7 @@ import madrileno.user.UserModule
 import madrileno.utils.cache.CacheRuntime
 import madrileno.utils.db.transactor.Transactor
 import madrileno.utils.events.EventBusRuntime
-import madrileno.utils.http.{ApplicationRouteProvider, Handlers}
+import madrileno.utils.http.{ApplicationRouteProvider, Handlers, RateLimiterRuntime}
 import madrileno.utils.mailer.{MailContext, MailPreviewProvider, MailPreviewRouter, Mailer, MailerConfig, SmtpSender}
 import madrileno.utils.observability.*
 import madrileno.utils.task.{ApplicationTaskProvider, OneTimeTask, SchedulerAdminRouter, SchedulerClient}
@@ -50,6 +50,7 @@ class ApplicationLoader(
   val clock: Clock[IO],
   val schedulerClient: SchedulerClient,
   val cacheRuntime: CacheRuntime,
+  val rateLimiterRuntime: RateLimiterRuntime,
   val eventBusRuntime: EventBusRuntime
 )(using TelemetryContext)
     extends ApplicationRouteProvider
