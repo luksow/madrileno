@@ -17,14 +17,14 @@ import madrileno.utils.events.{EventBus, EventBusRuntime}
 import madrileno.utils.http.{AuthRouteProvider, RateLimiterRuntime, RouteProvider, WsRouteProvider}
 import madrileno.utils.mailer.{MailPreview, MailPreviewProvider, Mailer}
 import madrileno.utils.observability.TelemetryContext
-import madrileno.utils.storage.ObjectStoreRuntime
+import madrileno.utils.storage.{ObjectStore, SignedUrlTtl}
 import madrileno.utils.task.{RecurringTaskProvider, Task}
 import org.http4s.server.websocket.WebSocketBuilder2
 import pl.iterators.stir.server.Route
 import sttp.capabilities.fs2.Fs2Streams
 import sttp.client4.WebSocketStreamBackend
 
-import scala.concurrent.duration.FiniteDuration
+import scala.concurrent.duration.DurationInt
 
 trait AuctionModule extends RouteProvider with AuthRouteProvider with WsRouteProvider with RecurringTaskProvider with MailPreviewProvider {
   given telemetryContext: TelemetryContext
@@ -32,8 +32,7 @@ trait AuctionModule extends RouteProvider with AuthRouteProvider with WsRoutePro
   val cacheRuntime: CacheRuntime
   val eventBusRuntime: EventBusRuntime
   val rateLimiterRuntime: RateLimiterRuntime
-  val objectStoreRuntime: ObjectStoreRuntime
-  protected def signedUrlTtl: FiniteDuration
+  val objectStore: ObjectStore
   lazy val httpClient: WebSocketStreamBackend[IO, Fs2Streams[IO]]
   lazy val userRepository: UserRepository
   lazy val mailer: Mailer
@@ -41,13 +40,13 @@ trait AuctionModule extends RouteProvider with AuthRouteProvider with WsRoutePro
 
   protected lazy val vivinoGateway: VivinoGateway            = VivinoGateway.live(httpClient, cacheRuntime)
   protected lazy val auctionEventBus: EventBus[AuctionEvent] = eventBusRuntime.topic[AuctionEvent]("auction_events", maxQueued = 64)
+  protected lazy val signedUrlTtl: SignedUrlTtl              = SignedUrlTtl(5.minutes)
 
   private val auctionRepository      = wire[AuctionRepository]
   private val bidRepository          = wire[BidRepository]
   private val auctionImageRepository = wire[AuctionImageRepository]
   private val auctionService         = wire[AuctionService]
-  private val objectStore            = objectStoreRuntime.objectStore
-  private val auctionImageService    = new AuctionImageService(auctionRepository, auctionImageRepository, objectStore, transactor, signedUrlTtl)
+  private val auctionImageService    = wire[AuctionImageService]
   private val auctionRouter          = wire[AuctionRouter]
   private val auctionImageRouter     = new AuctionImageRouter(auctionImageService, appConfig.apiVersion)
 

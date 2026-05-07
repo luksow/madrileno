@@ -10,18 +10,16 @@ import madrileno.user.domain.UserId
 import madrileno.utils.crypto.IdGenerator
 import madrileno.utils.db.transactor.Transactor
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
-import madrileno.utils.storage.{ObjectMetadata, ObjectStore, StorageKey}
+import madrileno.utils.storage.{ObjectMetadata, ObjectStore, SignedUrlTtl, StorageKey}
 import org.http4s.Uri
 import org.http4s.headers.`Content-Type`
-
-import scala.concurrent.duration.FiniteDuration
 
 class AuctionImageService(
   auctionRepository: AuctionRepository,
   auctionImageRepository: AuctionImageRepository,
   objectStore: ObjectStore,
   transactor: Transactor,
-  presignTtl: FiniteDuration
+  signedUrlTtl: SignedUrlTtl
 )(using
   TelemetryContext,
   UUIDGen[IO],
@@ -143,7 +141,7 @@ class AuctionImageService(
     transactor.inSession(auctionImageRepository.find(imageId)).flatMap {
       case None => IO.pure(None)
       case Some(image) =>
-        objectStore.get(image.storageKey, presignTtl, Some(image.fileName)).map {
+        objectStore.get(image.storageKey, signedUrlTtl.unwrap, Some(image.fileName)).map {
           case ObjectStore.GetResult.Streamed(ct, body) => Some(ServeImageResult.Streamed(ct, image.fileName, body))
           case ObjectStore.GetResult.Redirected(url)    => Some(ServeImageResult.Redirected(url))
           case ObjectStore.GetResult.NotFound           => None
