@@ -10,7 +10,12 @@ import org.http4s.headers.`Content-Type`
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AsyncWordSpec
 import org.testcontainers.containers.wait.strategy.Wait
+import software.amazon.awssdk.auth.credentials.{AwsBasicCredentials, StaticCredentialsProvider}
+import software.amazon.awssdk.regions.Region
+import software.amazon.awssdk.services.s3.S3AsyncClient
+import software.amazon.awssdk.services.s3.model.CreateBucketRequest
 
+import java.net.URI
 import scala.concurrent.duration.DurationInt
 
 class S3ObjectStoreSpec extends AsyncWordSpec with AsyncIOSpec with Matchers with TestContainerForAll {
@@ -31,39 +36,42 @@ class S3ObjectStoreSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wit
     secretAccessKey = "minioadmin"
   )
 
+  private def createBucket(config: S3Config): IO[Unit] = IO.fromCompletableFuture {
+    IO {
+      val client = S3AsyncClient
+        .builder()
+        .endpointOverride(new URI(config.endpoint))
+        .region(Region.of(config.region))
+        .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create(config.accessKeyId, config.secretAccessKey)))
+        .forcePathStyle(true)
+        .build()
+      client.createBucket(CreateBucketRequest.builder().bucket(config.bucket).build())
+    }
+  }.void
+
   private val plainText = `Content-Type`(MediaType.text.plain)
 
   "S3ObjectStore against MinIO" should {
     "round-trip a put/get/delete" in withContainers { container =>
-      ObjectStoreRuntime
-        .s3(configFor(container))
-        .use { runtime =>
-          val store = runtime.objectStore
-          val key   = StorageKey("test/object.txt")
-          val bytes = "hello s3".getBytes("UTF-8")
-          for {
-            _      <- store.put(key, ObjectMetadata(plainText, bytes.length.toLong), Stream.emits(bytes))
-            result <- store.get(key, SignedUrlTtl(5.minutes), Some("hello.txt"))
-            _ = result match {
-                  case ObjectStore.GetResult.Redirected(_) => succeed
-                  case other                               => fail(s"Expected Redirected, got $other")
-                }
-            _ <- store.delete(key)
-          } yield succeed
-        }
-        .timeout(60.seconds)
-    }
-
-    "creates the bucket if it doesn't exist" in withContainers { container =>
       val config = configFor(container)
-      ObjectStoreRuntime
-        .s3(config)
-        .use { runtime =>
-          runtime.objectStore
-            .put(StorageKey("created/object.txt"), ObjectMetadata(plainText, 4L), Stream.emits("data".getBytes("UTF-8")))
-            .as(succeed)
-        }
-        .timeout(60.seconds)
+      createBucket(config) *>
+        ObjectStoreRuntime
+          .s3(config)
+          .use { runtime =>
+            val store = runtime.objectStore
+            val key   = StorageKey("test/object.txt")
+            val bytes = "hello s3".getBytes("UTF-8")
+            for {
+              _      <- store.put(key, ObjectMetadata(plainText, bytes.length.toLong), Stream.emits(bytes))
+              result <- store.get(key, SignedUrlTtl(5.minutes), Some("hello.txt"))
+              _ = result match {
+                    case ObjectStore.GetResult.Redirected(_) => succeed
+                    case other                               => fail(s"Expected Redirected, got $other")
+                  }
+              _ <- store.delete(key)
+            } yield succeed
+          }
+          .timeout(60.seconds)
     }
   }
 }

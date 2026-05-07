@@ -8,7 +8,14 @@ import org.http4s.{Header, Uri}
 import pureconfig.ConfigReader
 import software.amazon.awssdk.core.async.AsyncRequestBody
 import software.amazon.awssdk.services.s3.S3AsyncClient
-import software.amazon.awssdk.services.s3.model.{DeleteObjectRequest, GetObjectRequest, PutObjectRequest}
+import software.amazon.awssdk.services.s3.model.{
+  DeleteObjectRequest,
+  GetObjectRequest,
+  HeadObjectRequest,
+  NoSuchKeyException,
+  PutObjectRequest,
+  S3Exception
+}
 import software.amazon.awssdk.services.s3.presigner.S3Presigner
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest
 
@@ -49,20 +56,27 @@ class S3ObjectStore(
     key: StorageKey,
     ttl: SignedUrlTtl,
     fileName: Option[String]
-  ): IO[ObjectStore.GetResult] = IO.blocking {
-    val builder  = GetObjectRequest.builder().bucket(bucket).key(key.render)
-    val withDisp = fileName.fold(builder)(name => builder.responseContentDisposition(contentDisposition(name)))
-    val signed = presigner.presignGetObject(
-      GetObjectPresignRequest.builder().signatureDuration(JDuration.ofSeconds(ttl.unwrap.toSeconds)).getObjectRequest(withDisp.build()).build()
-    )
-    ObjectStore.GetResult.Redirected(Uri.unsafeFromString(signed.url().toString))
+  ): IO[ObjectStore.GetResult] = {
+    val head = IO.fromCompletableFuture(IO(client.headObject(HeadObjectRequest.builder().bucket(bucket).key(key.render).build()))).void
+    val presign = IO.blocking {
+      val builder  = GetObjectRequest.builder().bucket(bucket).key(key.render)
+      val withDisp = fileName.fold(builder)(name => builder.responseContentDisposition(contentDisposition(name)))
+      val signed = presigner.presignGetObject(
+        GetObjectPresignRequest.builder().signatureDuration(JDuration.ofSeconds(ttl.unwrap.toSeconds)).getObjectRequest(withDisp.build()).build()
+      )
+      ObjectStore.GetResult.Redirected(Uri.unsafeFromString(signed.url().toString))
+    }
+    head.flatMap(_ => presign).recover {
+      case _: NoSuchKeyException                   => ObjectStore.GetResult.NotFound
+      case e: S3Exception if e.statusCode() == 404 => ObjectStore.GetResult.NotFound
+    }
   }
 
   override def delete(key: StorageKey): IO[Unit] =
     IO.fromCompletableFuture(IO(client.deleteObject(DeleteObjectRequest.builder().bucket(bucket).key(key.render).build()))).void
 
   private def contentDisposition(name: String): String = {
-    val sanitized = name.replace("\\", "").replace("\"", "")
+    val sanitized = name.filter(c => c >= 0x20 && c != 0x7f && c != '"' && c != '\\')
     s"""attachment; filename="$sanitized""""
   }
 }

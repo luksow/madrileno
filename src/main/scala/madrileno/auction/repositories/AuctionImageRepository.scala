@@ -69,6 +69,10 @@ private[repositories] case class AuctionImageRowFilter(
     extends SqlFilter {
   override def filterFragment: AppliedFragment =
     SqlFilterDerivation.filterFragment(this, (AuctionImageRowTable.id, AuctionImageRowTable.auctionId, AuctionImageRowTable.deletedAt))
+
+  override def orderByFragment: Fragment[Void] = fromSqlOrderBy(new SqlOrderBy {
+    override val fragment: Fragment[Void] = sql"${AuctionImageRowTable.position.n} ASC"
+  })
 }
 
 class AuctionImageRepository {
@@ -79,10 +83,10 @@ class AuctionImageRepository {
     repository.findById(id).map(_.map(_.toAuctionImage))
 
   def listByAuction(auctionId: AuctionId): DB[List[AuctionImage]] =
-    repository.findByForeignId(auctionId).map(_.sortBy(_.position).map(_.toAuctionImage))
+    repository.findByFilter(AuctionImageRowFilter(auctionId = p.equal(auctionId))).map(_.map(_.toAuctionImage))
 
   def listByAuctionForUpdate(auctionId: AuctionId): DBInTransaction[List[AuctionImage]] =
-    repository.findByForeignId(auctionId, Lock.ForUpdate).map(_.sortBy(_.position).map(_.toAuctionImage))
+    repository.findByFilter(AuctionImageRowFilter(auctionId = p.equal(auctionId)), Lock.ForUpdate).map(_.map(_.toAuctionImage))
 
   def nextPosition(auctionId: AuctionId): DB[Int] = {
     val table = AuctionImageRowTable
