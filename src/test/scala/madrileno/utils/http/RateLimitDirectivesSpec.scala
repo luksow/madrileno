@@ -23,8 +23,8 @@ class RateLimitDirectivesSpec extends AnyFunSpec with Matchers {
       override protected val rateLimiter: RateLimiter = rl
     }
     import router.*
-    rateLimited("test", RateLimit(to = 3, within = 1.minute)) {
-      (get & path("hello") & pathEndOrSingleSlash) {
+    (get & path("hello") & pathEndOrSingleSlash) {
+      rateLimited("test", RateLimit(to = 3, within = 1.minute)) {
         complete(router.Ok -> "ok")
       }
     }
@@ -54,8 +54,10 @@ class RateLimitDirectivesSpec extends AnyFunSpec with Matchers {
           override protected val rateLimiter: RateLimiter = rl
         }
         import router.*
-        rateLimited("isolated", RateLimit(to = 1, within = 1.minute), by = byHeader("X-Client")) {
-          (get & path("hello") & pathEndOrSingleSlash) { complete(router.Ok -> clientId) }
+        (get & path("hello") & pathEndOrSingleSlash) {
+          rateLimited("isolated", RateLimit(to = 1, within = 1.minute), by = byHeader("X-Client")) {
+            complete(router.Ok -> clientId)
+          }
         }
       }
 
@@ -71,11 +73,15 @@ class RateLimitDirectivesSpec extends AnyFunSpec with Matchers {
           override protected val rateLimiter: RateLimiter = rl
         }
         import router.*
-        (get & path("hello") & pathEndOrSingleSlash & rateLimited("get-bucket", RateLimit(to = 1, within = 1.minute))) {
-          complete(router.Ok -> "got")
+        (get & path("hello") & pathEndOrSingleSlash) {
+          rateLimited("get-bucket", RateLimit(to = 1, within = 1.minute)) {
+            complete(router.Ok -> "got")
+          }
         } ~
-          (post & path("hello") & pathEndOrSingleSlash & rateLimited("post-bucket", RateLimit(to = 1, within = 1.minute))) {
-            complete(router.Created -> "posted")
+          (post & path("hello") & pathEndOrSingleSlash) {
+            rateLimited("post-bucket", RateLimit(to = 1, within = 1.minute)) {
+              complete(router.Created -> "posted")
+            }
           }
       }
 
@@ -94,14 +100,35 @@ class RateLimitDirectivesSpec extends AnyFunSpec with Matchers {
           override protected val rateLimiter: RateLimiter = rl
         }
         import router.*
-        (get & path("hello") & pathEndOrSingleSlash & rateLimited("xff", RateLimit(to = 1, within = 1.minute), by = byClientIp)) {
-          complete(router.Ok -> "ok")
+        (get & path("hello") & pathEndOrSingleSlash) {
+          rateLimited("xff", RateLimit(to = 1, within = 1.minute), by = byClientIp) {
+            complete(router.Ok -> "ok")
+          }
         }
       }
 
       hit(routes, Some("X-Forwarded-For" -> "1.2.3.4")).status shouldBe Status.Ok
       hit(routes, Some("X-Forwarded-For" -> "5.6.7.8")).status shouldBe Status.Ok
       hit(routes, Some("X-Forwarded-For" -> "1.2.3.4")).status shouldBe Status.TooManyRequests
+    }
+
+    it("byClientIp ignores invalid X-Forwarded-For and falls through") {
+      val rl = RateLimiterRuntime.scaffeine().rateLimiter
+      val routes: Route = {
+        val router = new BaseRouter with RateLimitDirectives {
+          override protected val rateLimiter: RateLimiter = rl
+        }
+        import router.*
+        (get & path("hello") & pathEndOrSingleSlash) {
+          rateLimited("xff-invalid", RateLimit(to = 2, within = 1.minute), by = byClientIp) {
+            complete(router.Ok -> "ok")
+          }
+        }
+      }
+
+      hit(routes, Some("X-Forwarded-For" -> "not-an-ip")).status shouldBe Status.Ok
+      hit(routes, Some("X-Forwarded-For" -> "still-not-an-ip")).status shouldBe Status.Ok
+      hit(routes, Some("X-Forwarded-For" -> "garbage")).status shouldBe Status.TooManyRequests
     }
   }
 }
