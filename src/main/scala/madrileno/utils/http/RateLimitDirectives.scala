@@ -2,11 +2,10 @@ package madrileno.utils.http
 
 import cats.effect.IO
 import com.comcast.ip4s.IpAddress
-import madrileno.auth.domain.AuthContext
 import madrileno.utils.observability.TelemetryContext
 import org.http4s.{Header, Request, Status}
 import org.typelevel.ci.CIString
-import pl.iterators.stir.server.Route
+import pl.iterators.stir.server.{Directive, Directive0}
 
 trait RateLimitDirectives { self: BaseRouter =>
   protected def rateLimiter: RateLimiter
@@ -24,9 +23,6 @@ trait RateLimitDirectives { self: BaseRouter =>
   val byClientIpDirect: Request[IO] => String =
     req => req.remoteAddr.fold("unknown")(_.toString)
 
-  def byAuthedUser(auth: AuthContext): Request[IO] => String =
-    _ => s"user:${auth.userId}"
-
   def byHeader(name: String): Request[IO] => String =
     req => req.headers.get(CIString(name)).map(_.head.value).getOrElse("unknown")
 
@@ -34,10 +30,8 @@ trait RateLimitDirectives { self: BaseRouter =>
     name: String,
     limit: RateLimit,
     by: Request[IO] => String = byClientIp
-  )(
-    inner: Route
   )(using TelemetryContext
-  ): Route =
+  ): Directive0 = Directive { inner =>
     extractRequest { req =>
       val key = s"$name:${by(req)}"
       onSuccess(rateLimiter.increment(key, limit.within)) { count =>
@@ -45,7 +39,8 @@ trait RateLimitDirectives { self: BaseRouter =>
           respondWithHeader(Header.Raw(CIString("Retry-After"), limit.within.toSeconds.toString)) {
             complete(error(Status.TooManyRequests, "rate-limited", s"Too many requests; retry after ${limit.within.toSeconds}s"))
           }
-        else inner
+        else inner(())
       }
     }
+  }
 }

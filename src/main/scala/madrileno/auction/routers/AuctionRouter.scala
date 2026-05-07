@@ -10,6 +10,7 @@ import madrileno.user.domain.UserId
 import madrileno.utils.events.EventBus
 import madrileno.utils.http.{BaseRouter, RateLimit, RateLimitDirectives, RateLimiter, RateLimiterRuntime}
 import madrileno.utils.observability.TelemetryContext
+import org.http4s.Request
 import org.http4s.server.websocket.WebSocketBuilder2
 import org.http4s.websocket.WebSocketFrame
 import pl.iterators.stir.marshalling.ToResponseMarshallable
@@ -51,7 +52,7 @@ class AuctionRouter(
   }
 
   def authedRoutes(authContext: AuthContext): Route = {
-    val byUser = byAuthedUser(authContext)
+    val byUser: Request[IO] => String = _ => s"user:${authContext.userId}"
     (post & path("auctions") & pathEndOrSingleSlash & entity(as[CreateAuctionRequest])) { request =>
       rateLimited("auctions.create", RateLimit(to = 10, within = 1.minute), by = byUser) {
         complete {
