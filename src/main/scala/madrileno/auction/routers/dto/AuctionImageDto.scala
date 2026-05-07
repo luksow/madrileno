@@ -2,6 +2,8 @@ package madrileno.auction.routers.dto
 
 import madrileno.auction.domain.*
 import madrileno.utils.json.JsonProtocol.*
+import org.http4s.Header
+import org.http4s.headers.`Content-Type`
 
 import java.time.Instant
 
@@ -9,7 +11,8 @@ case class AuctionImageDto(
   id: AuctionImageId,
   auctionId: AuctionId,
   url: String,
-  contentType: ContentType,
+  fileName: String,
+  contentType: String,
   sizeBytes: SizeBytes,
   position: ImagePosition,
   uploadedAt: Instant)
@@ -22,7 +25,8 @@ object AuctionImageDto {
       id = image.id,
       auctionId = image.auctionId,
       url = s"/$apiVersion/auctions/${image.auctionId.unwrap}/images/${image.id.unwrap}/content",
-      contentType = image.contentType,
+      fileName = image.fileName,
+      contentType = Header[`Content-Type`].value(image.contentType),
       sizeBytes = image.sizeBytes,
       position = image.position,
       uploadedAt = image.uploadedAt

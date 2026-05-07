@@ -1,7 +1,7 @@
 package madrileno.auction.services
 
 import cats.effect.std.UUIDGen
-import cats.effect.{Clock, IO}
+import cats.effect.{Clock, IO, Ref}
 import cats.syntax.all.*
 import fs2.Stream
 import madrileno.auction.domain.*
@@ -10,8 +10,9 @@ import madrileno.user.domain.UserId
 import madrileno.utils.crypto.IdGenerator
 import madrileno.utils.db.transactor.Transactor
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
-import madrileno.utils.storage.{ObjectStore, StorageKey}
-import org.http4s.Response
+import madrileno.utils.storage.{ObjectMetadata, ObjectStore, StorageKey}
+import org.http4s.Uri
+import org.http4s.headers.`Content-Type`
 
 import scala.concurrent.duration.FiniteDuration
 
@@ -33,8 +34,9 @@ class AuctionImageService(
   def attachImage(
     auctionId: AuctionId,
     sellerId: UserId,
-    contentType: ContentType,
-    sizeBytes: SizeBytes,
+    fileName: String,
+    contentType: `Content-Type`,
+    sizeBytesHint: Long,
     content: Stream[IO, Byte]
   ): IO[AttachImageResult] = {
     transactor
@@ -44,10 +46,13 @@ class AuctionImageService(
         case Some(auction) if auction.sellerId != sellerId => IO.pure(AttachImageResult.NotOwner)
         case Some(_) =>
           for {
-            id  <- IdGenerator.generateId(AuctionImageId)
-            now <- Clock[IO].realTimeInstant
-            key = StorageKey(s"auctions/${auctionId.unwrap}/images/${id.unwrap}")
-            _ <- objectStore.put(key, contentType.unwrap, sizeBytes.unwrap, content)
+            id      <- IdGenerator.generateId(AuctionImageId)
+            now     <- Clock[IO].realTimeInstant
+            counter <- Ref.of[IO, Long](0L)
+            key         = StorageKey(s"auctions/${auctionId.unwrap}/images/${id.unwrap}")
+            countedBody = content.chunks.evalTap(c => counter.update(_ + c.size)).unchunks
+            _          <- objectStore.put(key, ObjectMetadata(contentType, sizeBytesHint), countedBody)
+            actualSize <- counter.get
             persistResult <- transactor.inSession {
                                for {
                                  pos <- auctionImageRepository.nextPosition(auctionId)
@@ -55,8 +60,9 @@ class AuctionImageService(
                                            id = id,
                                            auctionId = auctionId,
                                            storageKey = key,
+                                           fileName = fileName,
                                            contentType = contentType,
-                                           sizeBytes = sizeBytes,
+                                           sizeBytes = SizeBytes(actualSize),
                                            position = ImagePosition(pos),
                                            uploadedAt = now,
                                            deletedAt = None
@@ -133,10 +139,15 @@ class AuctionImageService(
     }
   }
 
-  def serveImage(imageId: AuctionImageId): IO[Option[Response[IO]]] =
+  def serveImage(imageId: AuctionImageId): IO[Option[ServeImageResult]] =
     transactor.inSession(auctionImageRepository.find(imageId)).flatMap {
-      case None        => IO.pure(None)
-      case Some(image) => objectStore.serve(image.storageKey, presignTtl).map(Some(_))
+      case None => IO.pure(None)
+      case Some(image) =>
+        objectStore.get(image.storageKey, presignTtl, Some(image.fileName)).map {
+          case ObjectStore.GetResult.Streamed(ct, body) => Some(ServeImageResult.Streamed(ct, image.fileName, body))
+          case ObjectStore.GetResult.Redirected(url)    => Some(ServeImageResult.Redirected(url))
+          case ObjectStore.GetResult.NotFound           => None
+        }
     }
 }
 
@@ -157,4 +168,12 @@ enum ReorderImagesResult {
   case AuctionNotFound
   case NotOwner
   case MismatchedIds
+}
+
+enum ServeImageResult {
+  case Streamed(
+    contentType: `Content-Type`,
+    fileName: String,
+    body: Stream[IO, Byte])
+  case Redirected(url: Uri)
 }

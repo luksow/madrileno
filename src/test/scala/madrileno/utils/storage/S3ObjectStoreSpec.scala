@@ -5,6 +5,8 @@ import cats.effect.testing.scalatest.AsyncIOSpec
 import com.dimafeng.testcontainers.GenericContainer
 import com.dimafeng.testcontainers.scalatest.TestContainerForAll
 import fs2.Stream
+import org.http4s.MediaType
+import org.http4s.headers.`Content-Type`
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AsyncWordSpec
 import org.testcontainers.containers.wait.strategy.Wait
@@ -29,8 +31,10 @@ class S3ObjectStoreSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wit
     secretAccessKey = "minioadmin"
   )
 
+  private val plainText = `Content-Type`(MediaType.text.plain)
+
   "S3ObjectStore against MinIO" should {
-    "round-trip a put/serve/delete" in withContainers { container =>
+    "round-trip a put/get/delete" in withContainers { container =>
       ObjectStoreRuntime
         .s3(configFor(container))
         .use { runtime =>
@@ -38,9 +42,12 @@ class S3ObjectStoreSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wit
           val key   = StorageKey("test/object.txt")
           val bytes = "hello s3".getBytes("UTF-8")
           for {
-            _      <- store.put(key, "text/plain", bytes.length.toLong, Stream.emits(bytes))
-            served <- store.serve(key, 5.minutes)
-            _ = served.status.code shouldBe 303 // SeeOther — redirect to presigned URL
+            _      <- store.put(key, ObjectMetadata(plainText, bytes.length.toLong), Stream.emits(bytes))
+            result <- store.get(key, 5.minutes, Some("hello.txt"))
+            _ = result match {
+                  case ObjectStore.GetResult.Redirected(_) => succeed
+                  case other                               => fail(s"Expected Redirected, got $other")
+                }
             _ <- store.delete(key)
           } yield succeed
         }
@@ -53,7 +60,7 @@ class S3ObjectStoreSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wit
         .s3(config)
         .use { runtime =>
           runtime.objectStore
-            .put(StorageKey("created/object.txt"), "text/plain", 4L, Stream.emits("data".getBytes("UTF-8")))
+            .put(StorageKey("created/object.txt"), ObjectMetadata(plainText, 4L), Stream.emits("data".getBytes("UTF-8")))
             .as(succeed)
         }
         .timeout(60.seconds)

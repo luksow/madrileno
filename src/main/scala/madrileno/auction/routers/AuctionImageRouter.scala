@@ -7,9 +7,10 @@ import madrileno.auction.services.*
 import madrileno.auth.domain.AuthContext
 import madrileno.utils.http.BaseRouter
 import madrileno.utils.observability.TelemetryContext
-import org.http4s.MediaType
-import org.http4s.headers.`Content-Type`
+import org.http4s.headers.{Location, `Content-Disposition`, `Content-Type`}
 import org.http4s.multipart.{Multipart, Part}
+import org.http4s.{Headers, MediaType, Response, Status}
+import org.typelevel.ci.CIString
 import pl.iterators.stir.marshalling.ToResponseMarshallable
 import pl.iterators.stir.server.Route
 
@@ -25,9 +26,17 @@ class AuctionImageRouter(auctionImageService: AuctionImageService, apiVersion: S
     } ~
       (get & path("auctions" / JavaUUID.as[AuctionId] / "images" / JavaUUID.as[AuctionImageId] / "content") & pathEndOrSingleSlash) { (_, imageId) =>
         complete {
-          auctionImageService.serveImage(imageId).flatMap[ToResponseMarshallable] {
-            case Some(response) => IO.pure(response)
-            case None           => error(NotFound, "image-not-found", "Image not found")
+          auctionImageService.serveImage(imageId).map[ToResponseMarshallable] {
+            case None => error(NotFound, "image-not-found", "Image not found")
+            case Some(ServeImageResult.Redirected(url)) =>
+              Response[IO](Status.SeeOther, headers = Headers(Location(url)))
+            case Some(ServeImageResult.Streamed(ct, fileName, body)) =>
+              Response[IO](
+                Status.Ok,
+                headers =
+                  Headers(`Content-Type`(ct.mediaType, ct.charset), `Content-Disposition`("attachment", Map(CIString("filename") -> fileName))),
+                body = body
+              )
           }
         }
       }
@@ -39,10 +48,11 @@ class AuctionImageRouter(auctionImageService: AuctionImageService, apiVersion: S
         firstFilePart(multipart) match {
           case None => error(BadRequest, "missing-file", "No file part found in multipart body")
           case Some(part) =>
-            val contentType = ContentType(part.headers.get[`Content-Type`].map(_.mediaType).getOrElse(MediaType.application.`octet-stream`).toString)
-            val sizeBytes   = SizeBytes(part.headers.get[org.http4s.headers.`Content-Length`].map(_.length).getOrElse(0L))
+            val contentType   = part.headers.get[`Content-Type`].getOrElse(`Content-Type`(MediaType.application.`octet-stream`))
+            val sizeBytesHint = part.headers.get[org.http4s.headers.`Content-Length`].map(_.length).getOrElse(0L)
+            val fileName      = part.filename.getOrElse("file")
             auctionImageService
-              .attachImage(auctionId, authContext.userId, contentType, sizeBytes, part.body)
+              .attachImage(auctionId, authContext.userId, fileName, contentType, sizeBytesHint, part.body)
               .map[ToResponseMarshallable] {
                 case AttachImageResult.Attached(image) => Created -> AuctionImageDto(image, apiVersion)
                 case AttachImageResult.AuctionNotFound => error(NotFound, "auction-not-found", "Auction not found")

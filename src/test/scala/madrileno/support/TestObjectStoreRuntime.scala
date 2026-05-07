@@ -2,9 +2,8 @@ package madrileno.support
 
 import cats.effect.{IO, Ref}
 import fs2.Stream
-import madrileno.utils.storage.{ObjectStore, ObjectStoreRuntime, StorageKey}
+import madrileno.utils.storage.{ObjectMetadata, ObjectStore, ObjectStoreRuntime, StorageKey}
 import org.http4s.headers.`Content-Type`
-import org.http4s.{Headers, MediaType, Response, Status}
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration.FiniteDuration
@@ -12,27 +11,26 @@ import scala.concurrent.duration.FiniteDuration
 object TestObjectStoreRuntime {
 
   def inMemory: ObjectStoreRuntime = {
-    val state = Ref.unsafe[IO, Map[StorageKey, (String, ByteVector)]](Map.empty)
+    val state = Ref.unsafe[IO, Map[StorageKey, (`Content-Type`, ByteVector)]](Map.empty)
 
     new ObjectStoreRuntime {
       override val objectStore: ObjectStore = new ObjectStore {
         override def put(
           key: StorageKey,
-          contentType: String,
-          sizeBytes: Long,
-          content: Stream[IO, Byte]
-        ): IO[Unit] = {
-          val _ = sizeBytes
-          content.compile.to(ByteVector).flatMap(bytes => state.update(_.updated(key, contentType -> bytes)))
-        }
+          metadata: ObjectMetadata,
+          body: Stream[IO, Byte]
+        ): IO[Unit] =
+          body.compile.to(ByteVector).flatMap(bytes => state.update(_.updated(key, metadata.contentType -> bytes)))
 
-        override def serve(key: StorageKey, ttl: FiniteDuration): IO[Response[IO]] = {
-          val _ = ttl
+        override def get(
+          key: StorageKey,
+          ttl: FiniteDuration,
+          fileName: Option[String]
+        ): IO[ObjectStore.GetResult] = {
+          val _ = (ttl, fileName)
           state.get.map(_.get(key)).map {
-            case Some((ct, bytes)) =>
-              val media = MediaType.parse(ct).getOrElse(MediaType.application.`octet-stream`)
-              Response[IO](Status.Ok, headers = Headers(`Content-Type`(media)), body = Stream.chunk(fs2.Chunk.byteVector(bytes)))
-            case None => Response[IO](Status.NotFound)
+            case Some((ct, bytes)) => ObjectStore.GetResult.Streamed(ct, Stream.chunk(fs2.Chunk.byteVector(bytes)))
+            case None              => ObjectStore.GetResult.NotFound
           }
         }
 

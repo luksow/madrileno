@@ -5,6 +5,8 @@ import madrileno.auction.domain.*
 import madrileno.auth.domain.{AuthContext, *}
 import madrileno.user.domain.*
 import madrileno.utils.storage.StorageKey
+import org.http4s.MediaType
+import org.http4s.headers.`Content-Type`
 
 import java.time.Instant
 import java.util.{Currency, UUID}
@@ -109,10 +111,11 @@ object TestData {
     id: AuctionImageId = randomAuctionImageId(),
     auctionId: AuctionId = randomAuctionId(),
     storageKey: StorageKey = StorageKey(s"auctions/test/images/${UUID.randomUUID()}"),
-    contentType: ContentType = ContentType("image/jpeg"),
+    fileName: String = "wine.jpg",
+    contentType: `Content-Type` = `Content-Type`(MediaType.image.jpeg),
     sizeBytes: SizeBytes = SizeBytes(1024L),
     position: ImagePosition = ImagePosition(0),
     uploadedAt: Instant = Instant.now(),
     deletedAt: Option[Instant] = None
-  ): AuctionImage = AuctionImage(id, auctionId, storageKey, contentType, sizeBytes, position, uploadedAt, deletedAt)
+  ): AuctionImage = AuctionImage(id, auctionId, storageKey, fileName, contentType, sizeBytes, position, uploadedAt, deletedAt)
 }

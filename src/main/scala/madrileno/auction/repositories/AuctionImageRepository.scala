@@ -5,6 +5,8 @@ import madrileno.auction.domain.*
 import madrileno.utils.db.dsl.*
 import madrileno.utils.db.transactor.DB
 import madrileno.utils.storage.StorageKey
+import org.http4s.Header
+import org.http4s.headers.`Content-Type`
 import skunk.*
 import skunk.codec.all.*
 import skunk.implicits.*
@@ -15,7 +17,8 @@ private[repositories] case class AuctionImageRow(
   id: AuctionImageId,
   auctionId: AuctionId,
   storageKey: StorageKey,
-  contentType: ContentType,
+  fileName: String,
+  contentType: `Content-Type`,
   sizeBytes: SizeBytes,
   position: ImagePosition,
   uploadedAt: Instant,
@@ -38,10 +41,15 @@ private[repositories] object AuctionImageRowTable
     with IdTable[AuctionImageRow, AuctionImageId]
     with SoftDeleteTable
     with ForeignIdTable[AuctionId] {
+  private val contentTypeCodec: Codec[`Content-Type`] = text.imap { s =>
+    `Content-Type`.parse(s).getOrElse(throw new IllegalStateException(s"Invalid content-type in DB: $s"))
+  }(Header[`Content-Type`].value)
+
   override val id: Column[AuctionImageId]         = column("id", uuid.as[AuctionImageId])
   val auctionId: Column[AuctionId]                = column("auction_id", uuid.as[AuctionId])
   val storageKey: Column[StorageKey]              = column("storage_key", text.as[StorageKey])
-  val contentType: Column[ContentType]            = column("content_type", text.as[ContentType])
+  val fileName: Column[String]                    = column("file_name", text)
+  val contentType: Column[`Content-Type`]         = column("content_type", contentTypeCodec)
   val sizeBytes: Column[SizeBytes]                = column("size_bytes", int8.as[SizeBytes])
   val position: Column[ImagePosition]             = column("position", int4.as[ImagePosition])
   val uploadedAt: Column[Instant]                 = column("uploaded_at", timestamptz.asInstant)
@@ -50,7 +58,7 @@ private[repositories] object AuctionImageRowTable
   override val foreignId: Column[AuctionId] = auctionId
 
   def mapping: (List[Column[?]], Codec[AuctionImageRow]) =
-    (id, auctionId, storageKey, contentType, sizeBytes, position, uploadedAt, deletedAt)
+    (id, auctionId, storageKey, fileName, contentType, sizeBytes, position, uploadedAt, deletedAt)
 }
 
 private[repositories] case class AuctionImageRowFilter(

@@ -1,6 +1,7 @@
 package madrileno.auction.domain
 
 import madrileno.utils.storage.StorageKey
+import org.http4s.headers.`Content-Type`
 import pl.iterators.kebs.opaque.Opaque
 
 import java.time.Instant
@@ -8,12 +9,6 @@ import java.util.UUID
 
 opaque type AuctionImageId = UUID
 object AuctionImageId extends Opaque[AuctionImageId, UUID]
-
-opaque type ContentType = String
-object ContentType extends Opaque[ContentType, String] {
-  override def validate(value: String): Either[String, ContentType] =
-    if (value.trim.nonEmpty) Right(value.trim) else Left("Content type must not be empty")
-}
 
 opaque type SizeBytes = Long
 object SizeBytes extends Opaque[SizeBytes, Long] {
@@ -31,7 +26,8 @@ final case class AuctionImage(
   id: AuctionImageId,
   auctionId: AuctionId,
   storageKey: StorageKey,
-  contentType: ContentType,
+  fileName: String,
+  contentType: `Content-Type`,
   sizeBytes: SizeBytes,
   position: ImagePosition,
   uploadedAt: Instant,

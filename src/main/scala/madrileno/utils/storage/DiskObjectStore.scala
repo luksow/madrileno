@@ -3,8 +3,8 @@ package madrileno.utils.storage
 import cats.effect.IO
 import fs2.Stream
 import fs2.io.file.{Files, Path as FsPath}
+import org.http4s.Header
 import org.http4s.headers.`Content-Type`
-import org.http4s.{Headers, MediaType, Response, Status}
 
 import scala.concurrent.duration.FiniteDuration
 
@@ -12,23 +12,29 @@ class DiskObjectStore(root: FsPath) extends ObjectStore {
 
   override def put(
     key: StorageKey,
-    contentType: String,
-    sizeBytes: Long,
-    content: Stream[IO, Byte]
+    metadata: ObjectMetadata,
+    body: Stream[IO, Byte]
   ): IO[Unit] = {
-    val target = pathFor(key)
+    val target  = pathFor(key)
+    val ctValue = Header[`Content-Type`].value(metadata.contentType)
     Files[IO].createDirectories(target.parent.getOrElse(root)) *>
-      content.through(Files[IO].writeAll(target)).compile.drain *>
-      Stream.emits(s"$contentType\n$sizeBytes\n".getBytes("UTF-8")).through(Files[IO].writeAll(metaPathFor(key))).compile.drain
+      body.through(Files[IO].writeAll(target)).compile.drain *>
+      Stream
+        .emits(s"$ctValue\n${metadata.sizeBytes}\n".getBytes("UTF-8"))
+        .through(Files[IO].writeAll(metaPathFor(key)))
+        .compile
+        .drain
   }
 
-  override def serve(key: StorageKey, ttl: FiniteDuration): IO[Response[IO]] = {
-    val _ = ttl
-    readMeta(key).flatMap {
-      case Some((contentType, _)) =>
-        val media = MediaType.parse(contentType).getOrElse(MediaType.application.`octet-stream`)
-        IO.pure(Response[IO](Status.Ok, headers = Headers(`Content-Type`(media)), body = Files[IO].readAll(pathFor(key))))
-      case None => IO.pure(Response[IO](Status.NotFound))
+  override def get(
+    key: StorageKey,
+    ttl: FiniteDuration,
+    fileName: Option[String]
+  ): IO[ObjectStore.GetResult] = {
+    val _ = (ttl, fileName) // disk streams locally — caller sets Content-Disposition itself
+    readMeta(key).map {
+      case Some((contentType, _)) => ObjectStore.GetResult.Streamed(contentType, Files[IO].readAll(pathFor(key)))
+      case None                   => ObjectStore.GetResult.NotFound
     }
   }
 
@@ -38,7 +44,7 @@ class DiskObjectStore(root: FsPath) extends ObjectStore {
   private def pathFor(key: StorageKey): FsPath     = root / key.unwrap
   private def metaPathFor(key: StorageKey): FsPath = root / s"${key.unwrap}.meta"
 
-  private def readMeta(key: StorageKey): IO[Option[(String, Long)]] = {
+  private def readMeta(key: StorageKey): IO[Option[(`Content-Type`, Long)]] = {
     val path = metaPathFor(key)
     Files[IO].exists(path).flatMap {
       case false => IO.pure(None)
@@ -50,11 +56,11 @@ class DiskObjectStore(root: FsPath) extends ObjectStore {
           .string
           .map { contents =>
             contents.split('\n').toList match {
-              case ct :: size :: _ => Some(ct -> size.trim.toLong)
-              case _               => None
+              case ct :: size :: _ =>
+                `Content-Type`.parse(ct).toOption.map(_ -> size.trim.toLong)
+              case _ => None
             }
           }
     }
   }
-
 }
