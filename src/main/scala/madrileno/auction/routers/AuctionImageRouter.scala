@@ -7,38 +7,39 @@ import madrileno.auction.services.*
 import madrileno.auth.domain.AuthContext
 import madrileno.utils.http.BaseRouter
 import madrileno.utils.observability.TelemetryContext
-import org.http4s.headers.{Location, `Content-Disposition`, `Content-Type`}
+import org.http4s.headers.{Location, `Content-Disposition`, `Content-Length`, `Content-Type`}
 import org.http4s.multipart.{Multipart, Part}
 import org.http4s.{Headers, MediaType, Response, Status}
 import org.typelevel.ci.CIString
 import pl.iterators.stir.marshalling.ToResponseMarshallable
 import pl.iterators.stir.server.Route
 
-class AuctionImageRouter(auctionImageService: AuctionImageService, apiVersion: String)(using TelemetryContext) extends BaseRouter {
+class AuctionImageRouter(auctionImageService: AuctionImageService, apiPrefix: String)(using TelemetryContext) extends BaseRouter {
 
   val routes: Route = {
     (get & path("auctions" / JavaUUID.as[AuctionId] / "images") & pathEndOrSingleSlash) { auctionId =>
       complete {
         auctionImageService.listImages(auctionId).map[ToResponseMarshallable] { images =>
-          Ok -> images.map(AuctionImageDto(_, apiVersion))
+          Ok -> images.map(AuctionImageDto(_, apiPrefix))
         }
       }
     } ~
-      (get & path("auctions" / JavaUUID.as[AuctionId] / "images" / JavaUUID.as[AuctionImageId] / "content") & pathEndOrSingleSlash) { (_, imageId) =>
-        complete {
-          auctionImageService.serveImage(imageId).map[ToResponseMarshallable] {
-            case None => error(NotFound, "image-not-found", "Image not found")
-            case Some(ServeImageResult.Redirected(url)) =>
-              Response[IO](Status.SeeOther, headers = Headers(Location(url)))
-            case Some(ServeImageResult.Streamed(ct, fileName, body)) =>
-              Response[IO](
-                Status.Ok,
-                headers =
-                  Headers(`Content-Type`(ct.mediaType, ct.charset), `Content-Disposition`("attachment", Map(CIString("filename") -> fileName))),
-                body = body
-              )
+      (get & path("auctions" / JavaUUID.as[AuctionId] / "images" / JavaUUID.as[AuctionImageId] / "content") & pathEndOrSingleSlash) {
+        (auctionId, imageId) =>
+          complete {
+            auctionImageService.serveImage(auctionId, imageId).map[ToResponseMarshallable] {
+              case None => error(NotFound, "image-not-found", "Image not found")
+              case Some(ServeImageResult.Redirected(url)) =>
+                Response[IO](Status.SeeOther, headers = Headers(Location(url)))
+              case Some(ServeImageResult.Streamed(ct, fileName, body)) =>
+                Response[IO](
+                  Status.Ok,
+                  headers =
+                    Headers(`Content-Type`(ct.mediaType, ct.charset), `Content-Disposition`("attachment", Map(CIString("filename") -> fileName))),
+                  body = body
+                )
+            }
           }
-        }
       }
   }
 
@@ -49,12 +50,12 @@ class AuctionImageRouter(auctionImageService: AuctionImageService, apiVersion: S
           case None => error(BadRequest, "missing-file", "No file part found in multipart body")
           case Some(part) =>
             val contentType   = part.headers.get[`Content-Type`].getOrElse(`Content-Type`(MediaType.application.`octet-stream`))
-            val sizeBytesHint = part.headers.get[org.http4s.headers.`Content-Length`].map(_.length).getOrElse(0L)
+            val sizeBytesHint = part.headers.get[`Content-Length`].map(_.length).getOrElse(0L)
             val fileName      = part.filename.getOrElse("file")
             auctionImageService
               .attachImage(auctionId, authContext.userId, fileName, contentType, sizeBytesHint, part.body)
               .map[ToResponseMarshallable] {
-                case AttachImageResult.Attached(image) => Created -> AuctionImageDto(image, apiVersion)
+                case AttachImageResult.Attached(image) => Created -> AuctionImageDto(image, apiPrefix)
                 case AttachImageResult.AuctionNotFound => error(NotFound, "auction-not-found", "Auction not found")
                 case AttachImageResult.NotOwner        => error(Forbidden, "not-owner", "Only the seller can attach images to this auction")
               }

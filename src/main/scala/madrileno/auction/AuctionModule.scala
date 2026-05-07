@@ -48,7 +48,7 @@ trait AuctionModule extends RouteProvider with AuthRouteProvider with WsRoutePro
   private val auctionService         = wire[AuctionService]
   private val auctionImageService    = wire[AuctionImageService]
   private val auctionRouter          = wire[AuctionRouter]
-  private val auctionImageRouter     = new AuctionImageRouter(auctionImageService, appConfig.apiVersion)
+  private val auctionImageRouter     = new AuctionImageRouter(auctionImageService, appConfig.apiPrefix)
 
   override abstract def route(auth: AuthContext): Route = {
     super.route(auth) ~ auctionRouter.authedRoutes(auth) ~ auctionImageRouter.authedRoutes(auth)

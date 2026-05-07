@@ -44,7 +44,7 @@ services:
       retries: 20
 
   minio:
-    image: minio/minio:latest
+    image: minio/minio:RELEASE.2024-11-07T00-52-20Z
     container_name: madrileno-minio
     command: server /data --console-address ":9001"
     environment:

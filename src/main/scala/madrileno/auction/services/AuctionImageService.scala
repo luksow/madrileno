@@ -131,15 +131,15 @@ class AuctionImageService(
     }
   }
 
-  def serveImage(imageId: AuctionImageId): IO[Option[ServeImageResult]] =
+  def serveImage(auctionId: AuctionId, imageId: AuctionImageId): IO[Option[ServeImageResult]] =
     transactor.inSession(auctionImageRepository.find(imageId)).flatMap {
-      case None => IO.pure(None)
-      case Some(image) =>
+      case Some(image) if image.auctionId == auctionId =>
         objectStore.get(image.storageKey, signedUrlTtl.unwrap, Some(image.fileName)).map {
           case ObjectStore.GetResult.Streamed(ct, body) => Some(ServeImageResult.Streamed(ct, image.fileName, body))
           case ObjectStore.GetResult.Redirected(url)    => Some(ServeImageResult.Redirected(url))
           case ObjectStore.GetResult.NotFound           => None
         }
+      case _ => IO.pure(None)
     }
 }
 

@@ -5,6 +5,7 @@ import fs2.Stream
 import fs2.interop.reactivestreams.*
 import org.http4s.headers.`Content-Type`
 import org.http4s.{Header, Uri}
+import pureconfig.ConfigReader
 import software.amazon.awssdk.core.async.AsyncRequestBody
 import software.amazon.awssdk.services.s3.S3AsyncClient
 import software.amazon.awssdk.services.s3.model.{DeleteObjectRequest, GetObjectRequest, PutObjectRequest}
@@ -21,6 +22,7 @@ final case class S3Config(
   bucket: String,
   accessKeyId: String,
   secretAccessKey: String)
+    derives ConfigReader
 
 class S3ObjectStore(
   client: S3AsyncClient,

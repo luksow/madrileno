@@ -68,7 +68,7 @@ class AuctionImageRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Mat
       }
     }
 
-    "softDelete removes image from listByAuction but find still returns it" in withRollback {
+    "softDelete hides image from find and listByAuction" in withRollback {
       val (seller, auction) = setup()
       val image             = TestData.auctionImage(auctionId = auction.id)
       for {
@@ -77,8 +77,10 @@ class AuctionImageRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Mat
         _      <- imageRepo.save(image)
         _      <- imageRepo.softDelete(image.id, Instant.now())
         listed <- imageRepo.listByAuction(auction.id)
+        found  <- imageRepo.find(image.id)
       } yield {
         listed shouldBe empty
+        found shouldBe None
       }
     }
   }

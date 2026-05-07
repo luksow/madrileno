@@ -8,7 +8,7 @@ final case class HealthCheckDto(
   name: String,
   environment: String,
   version: String,
-  apiVersion: String)
+  apiPrefix: String)
     derives Encoder.AsObject,
       Decoder
 

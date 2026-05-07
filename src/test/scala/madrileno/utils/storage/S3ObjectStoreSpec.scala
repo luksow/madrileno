@@ -16,7 +16,7 @@ import scala.concurrent.duration.DurationInt
 class S3ObjectStoreSpec extends AsyncWordSpec with AsyncIOSpec with Matchers with TestContainerForAll {
 
   override val containerDef: GenericContainer.Def[GenericContainer] = GenericContainer.Def(
-    dockerImage = "minio/minio:latest",
+    dockerImage = "minio/minio:RELEASE.2024-11-07T00-52-20Z",
     exposedPorts = Seq(9000),
     env = Map("MINIO_ROOT_USER" -> "minioadmin", "MINIO_ROOT_PASSWORD" -> "minioadmin"),
     command = Seq("server", "/data"),

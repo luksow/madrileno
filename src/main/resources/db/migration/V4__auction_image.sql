@@ -10,4 +10,4 @@ CREATE TABLE auction_image (
     deleted_at TIMESTAMPTZ
 );
 
-CREATE INDEX auction_image_auction_position_idx ON auction_image (auction_id, position) WHERE deleted_at IS NULL;
+CREATE UNIQUE INDEX auction_image_auction_position_idx ON auction_image (auction_id, position) WHERE deleted_at IS NULL;

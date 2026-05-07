@@ -45,7 +45,7 @@ object Main extends IOApp.Simple {
       cacheRuntime       = CacheRuntime.scaffeine
       rateLimiterRuntime = RateLimiterRuntime.scaffeine()
       storageConfig        <- Resource.eval(IO.delay(config.at("storage").loadOrThrow[StorageConfig]))
-      objectStoreRuntime   <- ObjectStoreRuntime.s3(storageConfig.objectStorage.toS3Config)
+      objectStoreRuntime   <- ObjectStoreRuntime.s3(storageConfig.objectStorage)
       given Supervisor[IO] <- Supervisor[IO]
       eventBusRuntime = EventBusRuntime.postgres(transactor)
       application =
