@@ -3,7 +3,7 @@ package madrileno.utils.storage
 import cats.effect.IO
 import fs2.Stream
 import org.http4s.headers.{`Content-Disposition`, `Content-Type`}
-import org.http4s.{Header, MediaType, Uri}
+import org.http4s.{Header, Headers, MediaType, Uri}
 import org.typelevel.ci.*
 import pureconfig.ConfigReader
 import scodec.bits.ByteVector
@@ -20,6 +20,8 @@ import software.amazon.awssdk.services.s3.model.{
 }
 import software.amazon.awssdk.services.s3.presigner.S3Presigner
 import software.amazon.awssdk.services.s3.presigner.model.{GetObjectPresignRequest, PutObjectPresignRequest}
+
+import scala.jdk.CollectionConverters.*
 
 final case class S3Config(
   endpoint: String,
@@ -78,11 +80,19 @@ class S3ObjectStore(
     ttl: SignedUrlTtl,
     contentType: `Content-Type`,
     contentLength: Long
-  ): IO[Uri] = IO.blocking {
+  ): IO[PresignedPut] = IO.blocking {
     val ctValue = Header[`Content-Type`].value(contentType)
     val request = PutObjectRequest.builder().bucket(bucket).key(key.render).contentType(ctValue).contentLength(contentLength).build()
     val signed = presigner.presignPutObject(PutObjectPresignRequest.builder().signatureDuration(ttl.asJavaDuration).putObjectRequest(request).build())
-    Uri.unsafeFromString(signed.url().toString)
+    val raws = signed
+      .signedHeaders()
+      .asScala
+      .iterator
+      .flatMap { case (name, values) =>
+        values.asScala.iterator.map(value => Header.Raw(CIString(name), value))
+      }
+      .toList
+    PresignedPut(Uri.unsafeFromString(signed.url().toString), Headers(raws))
   }
 
   override def head(key: StorageKey): IO[Option[ObjectStat]] = {

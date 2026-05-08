@@ -3,8 +3,8 @@ package madrileno.utils.storage
 import cats.effect.IO
 import fs2.Stream
 import fs2.io.file.{Files, Path as FsPath}
+import org.http4s.Header
 import org.http4s.headers.`Content-Type`
-import org.http4s.{Header, Uri}
 import scodec.bits.ByteVector
 
 class DiskObjectStore(root: FsPath, maxFetchBytes: Long) extends ObjectStore {
@@ -47,7 +47,7 @@ class DiskObjectStore(root: FsPath, maxFetchBytes: Long) extends ObjectStore {
     ttl: SignedUrlTtl,
     contentType: `Content-Type`,
     contentLength: Long
-  ): IO[Uri] = {
+  ): IO[PresignedPut] = {
     val _ = (key, ttl, contentType, contentLength)
     IO.raiseError(new UnsupportedOperationException("presignPut requires an S3-compatible backend"))
   }

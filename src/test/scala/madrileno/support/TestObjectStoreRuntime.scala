@@ -2,8 +2,7 @@ package madrileno.support
 
 import cats.effect.{IO, Ref}
 import fs2.Stream
-import madrileno.utils.storage.{ObjectStat, ObjectStore, ObjectStoreRuntime, ObjectTooLarge, SignedUrlTtl, StorageKey}
-import org.http4s.Uri
+import madrileno.utils.storage.{ObjectStat, ObjectStore, ObjectStoreRuntime, ObjectTooLarge, PresignedPut, SignedUrlTtl, StorageKey}
 import org.http4s.headers.`Content-Type`
 import scodec.bits.ByteVector
 
@@ -42,7 +41,7 @@ object TestObjectStoreRuntime {
           ttl: SignedUrlTtl,
           contentType: `Content-Type`,
           contentLength: Long
-        ): IO[Uri] = {
+        ): IO[PresignedPut] = {
           val _ = (key, ttl, contentType, contentLength)
           IO.raiseError(new UnsupportedOperationException("presignPut not supported by the in-memory test runtime"))
         }

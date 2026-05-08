@@ -149,7 +149,7 @@ class S3ObjectStoreSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wit
           .timeout(60.seconds)
     }
 
-    "presignPut produces a URL that accepts a matching PUT" in withContainers { container =>
+    "presignPut produces a URL + signed headers that accept a matching PUT" in withContainers { container =>
       val config = configFor(container)
       createBucket(config) *>
         ObjectStoreRuntime
@@ -159,16 +159,18 @@ class S3ObjectStoreSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wit
             val key   = StorageKey("test/upload.txt")
             val bytes = "uploaded directly".getBytes("UTF-8")
             for {
-              uploadUrl <- store.presignPut(key, ttl, plainText, bytes.length.toLong)
+              presigned <- store.presignPut(key, ttl, plainText, bytes.length.toLong)
+              sttpHeaders = presigned.signedHeaders.headers.map(h => sttp.model.Header(h.name.toString, h.value))
               response <- IO.blocking {
                             basicRequest
-                              .put(SttpUri(new URI(uploadUrl.renderString)).queryValueSegmentsEncoding(SttpUri.QuerySegmentEncoding.All))
+                              .put(SttpUri(new URI(presigned.url.renderString)).queryValueSegmentsEncoding(SttpUri.QuerySegmentEncoding.All))
                               .body(bytes)
-                              .contentType("text/plain")
+                              .headers(sttpHeaders*)
                               .send(sttpSync)
                           }
               stat <- store.head(key)
             } yield {
+              presigned.signedHeaders.get(org.typelevel.ci.CIString("content-type")).map(_.head.value) shouldBe Some("text/plain")
               response.code.code shouldBe 200
               stat shouldBe Some(ObjectStat(bytes.length.toLong, plainText))
             }

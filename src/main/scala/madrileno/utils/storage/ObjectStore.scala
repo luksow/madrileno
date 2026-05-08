@@ -2,8 +2,8 @@ package madrileno.utils.storage
 
 import cats.effect.IO
 import fs2.Stream
-import org.http4s.Uri
 import org.http4s.headers.`Content-Type`
+import org.http4s.{Headers, Uri}
 import pl.iterators.kebs.opaque.Opaque
 import scodec.bits.ByteVector
 
@@ -20,6 +20,8 @@ object StorageKey extends Opaque[StorageKey, String] {
 }
 
 final case class ObjectStat(sizeBytes: Long, contentType: `Content-Type`)
+
+final case class PresignedPut(url: Uri, signedHeaders: Headers)
 
 final case class ObjectTooLarge(
   key: StorageKey,
@@ -44,7 +46,7 @@ trait ObjectStore {
     ttl: SignedUrlTtl,
     contentType: `Content-Type`,
     contentLength: Long
-  ): IO[Uri]
+  ): IO[PresignedPut]
   def head(key: StorageKey): IO[Option[ObjectStat]]
   def fetchBytes(key: StorageKey): IO[Option[ByteVector]]
 }
