@@ -63,6 +63,7 @@ trait TestApplicationLoader extends TestContainersForAll with TestMailpit { self
       scheduler.client,
       TestCacheRuntime.unbounded,
       TestRateLimiterRuntime.unbounded,
+      TestObjectStoreRuntime.inMemory,
       EventBusRuntime.local
     ) {
       override protected lazy val externalAuthVerifier: ExternalAuthVerifier =
