@@ -61,7 +61,6 @@ class S3ObjectStoreSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wit
 
   private val plainText = `Content-Type`(MediaType.text.plain)
   private val ttl       = SignedUrlTtl(5.minutes)
-  private val sttpSync  = HttpURLConnectionBackend()
 
   "S3ObjectStore against MinIO" should {
     "round-trip put/get/delete" in withContainers { container =>
@@ -162,11 +161,14 @@ class S3ObjectStoreSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wit
               presigned <- store.presignPut(key, ttl, plainText, bytes.length.toLong)
               sttpHeaders = presigned.signedHeaders.headers.map(h => sttp.model.Header(h.name.toString, h.value))
               response <- IO.blocking {
-                            basicRequest
-                              .put(SttpUri(new URI(presigned.url.renderString)).queryValueSegmentsEncoding(SttpUri.QuerySegmentEncoding.All))
-                              .body(bytes)
-                              .headers(sttpHeaders*)
-                              .send(sttpSync)
+                            val backend = HttpURLConnectionBackend()
+                            try {
+                              basicRequest
+                                .put(SttpUri(new URI(presigned.url.renderString)).queryValueSegmentsEncoding(SttpUri.QuerySegmentEncoding.All))
+                                .body(bytes)
+                                .headers(sttpHeaders*)
+                                .send(backend)
+                            } finally backend.close()
                           }
               stat <- store.head(key)
             } yield {
