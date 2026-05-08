@@ -7,11 +7,11 @@ import madrileno.auction.services.*
 import madrileno.auth.domain.AuthContext
 import madrileno.utils.http.BaseRouter
 import madrileno.utils.observability.TelemetryContext
-import madrileno.utils.storage.{ContentDispositions, ObjectStore}
-import org.http4s.headers.{Location, `Content-Type`}
+import madrileno.utils.storage.ObjectStore
+import org.http4s.headers.{Location, `Content-Disposition`, `Content-Type`}
 import org.http4s.multipart.{Multipart, Part}
-import org.http4s.{Header, Headers, MediaType, Response, Status}
-import org.typelevel.ci.CIString
+import org.http4s.{Headers, MediaType, Response, Status}
+import org.typelevel.ci.*
 import pl.iterators.stir.marshalling.ToResponseMarshallable
 import pl.iterators.stir.server.Route
 
@@ -34,9 +34,7 @@ class AuctionImageRouter(auctionImageService: AuctionImageService, apiPrefix: St
               case Some(ObjectStore.GetResult.Streamed(ct, fileName, body)) =>
                 val baseHeaders = Headers(ct)
                 val headers =
-                  fileName.fold(baseHeaders)(name =>
-                    baseHeaders.put(Header.Raw(CIString("Content-Disposition"), ContentDispositions.attachment(name)))
-                  )
+                  fileName.fold(baseHeaders)(name => baseHeaders.put(`Content-Disposition`("attachment", Map(ci"filename" -> name))))
                 Response[IO](Status.Ok, headers = headers, body = body)
             }
           }

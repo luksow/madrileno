@@ -7,7 +7,6 @@ The codebase ships an object-storage abstraction with two backends — local dis
 ```
 src/main/scala/madrileno/utils/storage/
   ObjectStore.scala        # the trait + StorageKey (validated) + GetResult ADT
-  ContentDispositions.scala # RFC 6266 / 5987 helper for attachment headers
   DiskObjectStore.scala    # local filesystem impl
   S3ObjectStore.scala      # AWS SDK v2 impl + S3Config
   ObjectStoreRuntime.scala # disk(...) / s3(...) factories (s3 is Resource-shaped)
@@ -118,7 +117,7 @@ auctionImageService.serveImage(auctionId, imageId).map {
   case Some(ObjectStore.GetResult.Streamed(ct, fileName, body)) =>
     val baseHeaders = Headers(ct)
     val headers     = fileName.fold(baseHeaders)(name =>
-      baseHeaders.put(Header.Raw(CIString("Content-Disposition"), ContentDispositions.attachment(name)))
+      baseHeaders.put(`Content-Disposition`("attachment", Map(ci"filename" -> name)))
     )
     Response[IO](Status.Ok, headers = headers, body = body)
 }

@@ -2,8 +2,9 @@ package madrileno.utils.storage
 
 import cats.effect.IO
 import fs2.Stream
-import org.http4s.headers.`Content-Type`
+import org.http4s.headers.{`Content-Disposition`, `Content-Type`}
 import org.http4s.{Header, Uri}
+import org.typelevel.ci.*
 import pureconfig.ConfigReader
 import scodec.bits.ByteVector
 import software.amazon.awssdk.core.async.AsyncRequestBody
@@ -33,9 +34,6 @@ class S3ObjectStore(
   bucket: String)
     extends ObjectStore {
 
-  // Buffered upload: bounded by `http.max-request-size` (10 MiB by default in application.conf).
-  // S3's putObject requires a known Content-Length; for streamed uploads of larger files, switch
-  // to an S3TransferManager-based multipart implementation.
   override def put(
     key: StorageKey,
     contentType: `Content-Type`,
@@ -55,8 +53,11 @@ class S3ObjectStore(
   ): IO[ObjectStore.GetResult] = {
     val head = IO.fromCompletableFuture(IO(client.headObject(HeadObjectRequest.builder().bucket(bucket).key(key.render).build()))).void
     val presign = IO.blocking {
-      val builder  = GetObjectRequest.builder().bucket(bucket).key(key.render)
-      val withDisp = fileName.fold(builder)(name => builder.responseContentDisposition(ContentDispositions.attachment(name)))
+      val builder = GetObjectRequest.builder().bucket(bucket).key(key.render)
+      val withDisp = fileName.fold(builder) { name =>
+        val cd = `Content-Disposition`("attachment", Map(ci"filename" -> name))
+        builder.responseContentDisposition(Header[`Content-Disposition`].value(cd))
+      }
       val signed =
         presigner.presignGetObject(GetObjectPresignRequest.builder().signatureDuration(ttl.asJavaDuration).getObjectRequest(withDisp.build()).build())
       ObjectStore.GetResult.Redirected(Uri.unsafeFromString(signed.url().toString))
