@@ -2,13 +2,15 @@ package madrileno.support
 
 import cats.effect.{IO, Ref}
 import fs2.Stream
-import madrileno.utils.storage.{ObjectStore, ObjectStoreRuntime, SignedUrlTtl, StorageKey}
+import madrileno.utils.storage.{ObjectStat, ObjectStore, ObjectStoreRuntime, ObjectTooLarge, PresignedPut, SignedUrlTtl, StorageKey}
 import org.http4s.headers.`Content-Type`
 import scodec.bits.ByteVector
 
 object TestObjectStoreRuntime {
 
-  def inMemory: ObjectStoreRuntime = {
+  def inMemory: ObjectStoreRuntime = inMemory(maxFetchBytes = Long.MaxValue)
+
+  def inMemory(maxFetchBytes: Long): ObjectStoreRuntime = {
     val state = Ref.unsafe[IO, Map[StorageKey, (`Content-Type`, ByteVector)]](Map.empty)
 
     new ObjectStoreRuntime {
@@ -33,6 +35,27 @@ object TestObjectStoreRuntime {
         }
 
         override def delete(key: StorageKey): IO[Unit] = state.update(_ - key)
+
+        override def presignPut(
+          key: StorageKey,
+          ttl: SignedUrlTtl,
+          contentType: `Content-Type`,
+          contentLength: Long
+        ): IO[PresignedPut] = {
+          val _ = (key, ttl, contentType, contentLength)
+          IO.raiseError(new UnsupportedOperationException("presignPut not supported by the in-memory test runtime"))
+        }
+
+        override def head(key: StorageKey): IO[Option[ObjectStat]] =
+          state.get.map(_.get(key).map { case (ct, bytes) => ObjectStat(bytes.size, ct) })
+
+        override def fetchBytes(key: StorageKey): IO[Option[ByteVector]] =
+          state.get.flatMap(_.get(key) match {
+            case None => IO.pure(None)
+            case Some((_, bytes)) if bytes.size > maxFetchBytes =>
+              IO.raiseError(ObjectTooLarge(key, bytes.size, maxFetchBytes))
+            case Some((_, bytes)) => IO.pure(Some(bytes))
+          })
       }
     }
   }

@@ -3,22 +3,25 @@ package madrileno.utils.storage
 import cats.effect.IO
 import fs2.Stream
 import org.http4s.headers.{`Content-Disposition`, `Content-Type`}
-import org.http4s.{Header, Uri}
+import org.http4s.{Header, Headers, MediaType, Uri}
 import org.typelevel.ci.*
 import pureconfig.ConfigReader
 import scodec.bits.ByteVector
-import software.amazon.awssdk.core.async.AsyncRequestBody
+import software.amazon.awssdk.core.async.{AsyncRequestBody, AsyncResponseTransformer}
 import software.amazon.awssdk.services.s3.S3AsyncClient
 import software.amazon.awssdk.services.s3.model.{
   DeleteObjectRequest,
   GetObjectRequest,
+  GetObjectResponse,
   HeadObjectRequest,
   NoSuchKeyException,
   PutObjectRequest,
   S3Exception
 }
 import software.amazon.awssdk.services.s3.presigner.S3Presigner
-import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest
+import software.amazon.awssdk.services.s3.presigner.model.{GetObjectPresignRequest, PutObjectPresignRequest}
+
+import scala.jdk.CollectionConverters.*
 
 final case class S3Config(
   endpoint: String,
@@ -31,7 +34,8 @@ final case class S3Config(
 class S3ObjectStore(
   client: S3AsyncClient,
   presigner: S3Presigner,
-  bucket: String)
+  bucket: String,
+  maxFetchBytes: Long)
     extends ObjectStore {
 
   override def put(
@@ -51,7 +55,7 @@ class S3ObjectStore(
     ttl: SignedUrlTtl,
     fileName: Option[String]
   ): IO[ObjectStore.GetResult] = {
-    val head = IO.fromCompletableFuture(IO(client.headObject(HeadObjectRequest.builder().bucket(bucket).key(key.render).build()))).void
+    val headIO = IO.fromCompletableFuture(IO(client.headObject(HeadObjectRequest.builder().bucket(bucket).key(key.render).build()))).void
     val presign = IO.blocking {
       val builder = GetObjectRequest.builder().bucket(bucket).key(key.render)
       val withDisp = fileName.fold(builder) { name =>
@@ -62,7 +66,7 @@ class S3ObjectStore(
         presigner.presignGetObject(GetObjectPresignRequest.builder().signatureDuration(ttl.asJavaDuration).getObjectRequest(withDisp.build()).build())
       ObjectStore.GetResult.Redirected(Uri.unsafeFromString(signed.url().toString))
     }
-    head.flatMap(_ => presign).recover {
+    headIO.flatMap(_ => presign).recover {
       case _: NoSuchKeyException                   => ObjectStore.GetResult.NotFound
       case e: S3Exception if e.statusCode() == 404 => ObjectStore.GetResult.NotFound
     }
@@ -70,4 +74,73 @@ class S3ObjectStore(
 
   override def delete(key: StorageKey): IO[Unit] =
     IO.fromCompletableFuture(IO(client.deleteObject(DeleteObjectRequest.builder().bucket(bucket).key(key.render).build()))).void
+
+  override def presignPut(
+    key: StorageKey,
+    ttl: SignedUrlTtl,
+    contentType: `Content-Type`,
+    contentLength: Long
+  ): IO[PresignedPut] = IO.blocking {
+    val ctValue = Header[`Content-Type`].value(contentType)
+    val request = PutObjectRequest.builder().bucket(bucket).key(key.render).contentType(ctValue).contentLength(contentLength).build()
+    val signed = presigner.presignPutObject(PutObjectPresignRequest.builder().signatureDuration(ttl.asJavaDuration).putObjectRequest(request).build())
+    val raws = signed
+      .signedHeaders()
+      .asScala
+      .iterator
+      .flatMap { case (name, values) =>
+        values.asScala.iterator.map(value => Header.Raw(CIString(name), value))
+      }
+      .toList
+    PresignedPut(Uri.unsafeFromString(signed.url().toString), Headers(raws))
+  }
+
+  override def head(key: StorageKey): IO[Option[ObjectStat]] = {
+    val request = HeadObjectRequest.builder().bucket(bucket).key(key.render).build()
+    IO.fromCompletableFuture(IO(client.headObject(request)))
+      .map { response =>
+        val ct =
+          Option(response.contentType()).flatMap(`Content-Type`.parse(_).toOption).getOrElse(`Content-Type`(MediaType.application.`octet-stream`))
+        Some(ObjectStat(response.contentLength(), ct))
+      }
+      .recover {
+        case _: NoSuchKeyException                   => None
+        case e: S3Exception if e.statusCode() == 404 => None
+      }
+  }
+
+  override def fetchBytes(key: StorageKey): IO[Option[ByteVector]] = {
+    val request = GetObjectRequest
+      .builder()
+      .bucket(bucket)
+      .key(key.render)
+      .range(s"bytes=0-$maxFetchBytes")
+      .build()
+    IO.fromCompletableFuture(IO(client.getObject(request, AsyncResponseTransformer.toBytes[GetObjectResponse])))
+      .flatMap { responseBytes =>
+        val arr = responseBytes.asByteArray()
+        if (arr.length.toLong > maxFetchBytes) {
+          val total = totalFromContentRange(responseBytes.response().contentRange()).getOrElse(arr.length.toLong)
+          IO.raiseError(ObjectTooLarge(key, total, maxFetchBytes))
+        } else {
+          IO.pure(Some(ByteVector(arr)))
+        }
+      }
+      .recover {
+        case _: NoSuchKeyException                   => None
+        case e: S3Exception if e.statusCode() == 404 => None
+        case e: S3Exception if e.statusCode() == 416 => Some(ByteVector.empty)
+      }
+  }
+
+  private def totalFromContentRange(contentRange: String): Option[Long] =
+    Option(contentRange).flatMap { cr =>
+      val idx = cr.lastIndexOf('/')
+      if (idx < 0) None
+      else
+        cr.substring(idx + 1) match {
+          case "*"   => None
+          case other => other.toLongOption
+        }
+    }
 }

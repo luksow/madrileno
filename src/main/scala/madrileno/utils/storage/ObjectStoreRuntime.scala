@@ -15,31 +15,34 @@ trait ObjectStoreRuntime {
 
 object ObjectStoreRuntime {
 
-  def disk(root: FsPath): ObjectStoreRuntime = new ObjectStoreRuntime {
-    override val objectStore: ObjectStore = new DiskObjectStore(root)
+  def disk(root: FsPath, maxFetchBytes: Long): ObjectStoreRuntime = new ObjectStoreRuntime {
+    override val objectStore: ObjectStore = new DiskObjectStore(root, maxFetchBytes)
   }
 
-  def s3(config: S3Config): Resource[IO, ObjectStoreRuntime] =
+  def s3(config: StorageConfig): Resource[IO, ObjectStoreRuntime] = {
+    val s3Config = config.objectStorage
     for {
       client <- Resource.fromAutoCloseable(IO {
                   S3AsyncClient
                     .builder()
-                    .endpointOverride(new URI(config.endpoint))
-                    .region(Region.of(config.region))
-                    .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create(config.accessKeyId, config.secretAccessKey)))
+                    .endpointOverride(new URI(s3Config.endpoint))
+                    .region(Region.of(s3Config.region))
+                    .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create(s3Config.accessKeyId, s3Config.secretAccessKey)))
                     .forcePathStyle(true)
                     .build()
                 })
-      presigner <- Resource.fromAutoCloseable(IO {
-                     S3Presigner
-                       .builder()
-                       .endpointOverride(new URI(config.endpoint))
-                       .region(Region.of(config.region))
-                       .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create(config.accessKeyId, config.secretAccessKey)))
-                       .serviceConfiguration(S3Configuration.builder().pathStyleAccessEnabled(true).build())
-                       .build()
-                   })
+      presigner <-
+        Resource.fromAutoCloseable(IO {
+          S3Presigner
+            .builder()
+            .endpointOverride(new URI(s3Config.endpoint))
+            .region(Region.of(s3Config.region))
+            .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create(s3Config.accessKeyId, s3Config.secretAccessKey)))
+            .serviceConfiguration(S3Configuration.builder().pathStyleAccessEnabled(true).build())
+            .build()
+        })
     } yield new ObjectStoreRuntime {
-      override val objectStore: ObjectStore = new S3ObjectStore(client, presigner, config.bucket)
+      override val objectStore: ObjectStore = new S3ObjectStore(client, presigner, s3Config.bucket, config.maxFetchBytes)
     }
+  }
 }

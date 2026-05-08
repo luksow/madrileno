@@ -34,10 +34,10 @@ S3_SECRET_ACCESS_KEY=minioadmin
 
 ```scala
 storageConfig      <- Resource.eval(IO.delay(config.at("storage").loadOrThrow[StorageConfig]))
-objectStoreRuntime <- ObjectStoreRuntime.s3(storageConfig.objectStorage)
+objectStoreRuntime <- ObjectStoreRuntime.s3(storageConfig)
 ```
 
-If you want the disk backend instead (e.g. zero-deps local dev or running tests outside Testcontainers), swap that line for `Resource.pure(ObjectStoreRuntime.disk(FsPath("./uploads")))`. There's intentionally no config-driven dispatch — the choice lives in `Main`, the same way `CacheRuntime.scaffeine` and `RateLimiterRuntime.scaffeine()` do.
+If you want the disk backend instead (e.g. zero-deps local dev or running tests outside Testcontainers), swap that line for `Resource.pure(ObjectStoreRuntime.disk(FsPath("./uploads"), storageConfig.maxFetchBytes))`. There's intentionally no config-driven dispatch — the choice lives in `Main`, the same way `CacheRuntime.scaffeine` and `RateLimiterRuntime.scaffeine()` do.
 
 ## The abstraction
 
@@ -46,6 +46,9 @@ trait ObjectStore {
   def put(key: StorageKey, contentType: `Content-Type`, body: Stream[IO, Byte]): IO[Long]
   def get(key: StorageKey, ttl: SignedUrlTtl, fileName: Option[String]): IO[ObjectStore.GetResult]
   def delete(key: StorageKey): IO[Unit]
+  def presignPut(key: StorageKey, ttl: SignedUrlTtl, contentType: `Content-Type`, contentLength: Long): IO[PresignedPut]
+  def head(key: StorageKey): IO[Option[ObjectStat]]
+  def fetchBytes(key: StorageKey): IO[Option[ByteVector]]
 }
 
 object ObjectStore {
@@ -55,6 +58,9 @@ object ObjectStore {
     case NotFound
   }
 }
+
+final case class ObjectStat(sizeBytes: Long, contentType: `Content-Type`)
+final case class PresignedPut(url: Uri, signedHeaders: Headers)
 ```
 
 A few decisions worth flagging:
@@ -62,6 +68,9 @@ A few decisions worth flagging:
 - **`get` returns an ADT, not `Response[IO]`.** Each backend picks the access mode that fits. `S3ObjectStore` returns `Redirected` (a presigned URL — the client downloads from S3 directly, the API never proxies bytes). `DiskObjectStore` returns `Streamed` (we have the bytes locally; cheaper than redirecting to ourselves). The router maps either result to an http4s response.
 - **`fileName` is per-fetch, not stored on the object.** S3 bakes it into the presign via `responseContentDisposition`; disk passes it through to the router which sets the header. That's why the storage layer doesn't persist filenames — the *caller* knows what to name the download (e.g. the auction's `auction_image.file_name` column).
 - **`put` returns the actual byte count.** Disk streams via `Files[IO].writeAll` and reads `Files.size` after the write. S3 buffers via `body.compile.to(ByteVector)` because `S3.putObject` requires a known `Content-Length`; the buffer is bounded by `http.max-request-size` (10 MiB default). For larger streamed uploads, swap to `S3TransferManager` (multipart) — out of scope for the template.
+- **`presignPut` is S3-only.** Returns a `PresignedPut(url, signedHeaders)` bound to the given content-type and size — the client (browser, mobile) uploads directly to the bucket. The signed headers are the headers AWS bound into the SigV4 signature; clients MUST echo them back on the PUT or the bucket will reject with `SignatureDoesNotMatch`. Returning typed `Headers` instead of just a `Uri` avoids breakage when SDK options (SSE, checksums) introduce new signed headers in the future. Disk raises `UnsupportedOperationException` because direct uploads only make sense against an HTTP-addressable bucket; in dev with the disk backend, fall back to multipart-through-the-API.
+- **`head` for commit-after-direct-upload verification.** After a client PUTs to a presigned URL, the server calls `head` to confirm the object actually landed (and learns its size + content-type) before persisting the row. Returns `None` for missing keys.
+- **`fetchBytes` for analyzers and variant generation.** Pulls the object into memory; returns `None` for missing keys. Bounded by `storage.max-fetch-bytes` (10 MiB default) — S3 uses a ranged GET (`bytes=0-N`) and disk takes from the read stream up to N+1 bytes. If the response (or stream) exceeds the cap, `ObjectTooLarge` is raised; the heap never materializes more than `maxFetchBytes + 1` bytes regardless of the actual object size. The cap is hard, not a TOCTOU pre-check, so it survives a client overwriting the object via `presignPut` between the size check and the read.
 - **`StorageKey` is validated at the opaque-type boundary.** `StorageKey.apply` rejects empty / absolute / `..`-segment / NUL-containing keys, so the disk backend can't be coerced into writing outside `root` regardless of the caller. `StorageKey.render` is the domain-aware accessor for code that needs the raw string.
 
 ## Wiring it into a module
