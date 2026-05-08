@@ -116,8 +116,10 @@ auctionImageService.serveImage(auctionId, imageId).map {
   case None | Some(ObjectStore.GetResult.NotFound) => error(NotFound, "image-not-found", "Image not found")
   case Some(ObjectStore.GetResult.Redirected(url)) => Response[IO](Status.SeeOther, headers = Headers(Location(url)))
   case Some(ObjectStore.GetResult.Streamed(ct, fileName, body)) =>
-    val baseHeaders = Headers(`Content-Type`(ct.mediaType, ct.charset))
-    val headers     = fileName.fold(baseHeaders)(name => baseHeaders.put(`Content-Disposition`("attachment", Map(CIString("filename") -> name))))
+    val baseHeaders = Headers(ct)
+    val headers     = fileName.fold(baseHeaders)(name =>
+      baseHeaders.put(Header.Raw(CIString("Content-Disposition"), ContentDispositions.attachment(name)))
+    )
     Response[IO](Status.Ok, headers = headers, body = body)
 }
 ```
