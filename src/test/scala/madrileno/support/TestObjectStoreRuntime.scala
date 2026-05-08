@@ -2,7 +2,8 @@ package madrileno.support
 
 import cats.effect.{IO, Ref}
 import fs2.Stream
-import madrileno.utils.storage.{ObjectStore, ObjectStoreRuntime, SignedUrlTtl, StorageKey}
+import madrileno.utils.storage.{ObjectStat, ObjectStore, ObjectStoreRuntime, SignedUrlTtl, StorageKey}
+import org.http4s.Uri
 import org.http4s.headers.`Content-Type`
 import scodec.bits.ByteVector
 
@@ -33,6 +34,25 @@ object TestObjectStoreRuntime {
         }
 
         override def delete(key: StorageKey): IO[Unit] = state.update(_ - key)
+
+        override def presignPut(
+          key: StorageKey,
+          ttl: SignedUrlTtl,
+          contentType: `Content-Type`,
+          contentLength: Long
+        ): IO[Uri] = {
+          val _ = (key, ttl, contentType, contentLength)
+          IO.raiseError(new UnsupportedOperationException("presignPut not supported by the in-memory test runtime"))
+        }
+
+        override def head(key: StorageKey): IO[Option[ObjectStat]] =
+          state.get.map(_.get(key).map { case (ct, bytes) => ObjectStat(bytes.size, ct) })
+
+        override def fetchBytes(key: StorageKey): IO[ByteVector] =
+          state.get.flatMap(_.get(key) match {
+            case Some((_, bytes)) => IO.pure(bytes)
+            case None             => IO.raiseError(new NoSuchElementException(s"No object at $key"))
+          })
       }
     }
   }

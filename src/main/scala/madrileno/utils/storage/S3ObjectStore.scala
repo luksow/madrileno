@@ -7,18 +7,19 @@ import org.http4s.{Header, Uri}
 import org.typelevel.ci.*
 import pureconfig.ConfigReader
 import scodec.bits.ByteVector
-import software.amazon.awssdk.core.async.AsyncRequestBody
+import software.amazon.awssdk.core.async.{AsyncRequestBody, AsyncResponseTransformer}
 import software.amazon.awssdk.services.s3.S3AsyncClient
 import software.amazon.awssdk.services.s3.model.{
   DeleteObjectRequest,
   GetObjectRequest,
+  GetObjectResponse,
   HeadObjectRequest,
   NoSuchKeyException,
   PutObjectRequest,
   S3Exception
 }
 import software.amazon.awssdk.services.s3.presigner.S3Presigner
-import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest
+import software.amazon.awssdk.services.s3.presigner.model.{GetObjectPresignRequest, PutObjectPresignRequest}
 
 final case class S3Config(
   endpoint: String,
@@ -51,7 +52,7 @@ class S3ObjectStore(
     ttl: SignedUrlTtl,
     fileName: Option[String]
   ): IO[ObjectStore.GetResult] = {
-    val head = IO.fromCompletableFuture(IO(client.headObject(HeadObjectRequest.builder().bucket(bucket).key(key.render).build()))).void
+    val headIO = IO.fromCompletableFuture(IO(client.headObject(HeadObjectRequest.builder().bucket(bucket).key(key.render).build()))).void
     val presign = IO.blocking {
       val builder = GetObjectRequest.builder().bucket(bucket).key(key.render)
       val withDisp = fileName.fold(builder) { name =>
@@ -62,7 +63,7 @@ class S3ObjectStore(
         presigner.presignGetObject(GetObjectPresignRequest.builder().signatureDuration(ttl.asJavaDuration).getObjectRequest(withDisp.build()).build())
       ObjectStore.GetResult.Redirected(Uri.unsafeFromString(signed.url().toString))
     }
-    head.flatMap(_ => presign).recover {
+    headIO.flatMap(_ => presign).recover {
       case _: NoSuchKeyException                   => ObjectStore.GetResult.NotFound
       case e: S3Exception if e.statusCode() == 404 => ObjectStore.GetResult.NotFound
     }
@@ -70,4 +71,37 @@ class S3ObjectStore(
 
   override def delete(key: StorageKey): IO[Unit] =
     IO.fromCompletableFuture(IO(client.deleteObject(DeleteObjectRequest.builder().bucket(bucket).key(key.render).build()))).void
+
+  override def presignPut(
+    key: StorageKey,
+    ttl: SignedUrlTtl,
+    contentType: `Content-Type`,
+    contentLength: Long
+  ): IO[Uri] = IO.blocking {
+    val ctValue = Header[`Content-Type`].value(contentType)
+    val request = PutObjectRequest.builder().bucket(bucket).key(key.render).contentType(ctValue).contentLength(contentLength).build()
+    val signed = presigner.presignPutObject(PutObjectPresignRequest.builder().signatureDuration(ttl.asJavaDuration).putObjectRequest(request).build())
+    Uri.unsafeFromString(signed.url().toString)
+  }
+
+  override def head(key: StorageKey): IO[Option[ObjectStat]] = {
+    val request = HeadObjectRequest.builder().bucket(bucket).key(key.render).build()
+    IO.fromCompletableFuture(IO(client.headObject(request)))
+      .map { response =>
+        val ct = `Content-Type`
+          .parse(response.contentType())
+          .getOrElse(throw new IllegalStateException(s"Invalid content-type from S3: ${response.contentType()}"))
+        Some(ObjectStat(response.contentLength(), ct))
+      }
+      .recover {
+        case _: NoSuchKeyException                   => None
+        case e: S3Exception if e.statusCode() == 404 => None
+      }
+  }
+
+  override def fetchBytes(key: StorageKey): IO[ByteVector] = {
+    val request = GetObjectRequest.builder().bucket(bucket).key(key.render).build()
+    IO.fromCompletableFuture(IO(client.getObject(request, AsyncResponseTransformer.toBytes[GetObjectResponse])))
+      .map(bytes => ByteVector(bytes.asByteArray()))
+  }
 }

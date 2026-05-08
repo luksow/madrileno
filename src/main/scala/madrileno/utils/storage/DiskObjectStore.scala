@@ -3,8 +3,9 @@ package madrileno.utils.storage
 import cats.effect.IO
 import fs2.Stream
 import fs2.io.file.{Files, Path as FsPath}
-import org.http4s.Header
 import org.http4s.headers.`Content-Type`
+import org.http4s.{Header, Uri}
+import scodec.bits.ByteVector
 
 class DiskObjectStore(root: FsPath) extends ObjectStore {
 
@@ -40,6 +41,31 @@ class DiskObjectStore(root: FsPath) extends ObjectStore {
 
   override def delete(key: StorageKey): IO[Unit] =
     Files[IO].deleteIfExists(pathFor(key)) *> Files[IO].deleteIfExists(metaPathFor(key)).void
+
+  override def presignPut(
+    key: StorageKey,
+    ttl: SignedUrlTtl,
+    contentType: `Content-Type`,
+    contentLength: Long
+  ): IO[Uri] = {
+    val _ = (key, ttl, contentType, contentLength)
+    IO.raiseError(new UnsupportedOperationException("presignPut requires an S3-compatible backend"))
+  }
+
+  override def head(key: StorageKey): IO[Option[ObjectStat]] = {
+    val data = pathFor(key)
+    for {
+      dataExists <- Files[IO].exists(data)
+      ct         <- if (dataExists) readContentType(key) else IO.pure(None)
+      size       <- if (dataExists) Files[IO].size(data).map(Some(_)) else IO.pure(None)
+    } yield (ct, size) match {
+      case (Some(c), Some(s)) => Some(ObjectStat(s, c))
+      case _                  => None
+    }
+  }
+
+  override def fetchBytes(key: StorageKey): IO[ByteVector] =
+    Files[IO].readAll(pathFor(key)).compile.to(ByteVector)
 
   private def pathFor(key: StorageKey): FsPath     = root / key.render
   private def metaPathFor(key: StorageKey): FsPath = root / s"${key.render}.meta"
