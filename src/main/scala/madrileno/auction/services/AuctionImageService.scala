@@ -46,10 +46,8 @@ class AuctionImageService(
           actualSize <- objectStore.put(key, contentType, content)
           result <- persistAttached(auctionId, sellerId, id, key, fileName, contentType, actualSize, now).attempt.flatMap {
                       case Right(AttachImageResult.Attached(image)) => IO.pure(AttachImageResult.Attached(image))
-                      case Right(other)                             => objectStore.delete(key).attempt.as(other)
-                      case Left(t) =>
-                        objectStore.delete(key).attempt *> logger.error(t)(s"Persist failed for ${key.render}, storage cleaned up") *> IO
-                          .raiseError(t)
+                      case Right(other)                             => cleanupAfterFailedPersist(key) *> IO.pure(other)
+                      case Left(t) => cleanupAfterFailedPersist(key) *> logger.error(t)(s"Persist failed for ${key.render}") *> IO.raiseError(t)
                     }
         } yield result
     }
@@ -87,6 +85,12 @@ class AuctionImageService(
       } yield AttachImageResult.Attached(image)).run
     }
   }
+
+  private def cleanupAfterFailedPersist(key: StorageKey): IO[Unit] =
+    objectStore.delete(key).attempt.flatMap {
+      case Right(_) => IO.unit
+      case Left(t)  => logger.warn(t)(s"Storage cleanup failed for ${key.render}; possible orphan blob")
+    }
 
   def detachImage(
     auctionId: AuctionId,
@@ -140,7 +144,7 @@ class AuctionImageService(
                .seal
                .ensure(ids => ids.toSet == current.map(_.id).toSet && ids.length == current.length, ReorderImagesResult.MismatchedIds)
         updates = orderedIds.zipWithIndex.map { case (id, idx) => (id, ImagePosition(idx)) }
-        _ <- auctionImageRepository.bulkSetPositions(updates).seal
+        _ <- auctionImageRepository.bulkSetPositions(auctionId, updates).seal
       } yield ReorderImagesResult.Reordered).run
     }
   }

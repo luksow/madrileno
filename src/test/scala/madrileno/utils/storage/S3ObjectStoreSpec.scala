@@ -64,14 +64,15 @@ class S3ObjectStoreSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wit
             val key   = StorageKey("test/object.txt")
             val bytes = "hello s3".getBytes("UTF-8")
             for {
-              _      <- store.put(key, plainText, Stream.emits(bytes))
-              result <- store.get(key, SignedUrlTtl(5.minutes), Some("hello.txt"))
-              _ = result match {
-                    case ObjectStore.GetResult.Redirected(_) => succeed
-                    case other                               => fail(s"Expected Redirected, got $other")
-                  }
-              _ <- store.delete(key)
-            } yield succeed
+              written     <- store.put(key, plainText, Stream.emits(bytes))
+              afterPut    <- store.get(key, SignedUrlTtl(5.minutes), Some("hello.txt"))
+              _           <- store.delete(key)
+              afterDelete <- store.get(key, SignedUrlTtl(5.minutes), Some("hello.txt"))
+            } yield {
+              written shouldBe bytes.length.toLong
+              afterPut shouldBe a[ObjectStore.GetResult.Redirected]
+              afterDelete shouldBe ObjectStore.GetResult.NotFound
+            }
           }
           .timeout(60.seconds)
     }

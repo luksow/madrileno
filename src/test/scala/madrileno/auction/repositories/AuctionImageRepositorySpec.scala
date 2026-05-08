@@ -63,7 +63,7 @@ class AuctionImageRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Mat
         _     <- auctionRepo.save(auction)
         _     <- imageRepo.save(img0)
         _     <- imageRepo.save(img1)
-        _     <- imageRepo.bulkSetPositions(List(img1.id -> ImagePosition(0), img0.id -> ImagePosition(1)))
+        _     <- imageRepo.bulkSetPositions(auction.id, List(img1.id -> ImagePosition(0), img0.id -> ImagePosition(1)))
         found <- imageRepo.listByAuction(auction.id)
       } yield {
         found.map(_.id) shouldBe List(img1.id, img0.id)

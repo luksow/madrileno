@@ -100,13 +100,15 @@ class AuctionImageRepository {
   def softDelete(id: AuctionImageId, now: Instant): DB[Unit] =
     repository.softDeleteById(id, now)
 
-  def bulkSetPositions(updates: List[(AuctionImageId, ImagePosition)]): DBInTransaction[Unit] = {
+  def bulkSetPositions(auctionId: AuctionId, updates: List[(AuctionImageId, ImagePosition)]): DBInTransaction[Unit] = {
     val table = AuctionImageRowTable
     val command = sql"""UPDATE ${table.n} SET ${table.position.n} = $int4
-                        WHERE ${table.id.n} = ${table.id.c}""".command
+                        WHERE ${table.id.n} = ${table.id.c}
+                          AND ${table.auctionId.n} = ${table.auctionId.c}
+                          AND ${table.deletedAt.n} IS NULL""".command
     val session = summon[Session[IO]]
-    val phase1  = updates.zipWithIndex.traverse_ { case ((id, _), idx) => session.execute(command)((-(idx + 1), id)).void }
-    val phase2  = updates.traverse_ { case (id, pos) => session.execute(command)((pos.unwrap, id)).void }
+    val phase1  = updates.zipWithIndex.traverse_ { case ((id, _), idx) => session.execute(command)((-(idx + 1), id, auctionId)).void }
+    val phase2  = updates.traverse_ { case (id, pos) => session.execute(command)((pos.unwrap, id, auctionId)).void }
     phase1 >> phase2
   }
 
