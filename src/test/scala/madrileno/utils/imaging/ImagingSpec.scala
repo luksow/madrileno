@@ -59,12 +59,12 @@ class ImagingSpec extends AsyncWordSpec with AsyncIOSpec with Matchers {
   }
 
   "Imaging.readExif" should {
-    "return an empty map for an image with no EXIF segment" in {
-      Imaging.readExif(squarePng).map(_ shouldBe empty)
+    "return Exif.Empty for an image with no EXIF segment" in {
+      Imaging.readExif(squarePng).map(_ shouldBe Exif.Empty)
     }
 
-    "return an empty map for non-image bytes" in {
-      Imaging.readExif(notAnImage).map(_ shouldBe empty)
+    "return Exif.Empty for non-image bytes" in {
+      Imaging.readExif(notAnImage).map(_ shouldBe Exif.Empty)
     }
   }
 
@@ -107,21 +107,21 @@ class ImagingSpec extends AsyncWordSpec with AsyncIOSpec with Matchers {
   "Imaging.rotate" should {
     "swap width and height on a 90° rotation" in {
       for {
-        rotated <- Imaging.rotate(landscapeJpeg, 90.0, ImageFormat.Jpeg)
+        rotated <- Imaging.rotate(landscapeJpeg, 90, ImageFormat.Jpeg)
         info    <- Imaging.info(rotated)
       } yield info.map(_.dimensions) shouldBe Some(ImageDimensions(Width(100), Height(200)))
     }
 
     "preserve dimensions on a 180° rotation" in {
       for {
-        rotated <- Imaging.rotate(landscapeJpeg, 180.0, ImageFormat.Jpeg)
+        rotated <- Imaging.rotate(landscapeJpeg, 180, ImageFormat.Jpeg)
         info    <- Imaging.info(rotated)
       } yield info.map(_.dimensions) shouldBe Some(ImageDimensions(Width(200), Height(100)))
     }
 
     "no-op on 0°" in {
       for {
-        rotated <- Imaging.rotate(landscapeJpeg, 0.0, ImageFormat.Jpeg)
+        rotated <- Imaging.rotate(landscapeJpeg, 0, ImageFormat.Jpeg)
         info    <- Imaging.info(rotated)
       } yield info.map(_.dimensions) shouldBe Some(ImageDimensions(Width(200), Height(100)))
     }

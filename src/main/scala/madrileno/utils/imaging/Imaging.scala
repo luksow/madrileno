@@ -16,24 +16,19 @@ import scala.util.Try
 
 object Imaging {
 
-  /** Returns dimensions, format, EXIF presence, and orientation for any of the three supported input formats (JPEG / PNG / GIF). `None` when the
-    * bytes don't parse as a recognized image.
-    */
   def info(bytes: ByteVector): IO[Option[ImageInfo]] = IO.blocking(infoBlocking(bytes))
 
-  /** Read EXIF tags as a flat string→string map. Empty if no EXIF segment / unsupported format. */
-  def readExif(bytes: ByteVector): IO[Map[String, String]] = IO.blocking {
-    Try(ImageMetadataReader.readMetadata(new ByteArrayInputStream(bytes.toArray)))
+  def readExif(bytes: ByteVector): IO[Exif] = IO.blocking {
+    val tags = Try(ImageMetadataReader.readMetadata(new ByteArrayInputStream(bytes.toArray)))
       .map(metadata => metadata.getDirectoriesOfType(classOf[ExifDirectoryBase]).asScala.flatMap(_.getTags.asScala))
       .getOrElse(Iterable.empty)
       .map(t => t.getTagName -> Option(t.getDescription).getOrElse(""))
       .toMap
+    Exif(tags)
   }
 
-  /** Re-encode in the requested output format. Drops all metadata (EXIF / IPTC / XMP) as a side effect of decoding to pixels and re-encoding. */
   def convert(bytes: ByteVector, output: ImageFormat): IO[ByteVector] = transform(bytes, output)(identity)
 
-  /** Resize so the longest edge is `maxDimension`, preserving aspect. Re-encodes (drops metadata). */
   def resize(
     bytes: ByteVector,
     maxDimension: Int,
@@ -43,7 +38,6 @@ object Imaging {
     else image.scaleToHeight(maxDimension)
   }
 
-  /** Center-crop fill to exact dimensions: scales-and-crops so the result is exactly `width × height` pixels. */
   def cover(
     bytes: ByteVector,
     width: Width,
@@ -53,7 +47,6 @@ object Imaging {
     image.cover(width.unwrap, height.unwrap)
   }
 
-  /** Explicit pixel-coordinate crop. */
   def crop(
     bytes: ByteVector,
     x: Int,
@@ -65,25 +58,21 @@ object Imaging {
     image.subimage(x, y, width.unwrap, height.unwrap)
   }
 
-  /** Rotate by an arbitrary number of degrees (clockwise). Quarter-turns (90/180/270) use lossless rotations; other angles re-sample with a white
-    * background.
-    */
   def rotate(
     bytes: ByteVector,
-    degrees: Double,
+    degrees: Int,
     output: ImageFormat
   ): IO[ByteVector] = transform(bytes, output) { image =>
     val normalized = ((degrees % 360) + 360) % 360
-    normalized.toInt match {
+    normalized match {
       case 0   => image
       case 90  => image.rotateRight()
       case 180 => image.rotateRight().rotateRight()
       case 270 => image.rotateLeft()
-      case _   => image.rotate(new Degrees(normalized.toInt))
+      case _   => image.rotate(new Degrees(normalized))
     }
   }
 
-  /** Read the EXIF Orientation tag and apply the matching flip + rotation so the pixels are in upright "1=Normal" form. */
   def applyOrientation(bytes: ByteVector, output: ImageFormat): IO[ByteVector] = transform(bytes, output) { image =>
     readOrientationFromBytes(bytes) match {
       case Orientation.Normal           => image
@@ -97,12 +86,7 @@ object Imaging {
     }
   }
 
-  /** Re-encode without any metadata. Functionally identical to `convert` — separate verb for callers that explicitly want metadata gone (privacy,
-    * archival).
-    */
   def stripMetadata(bytes: ByteVector, output: ImageFormat): IO[ByteVector] = convert(bytes, output)
-
-  // --- internals ---
 
   private def transform(bytes: ByteVector, output: ImageFormat)(f: ImmutableImage => ImmutableImage): IO[ByteVector] = IO.blocking {
     val image  = ImmutableImage.loader().fromBytes(bytes.toArray)

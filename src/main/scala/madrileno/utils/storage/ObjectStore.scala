@@ -13,7 +13,7 @@ object StorageKey extends Opaque[StorageKey, String] {
     if (value.isEmpty) Left("StorageKey must not be empty")
     else if (value.startsWith("/") || value.startsWith("\\")) Left("StorageKey must be relative")
     else if (value.split(Array('/', '\\')).contains("..")) Left("StorageKey must not contain '..' segments")
-    else if (value.contains(' ')) Left("StorageKey must not contain null bytes")
+    else if (value.contains('\u0000')) Left("StorageKey must not contain null bytes")
     else Right(value)
 
   extension (key: StorageKey) def render: String = key.unwrap
@@ -33,22 +33,13 @@ trait ObjectStore {
     fileName: Option[String]
   ): IO[ObjectStore.GetResult]
   def delete(key: StorageKey): IO[Unit]
-
-  /** Presigned PUT URL bound to the given content-type and size. The S3 backend implements this; the disk backend raises
-    * `UnsupportedOperationException` because direct uploads only make sense against an HTTP-addressable bucket.
-    */
   def presignPut(
     key: StorageKey,
     ttl: SignedUrlTtl,
     contentType: `Content-Type`,
     contentLength: Long
   ): IO[Uri]
-
-  /** Returns size + content-type if the object exists, `None` otherwise. */
   def head(key: StorageKey): IO[Option[ObjectStat]]
-
-  /** Pulls the object's bytes into memory. Bounded by `http.max-request-size` (10 MiB) at the call site. Used for analyzers and variant generation.
-    */
   def fetchBytes(key: StorageKey): IO[ByteVector]
 }
 

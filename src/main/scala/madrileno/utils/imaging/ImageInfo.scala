@@ -20,11 +20,6 @@ enum ImageFormat {
   case Jpeg, Png, Gif
 }
 
-/** EXIF Orientation tag (ID 0x0112). Encoded as the integer values 1-8 specified by the EXIF standard.
-  *
-  * @see
-  *   [[https://exiftool.org/TagNames/EXIF.html#Orientation]]
-  */
 enum Orientation(val tag: Int) {
   case Normal           extends Orientation(1)
   case MirrorH          extends Orientation(2)
@@ -46,3 +41,13 @@ final case class ImageInfo(
   orientation: Orientation,
   hasExif: Boolean,
   sizeBytes: Long)
+
+final case class Exif(tags: Map[String, String]) {
+  def isEmpty: Boolean                  = tags.isEmpty
+  def nonEmpty: Boolean                 = tags.nonEmpty
+  def get(name: String): Option[String] = tags.get(name)
+}
+
+object Exif {
+  val Empty: Exif = Exif(Map.empty)
+}

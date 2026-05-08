@@ -3,7 +3,7 @@ package madrileno.utils.storage
 import cats.effect.IO
 import fs2.Stream
 import org.http4s.headers.{`Content-Disposition`, `Content-Type`}
-import org.http4s.{Header, Uri}
+import org.http4s.{Header, MediaType, Uri}
 import org.typelevel.ci.*
 import pureconfig.ConfigReader
 import scodec.bits.ByteVector
@@ -88,9 +88,8 @@ class S3ObjectStore(
     val request = HeadObjectRequest.builder().bucket(bucket).key(key.render).build()
     IO.fromCompletableFuture(IO(client.headObject(request)))
       .map { response =>
-        val ct = `Content-Type`
-          .parse(response.contentType())
-          .getOrElse(throw new IllegalStateException(s"Invalid content-type from S3: ${response.contentType()}"))
+        val ct =
+          Option(response.contentType()).flatMap(`Content-Type`.parse(_).toOption).getOrElse(`Content-Type`(MediaType.application.`octet-stream`))
         Some(ObjectStat(response.contentLength(), ct))
       }
       .recover {
