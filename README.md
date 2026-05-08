@@ -104,6 +104,10 @@ See [`docs/adding-a-module.md`](docs/adding-a-module.md) — a complete vertical
 
 See [`docs/file-storage.md`](docs/file-storage.md) — disk + S3-compatible object storage, with auction images as the worked example.
 
+## Imaging
+
+See [`docs/imaging.md`](docs/imaging.md) — image utilities (info / EXIF / convert / resize / cover / crop / rotate / strip metadata) over scrimage + metadata-extractor.
+
 ## Things that catch people out
 
 - **sbt caches `.env` at JVM startup.** If you change `.env`, exit sbt and start it again. Same goes for the long-lived sbt server (`~/.sbt/1.0/server/...`).
