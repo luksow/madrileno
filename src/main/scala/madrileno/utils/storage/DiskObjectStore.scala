@@ -7,6 +7,8 @@ import org.http4s.Header
 import org.http4s.headers.`Content-Type`
 import scodec.bits.ByteVector
 
+import java.nio.file.NoSuchFileException
+
 class DiskObjectStore(root: FsPath, maxFetchBytes: Long) extends ObjectStore {
 
   override def put(
@@ -54,7 +56,7 @@ class DiskObjectStore(root: FsPath, maxFetchBytes: Long) extends ObjectStore {
 
   override def head(key: StorageKey): IO[Option[ObjectStat]] = {
     val data = pathFor(key)
-    for {
+    val stat = for {
       dataExists <- Files[IO].exists(data)
       ct         <- if (dataExists) readContentType(key) else IO.pure(None)
       size       <- if (dataExists) Files[IO].size(data).map(Some(_)) else IO.pure(None)
@@ -62,21 +64,24 @@ class DiskObjectStore(root: FsPath, maxFetchBytes: Long) extends ObjectStore {
       case (Some(c), Some(s)) => Some(ObjectStat(s, c))
       case _                  => None
     }
+    stat.recover { case _: NoSuchFileException => None }
   }
 
   override def fetchBytes(key: StorageKey): IO[Option[ByteVector]] =
     head(key).flatMap {
       case None => IO.pure(None)
-      case Some(_) =>
+      case Some(stat) =>
+        val takeLimit = if (maxFetchBytes == Long.MaxValue) Long.MaxValue else maxFetchBytes + 1
         Files[IO]
           .readAll(pathFor(key))
-          .take(maxFetchBytes + 1)
+          .take(takeLimit)
           .compile
           .to(ByteVector)
           .flatMap { bytes =>
-            if (bytes.size > maxFetchBytes) IO.raiseError(ObjectTooLarge(key, bytes.size, maxFetchBytes))
+            if (bytes.size > maxFetchBytes) IO.raiseError(ObjectTooLarge(key, stat.sizeBytes, maxFetchBytes))
             else IO.pure(Some(bytes))
           }
+          .recover { case _: NoSuchFileException => None }
     }
 
   private def pathFor(key: StorageKey): FsPath     = root / key.render
