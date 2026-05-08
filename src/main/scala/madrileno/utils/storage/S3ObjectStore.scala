@@ -117,6 +117,10 @@ class S3ObjectStore(
       case Some(_) =>
         val request = GetObjectRequest.builder().bucket(bucket).key(key.render).build()
         IO.fromCompletableFuture(IO(client.getObject(request, AsyncResponseTransformer.toBytes[GetObjectResponse])))
-          .map(bytes => Some(ByteVector(bytes.asByteArray())))
+          .map(bytes => Option(ByteVector(bytes.asByteArray())))
+          .recover {
+            case _: NoSuchKeyException                   => None
+            case e: S3Exception if e.statusCode() == 404 => None
+          }
     }
 }
