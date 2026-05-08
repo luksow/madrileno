@@ -105,19 +105,24 @@ class S3ObjectStoreSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wit
           .timeout(60.seconds)
     }
 
-    "fetchBytes returns the stored bytes" in withContainers { container =>
+    "fetchBytes returns the stored bytes and None for a missing key" in withContainers { container =>
       val config = configFor(container)
       createBucket(config) *>
         ObjectStoreRuntime
           .s3(config)
           .use { runtime =>
-            val store = runtime.objectStore
-            val key   = StorageKey("test/fetch.bin")
-            val bytes = (0 to 255).map(_.toByte).toArray
+            val store   = runtime.objectStore
+            val key     = StorageKey("test/fetch.bin")
+            val missing = StorageKey("test/never-was.bin")
+            val bytes   = (0 to 255).map(_.toByte).toArray
             for {
-              _       <- store.put(key, plainText, Stream.emits(bytes))
-              fetched <- store.fetchBytes(key)
-            } yield fetched shouldBe ByteVector(bytes)
+              _        <- store.put(key, plainText, Stream.emits(bytes))
+              fetched  <- store.fetchBytes(key)
+              notFound <- store.fetchBytes(missing)
+            } yield {
+              fetched shouldBe Some(ByteVector(bytes))
+              notFound shouldBe None
+            }
           }
           .timeout(60.seconds)
     }

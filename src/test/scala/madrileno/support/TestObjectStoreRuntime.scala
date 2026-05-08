@@ -48,11 +48,8 @@ object TestObjectStoreRuntime {
         override def head(key: StorageKey): IO[Option[ObjectStat]] =
           state.get.map(_.get(key).map { case (ct, bytes) => ObjectStat(bytes.size, ct) })
 
-        override def fetchBytes(key: StorageKey): IO[ByteVector] =
-          state.get.flatMap(_.get(key) match {
-            case Some((_, bytes)) => IO.pure(bytes)
-            case None             => IO.raiseError(new NoSuchElementException(s"No object at $key"))
-          })
+        override def fetchBytes(key: StorageKey): IO[Option[ByteVector]] =
+          state.get.map(_.get(key).map(_._2))
       }
     }
   }

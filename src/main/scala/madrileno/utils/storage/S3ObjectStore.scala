@@ -98,9 +98,13 @@ class S3ObjectStore(
       }
   }
 
-  override def fetchBytes(key: StorageKey): IO[ByteVector] = {
+  override def fetchBytes(key: StorageKey): IO[Option[ByteVector]] = {
     val request = GetObjectRequest.builder().bucket(bucket).key(key.render).build()
     IO.fromCompletableFuture(IO(client.getObject(request, AsyncResponseTransformer.toBytes[GetObjectResponse])))
-      .map(bytes => ByteVector(bytes.asByteArray()))
+      .map(bytes => Option(ByteVector(bytes.asByteArray())))
+      .recover {
+        case _: NoSuchKeyException                   => None
+        case e: S3Exception if e.statusCode() == 404 => None
+      }
   }
 }

@@ -48,7 +48,7 @@ trait ObjectStore {
   def delete(key: StorageKey): IO[Unit]
   def presignPut(key: StorageKey, ttl: SignedUrlTtl, contentType: `Content-Type`, contentLength: Long): IO[Uri]
   def head(key: StorageKey): IO[Option[ObjectStat]]
-  def fetchBytes(key: StorageKey): IO[ByteVector]
+  def fetchBytes(key: StorageKey): IO[Option[ByteVector]]
 }
 
 object ObjectStore {
@@ -69,7 +69,7 @@ A few decisions worth flagging:
 - **`put` returns the actual byte count.** Disk streams via `Files[IO].writeAll` and reads `Files.size` after the write. S3 buffers via `body.compile.to(ByteVector)` because `S3.putObject` requires a known `Content-Length`; the buffer is bounded by `http.max-request-size` (10 MiB default). For larger streamed uploads, swap to `S3TransferManager` (multipart) — out of scope for the template.
 - **`presignPut` is S3-only.** Returns a presigned PUT URL bound to the given content-type and size — the client (browser, mobile) uploads directly to the bucket without proxying bytes through the API. Disk raises `UnsupportedOperationException` because direct uploads only make sense against an HTTP-addressable bucket; in dev with the disk backend, fall back to multipart-through-the-API.
 - **`head` for commit-after-direct-upload verification.** After a client PUTs to a presigned URL, the server calls `head` to confirm the object actually landed (and learns its size + content-type) before persisting the row. Returns `None` for missing keys.
-- **`fetchBytes` for analyzers and variant generation.** Pulls the object into memory; bounded by the same 10 MiB ceiling as `put`. Used when the API needs to look at the bytes (image dimensions, EXIF, thumbnail generation).
+- **`fetchBytes` for analyzers and variant generation.** Pulls the object into memory and returns `None` for missing keys (mirrors `head`'s contract — both backends recover their respective not-found errors). Used when the API needs to look at the bytes (image dimensions, EXIF, thumbnail generation).
 - **`StorageKey` is validated at the opaque-type boundary.** `StorageKey.apply` rejects empty / absolute / `..`-segment / NUL-containing keys, so the disk backend can't be coerced into writing outside `root` regardless of the caller. `StorageKey.render` is the domain-aware accessor for code that needs the raw string.
 
 ## Wiring it into a module

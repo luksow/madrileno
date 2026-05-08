@@ -40,7 +40,7 @@ trait ObjectStore {
     contentLength: Long
   ): IO[Uri]
   def head(key: StorageKey): IO[Option[ObjectStat]]
-  def fetchBytes(key: StorageKey): IO[ByteVector]
+  def fetchBytes(key: StorageKey): IO[Option[ByteVector]]
 }
 
 object ObjectStore {
