@@ -34,7 +34,9 @@ object Imaging {
     maxDimension: Int,
     output: ImageFormat
   ): IO[ByteVector] = transform(bytes, output) { image =>
-    if (image.width >= image.height) image.scaleToWidth(maxDimension)
+    val longest = math.max(image.width, image.height)
+    if (longest <= maxDimension) image
+    else if (image.width >= image.height) image.scaleToWidth(maxDimension)
     else image.scaleToHeight(maxDimension)
   }
 

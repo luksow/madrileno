@@ -84,6 +84,13 @@ class ImagingSpec extends AsyncWordSpec with AsyncIOSpec with Matchers {
         info    <- Imaging.info(resized)
       } yield info.map(_.dimensions) shouldBe Some(ImageDimensions(Width(100), Height(50)))
     }
+
+    "not upscale when the image is already within bounds" in {
+      for {
+        resized <- Imaging.resize(squarePng, 200, ImageFormat.Png)
+        info    <- Imaging.info(resized)
+      } yield info.map(_.dimensions) shouldBe Some(ImageDimensions(Width(50), Height(50)))
+    }
   }
 
   "Imaging.cover" should {
