@@ -32,7 +32,8 @@ final case class S3Config(
 class S3ObjectStore(
   client: S3AsyncClient,
   presigner: S3Presigner,
-  bucket: String)
+  bucket: String,
+  maxFetchBytes: Long)
     extends ObjectStore {
 
   override def put(
@@ -98,13 +99,14 @@ class S3ObjectStore(
       }
   }
 
-  override def fetchBytes(key: StorageKey): IO[Option[ByteVector]] = {
-    val request = GetObjectRequest.builder().bucket(bucket).key(key.render).build()
-    IO.fromCompletableFuture(IO(client.getObject(request, AsyncResponseTransformer.toBytes[GetObjectResponse])))
-      .map(bytes => Option(ByteVector(bytes.asByteArray())))
-      .recover {
-        case _: NoSuchKeyException                   => None
-        case e: S3Exception if e.statusCode() == 404 => None
-      }
-  }
+  override def fetchBytes(key: StorageKey): IO[Option[ByteVector]] =
+    head(key).flatMap {
+      case None => IO.pure(None)
+      case Some(stat) if stat.sizeBytes > maxFetchBytes =>
+        IO.raiseError(ObjectTooLarge(key, stat.sizeBytes, maxFetchBytes))
+      case Some(_) =>
+        val request = GetObjectRequest.builder().bucket(bucket).key(key.render).build()
+        IO.fromCompletableFuture(IO(client.getObject(request, AsyncResponseTransformer.toBytes[GetObjectResponse])))
+          .map(bytes => Some(ByteVector(bytes.asByteArray())))
+    }
 }

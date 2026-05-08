@@ -21,6 +21,12 @@ object StorageKey extends Opaque[StorageKey, String] {
 
 final case class ObjectStat(sizeBytes: Long, contentType: `Content-Type`)
 
+final case class ObjectTooLarge(
+  key: StorageKey,
+  sizeBytes: Long,
+  maxBytes: Long)
+    extends RuntimeException(s"Object ${key.render} is $sizeBytes bytes, exceeds fetchBytes cap of $maxBytes")
+
 trait ObjectStore {
   def put(
     key: StorageKey,

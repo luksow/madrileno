@@ -32,26 +32,30 @@ class S3ObjectStoreSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wit
     waitStrategy = Wait.forHttp("/minio/health/live").forPort(9000)
   )
 
-  private def configFor(container: GenericContainer): S3Config = S3Config(
-    endpoint = s"http://${container.host}:${container.mappedPort(9000)}",
-    region = "us-east-1",
-    bucket = s"test-${java.util.UUID.randomUUID()}",
-    accessKeyId = "minioadmin",
-    secretAccessKey = "minioadmin"
+  private def configFor(container: GenericContainer): StorageConfig = StorageConfig(
+    maxFetchBytes = 10L * 1024L * 1024L,
+    objectStorage = S3Config(
+      endpoint = s"http://${container.host}:${container.mappedPort(9000)}",
+      region = "us-east-1",
+      bucket = s"test-${java.util.UUID.randomUUID()}",
+      accessKeyId = "minioadmin",
+      secretAccessKey = "minioadmin"
+    )
   )
 
-  private def createBucket(config: S3Config): IO[Unit] = {
+  private def createBucket(config: StorageConfig): IO[Unit] = {
+    val s3Config = config.objectStorage
     val clientResource = Resource.fromAutoCloseable(IO {
       S3AsyncClient
         .builder()
-        .endpointOverride(new URI(config.endpoint))
-        .region(Region.of(config.region))
-        .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create(config.accessKeyId, config.secretAccessKey)))
+        .endpointOverride(new URI(s3Config.endpoint))
+        .region(Region.of(s3Config.region))
+        .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create(s3Config.accessKeyId, s3Config.secretAccessKey)))
         .forcePathStyle(true)
         .build()
     })
     clientResource.use { client =>
-      IO.fromCompletableFuture(IO(client.createBucket(CreateBucketRequest.builder().bucket(config.bucket).build()))).void
+      IO.fromCompletableFuture(IO(client.createBucket(CreateBucketRequest.builder().bucket(s3Config.bucket).build()))).void
     }
   }
 
@@ -123,6 +127,24 @@ class S3ObjectStoreSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wit
               fetched shouldBe Some(ByteVector(bytes))
               notFound shouldBe None
             }
+          }
+          .timeout(60.seconds)
+    }
+
+    "fetchBytes raises ObjectTooLarge above the configured cap" in withContainers { container =>
+      val config = configFor(container).copy(maxFetchBytes = 16L)
+      createBucket(config) *>
+        ObjectStoreRuntime
+          .s3(config)
+          .use { runtime =>
+            val store = runtime.objectStore
+            val key   = StorageKey("test/too-big.bin")
+            val bytes = Array.fill[Byte](32)(0)
+            store.put(key, plainText, Stream.emits(bytes)) *>
+              store.fetchBytes(key).attempt.map(_.left.toOption).map { err =>
+                err shouldBe defined
+                err.get shouldBe a[ObjectTooLarge]
+              }
           }
           .timeout(60.seconds)
     }

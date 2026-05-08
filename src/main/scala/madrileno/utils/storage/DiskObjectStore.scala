@@ -7,7 +7,7 @@ import org.http4s.headers.`Content-Type`
 import org.http4s.{Header, Uri}
 import scodec.bits.ByteVector
 
-class DiskObjectStore(root: FsPath) extends ObjectStore {
+class DiskObjectStore(root: FsPath, maxFetchBytes: Long) extends ObjectStore {
 
   override def put(
     key: StorageKey,
@@ -68,7 +68,11 @@ class DiskObjectStore(root: FsPath) extends ObjectStore {
     val data = pathFor(key)
     Files[IO].exists(data).flatMap {
       case false => IO.pure(None)
-      case true  => Files[IO].readAll(data).compile.to(ByteVector).map(Some(_))
+      case true =>
+        Files[IO].size(data).flatMap { size =>
+          if (size > maxFetchBytes) IO.raiseError(ObjectTooLarge(key, size, maxFetchBytes))
+          else Files[IO].readAll(data).compile.to(ByteVector).map(Some(_))
+        }
     }
   }
 

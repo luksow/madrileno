@@ -2,14 +2,16 @@ package madrileno.support
 
 import cats.effect.{IO, Ref}
 import fs2.Stream
-import madrileno.utils.storage.{ObjectStat, ObjectStore, ObjectStoreRuntime, SignedUrlTtl, StorageKey}
+import madrileno.utils.storage.{ObjectStat, ObjectStore, ObjectStoreRuntime, ObjectTooLarge, SignedUrlTtl, StorageKey}
 import org.http4s.Uri
 import org.http4s.headers.`Content-Type`
 import scodec.bits.ByteVector
 
 object TestObjectStoreRuntime {
 
-  def inMemory: ObjectStoreRuntime = {
+  def inMemory: ObjectStoreRuntime = inMemory(maxFetchBytes = Long.MaxValue)
+
+  def inMemory(maxFetchBytes: Long): ObjectStoreRuntime = {
     val state = Ref.unsafe[IO, Map[StorageKey, (`Content-Type`, ByteVector)]](Map.empty)
 
     new ObjectStoreRuntime {
@@ -49,7 +51,12 @@ object TestObjectStoreRuntime {
           state.get.map(_.get(key).map { case (ct, bytes) => ObjectStat(bytes.size, ct) })
 
         override def fetchBytes(key: StorageKey): IO[Option[ByteVector]] =
-          state.get.map(_.get(key).map(_._2))
+          state.get.flatMap(_.get(key) match {
+            case None => IO.pure(None)
+            case Some((_, bytes)) if bytes.size > maxFetchBytes =>
+              IO.raiseError(ObjectTooLarge(key, bytes.size, maxFetchBytes))
+            case Some((_, bytes)) => IO.pure(Some(bytes))
+          })
       }
     }
   }
