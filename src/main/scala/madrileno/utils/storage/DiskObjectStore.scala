@@ -64,17 +64,14 @@ class DiskObjectStore(root: FsPath, maxFetchBytes: Long) extends ObjectStore {
     }
   }
 
-  override def fetchBytes(key: StorageKey): IO[Option[ByteVector]] = {
-    val data = pathFor(key)
-    Files[IO].exists(data).flatMap {
-      case false => IO.pure(None)
-      case true =>
-        Files[IO].size(data).flatMap { size =>
-          if (size > maxFetchBytes) IO.raiseError(ObjectTooLarge(key, size, maxFetchBytes))
-          else Files[IO].readAll(data).compile.to(ByteVector).map(Some(_))
-        }
+  override def fetchBytes(key: StorageKey): IO[Option[ByteVector]] =
+    head(key).flatMap {
+      case None => IO.pure(None)
+      case Some(stat) if stat.sizeBytes > maxFetchBytes =>
+        IO.raiseError(ObjectTooLarge(key, stat.sizeBytes, maxFetchBytes))
+      case Some(_) =>
+        Files[IO].readAll(pathFor(key)).compile.to(ByteVector).map(Some(_))
     }
-  }
 
   private def pathFor(key: StorageKey): FsPath     = root / key.render
   private def metaPathFor(key: StorageKey): FsPath = root / s"${key.render}.meta"
