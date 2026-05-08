@@ -110,7 +110,7 @@ object Imaging {
       format.map { fmt =>
         val image       = ImmutableImage.loader().fromBytes(bytes.toArray)
         val orientation = orientationFrom(metadata)
-        val hasExif     = Option(metadata.getFirstDirectoryOfType(classOf[ExifIFD0Directory])).isDefined
+        val hasExif     = !metadata.getDirectoriesOfType(classOf[ExifDirectoryBase]).isEmpty
         ImageInfo(
           dimensions = ImageDimensions(Width(image.width), Height(image.height)),
           format = fmt,
