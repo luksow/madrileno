@@ -130,6 +130,22 @@ class S3ObjectStoreSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wit
           .timeout(60.seconds)
     }
 
+    "fetchBytes returns Some(empty) for a zero-byte object" in withContainers { container =>
+      val config = configFor(container)
+      createBucket(config) *>
+        ObjectStoreRuntime
+          .s3(config)
+          .use { runtime =>
+            val store = runtime.objectStore
+            val key   = StorageKey("test/empty.bin")
+            for {
+              _       <- store.put(key, plainText, Stream.empty)
+              fetched <- store.fetchBytes(key)
+            } yield fetched shouldBe Some(ByteVector.empty)
+          }
+          .timeout(60.seconds)
+    }
+
     "fetchBytes raises ObjectTooLarge above the configured cap" in withContainers { container =>
       val config = configFor(container).copy(maxFetchBytes = 16L)
       createBucket(config) *>

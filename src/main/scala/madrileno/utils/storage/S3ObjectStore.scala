@@ -129,6 +129,7 @@ class S3ObjectStore(
       .recover {
         case _: NoSuchKeyException                   => None
         case e: S3Exception if e.statusCode() == 404 => None
+        case e: S3Exception if e.statusCode() == 416 => Some(ByteVector.empty)
       }
   }
 
