@@ -93,9 +93,6 @@ class AuctionImageRouterSpec extends BaseRouteSpec with TestApplicationLoader {
   private val sampleUploadBody: Multipart =
     Multipart(FilePart("file", "image/jpeg", "wine.jpg", "image-data".getBytes("UTF-8")))
 
-  // Workaround: baklava-http4s 1.3.0 omits the Multipart boundary on the request; encoder uses a fixed `baklava-multipart-boundary`.
-  private val multipartContentType = "multipart/form-data; boundary=baklava-multipart-boundary"
-
   path("/v1/auctions/{auctionId}/images")(
     supports(
       GET,
@@ -118,43 +115,24 @@ class AuctionImageRouterSpec extends BaseRouteSpec with TestApplicationLoader {
       summary = "Seller-only: uploads bytes to object storage and persists the row",
       securitySchemes = Seq(bearerScheme),
       pathParameters = p[AuctionId]("auctionId"),
-      headers = h[String]("Content-Type"),
       tags = Seq("Auction images")
     )(
       withSetup(setupAuction())
-        .request(auction =>
-          onRequest(
-            body = sampleUploadBody,
-            security = bearer.apply(validJwt(sellerAuth)),
-            pathParameters = auction.id,
-            headers = multipartContentType
-          )
-        )
+        .request(auction => onRequest(body = sampleUploadBody, security = bearer.apply(validJwt(sellerAuth)), pathParameters = auction.id))
         .respondsWith[AuctionImageDto](Created, description = "Image attached")
         .assert { case (ctx, auction) =>
           val response = ctx.performRequest(allRoutes)
           response.body.auctionId shouldBe auction.id
           response.body.fileName shouldBe "wine.jpg"
         },
-      onRequest(
-        body = sampleUploadBody,
-        security = bearer.apply(validJwt(sellerAuth)),
-        pathParameters = AuctionId(UUID.randomUUID()),
-        headers = multipartContentType
-      ).respondsWith[Error[Unit]](NotFound, description = "Auction not found")
+      onRequest(body = sampleUploadBody, security = bearer.apply(validJwt(sellerAuth)), pathParameters = AuctionId(UUID.randomUUID()))
+        .respondsWith[Error[Unit]](NotFound, description = "Auction not found")
         .assert { ctx =>
           val response = ctx.performRequest(allRoutes)
           response.body.title shouldBe Some("Auction not found")
         },
       withSetup(setupAuctionWithOtherSeeded())
-        .request(auction =>
-          onRequest(
-            body = sampleUploadBody,
-            security = bearer.apply(validJwt(otherAuth)),
-            pathParameters = auction.id,
-            headers = multipartContentType
-          )
-        )
+        .request(auction => onRequest(body = sampleUploadBody, security = bearer.apply(validJwt(otherAuth)), pathParameters = auction.id))
         .respondsWith[Error[Unit]](Forbidden, description = "Upload attempted by non-owner")
         .assert { case (ctx, _) =>
           val response = ctx.performRequest(allRoutes)

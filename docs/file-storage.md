@@ -150,7 +150,7 @@ The `ImagePosition` opaque type still rejects negatives in the domain — the ne
 - **`TestObjectStoreRuntime.inMemory`** — a `Ref`-backed in-memory `ObjectStore`. Used by `TestApplicationLoader` so route specs don't need MinIO. `get` returns `Streamed` (no presigned URL needed).
 - **`S3ObjectStoreSpec`** — runs against a MinIO Testcontainer pinned to `RELEASE.2024-11-07T00-52-20Z`. Creates the test bucket explicitly (the app no longer auto-creates) using a `Resource.fromAutoCloseable` S3 client so nothing leaks.
 - **`AuctionImageServiceSpec`** — exercises the service against real Postgres + the in-memory store. Covers attach success/positioning/owner checks, detach, reorder swap (which exercises the two-phase repo helper), and serve cross-auction guards.
-- **`AuctionImageRouterSpec`** — full baklava DSL against `TestApplicationLoader`. Uses `pl.iterators.baklava.{Multipart, FilePart}` for the upload body so the endpoints land in `target/baklava/openapi/openapi.yml` (and the ts-rest / simple-HTML outputs). One workaround in the spec: `baklava-http4s` 1.3.0 doesn't propagate the multipart boundary onto the outgoing request (http4s' `multipartEncoder` has `Headers.empty` per a long-standing TODO), so the spec declares `Content-Type: multipart/form-data; boundary=baklava-multipart-boundary` explicitly on each upload `onRequest`. Drop that declaration once baklava ships the fix.
+- **`AuctionImageRouterSpec`** — full baklava DSL against `TestApplicationLoader`. Uses `pl.iterators.baklava.{Multipart, FilePart}` for the upload body so the endpoints land in `target/baklava/openapi/openapi.yml` (and the ts-rest / simple-HTML outputs).
 
 ## Things that catch people out
 
