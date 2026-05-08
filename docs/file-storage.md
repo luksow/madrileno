@@ -34,10 +34,10 @@ S3_SECRET_ACCESS_KEY=minioadmin
 
 ```scala
 storageConfig      <- Resource.eval(IO.delay(config.at("storage").loadOrThrow[StorageConfig]))
-objectStoreRuntime <- ObjectStoreRuntime.s3(storageConfig.objectStorage)
+objectStoreRuntime <- ObjectStoreRuntime.s3(storageConfig)
 ```
 
-If you want the disk backend instead (e.g. zero-deps local dev or running tests outside Testcontainers), swap that line for `Resource.pure(ObjectStoreRuntime.disk(FsPath("./uploads")))`. There's intentionally no config-driven dispatch — the choice lives in `Main`, the same way `CacheRuntime.scaffeine` and `RateLimiterRuntime.scaffeine()` do.
+If you want the disk backend instead (e.g. zero-deps local dev or running tests outside Testcontainers), swap that line for `Resource.pure(ObjectStoreRuntime.disk(FsPath("./uploads"), storageConfig.maxFetchBytes))`. There's intentionally no config-driven dispatch — the choice lives in `Main`, the same way `CacheRuntime.scaffeine` and `RateLimiterRuntime.scaffeine()` do.
 
 ## The abstraction
 

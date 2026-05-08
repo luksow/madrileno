@@ -98,7 +98,7 @@ To add another format:
 
 ## Testing
 
-`ImagingSpec` generates fixtures at runtime (`ImmutableImage.filled(w, h, color)` → encode → bytes). 14 cases covering every operation's happy path plus negatives for non-image input. No checked-in binary fixtures — fast and reproducible.
+`ImagingSpec` generates fixtures at runtime (`ImmutableImage.filled(w, h, color)` → encode → bytes). 15 cases covering every operation's happy path plus negatives for non-image input. No checked-in binary fixtures — fast and reproducible.
 
 If you need to test EXIF *content* (not just presence), check in a small fixture file and feed it via `Files.readAllBytes`. scrimage's writer drops EXIF on re-encode, so you can't generate one in-process.
 
