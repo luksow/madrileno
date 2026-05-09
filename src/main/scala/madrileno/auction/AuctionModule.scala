@@ -4,7 +4,7 @@ import cats.effect.IO
 import com.softwaremill.macwire.*
 import madrileno.auction.domain.AuctionEvent
 import madrileno.auction.emails.{AuctionClosedEmailTemplate, OutbidEmailTemplate}
-import madrileno.auction.gateways.VivinoGateway
+import madrileno.auction.gateways.{VivinoGateway, VivinoGatewayLive}
 import madrileno.auction.repositories.{AuctionImageRepository, AuctionRepository, BidRepository}
 import madrileno.auction.routers.{AuctionImageRouter, AuctionRouter}
 import madrileno.auction.services.{AuctionImageService, AuctionService}
@@ -45,7 +45,7 @@ trait AuctionModule
   lazy val mailer: Mailer
   lazy val appConfig: AppConfig
 
-  protected lazy val vivinoGateway: VivinoGateway            = VivinoGateway.live(httpClient, cacheRuntime)
+  protected lazy val vivinoGateway: VivinoGateway            = wire[VivinoGatewayLive]
   protected lazy val auctionEventBus: EventBus[AuctionEvent] = eventBusRuntime.topic[AuctionEvent]("auction_events", maxQueued = 64)
   protected lazy val signedUrlTtl: SignedUrlTtl              = SignedUrlTtl(5.minutes)
 

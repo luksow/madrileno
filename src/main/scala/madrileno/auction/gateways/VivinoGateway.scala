@@ -20,45 +20,7 @@ trait VivinoGateway {
 }
 
 object VivinoGateway {
-  private val endpoint            = uri"https://9takgwjuxl-dsn.algolia.net/1/indexes/WINES_prod/query"
-  private val applicationId       = "9TAKGWJUXL"
-  private val apiKey              = "60c11b2f1068885161d95ca068d3a6ae"
-  private val similarityThreshold = 0.85
-  private val requestTimeout      = 3.seconds
-
-  def live(http: WebSocketStreamBackend[IO, Fs2Streams[IO]], cacheRuntime: CacheRuntime)(using TelemetryContext): VivinoGateway = {
-    val cache = cacheRuntime.expiring[(WineName, Option[Vintage]), Option[VivinoRating]](expireAfterWrite = 24.hours, maxSize = 10_000)
-    new VivinoGateway with LoggingSupport {
-      override def findRating(wineName: WineName, vintage: Option[Vintage]): IO[Option[VivinoRating]] =
-        cache.get((wineName, vintage)).flatMap {
-          case Some(cached) => IO.pure(cached)
-          case None =>
-            fetch(wineName, vintage)
-              .timeout(requestTimeout)
-              .flatTap(result => cache.put((wineName, vintage), result))
-              .handleErrorWith(t => logger.warn(t)(s"Vivino lookup failed for $wineName ${vintage.map(_.unwrap)}").as(None))
-        }
-
-      private def fetch(wineName: WineName, vintage: Option[Vintage]): IO[Option[VivinoRating]] = {
-        val queryText = vintage.map(v => s"${wineName.unwrap} ${v.unwrap}").getOrElse(wineName.unwrap)
-        val payload   = AlgoliaQuery(query = queryText, hitsPerPage = 6).asJson.noSpaces
-        val request = basicRequest
-          .post(endpoint)
-          .header("x-algolia-api-key", apiKey)
-          .header("x-algolia-application-id", applicationId)
-          .contentType(MediaType.ApplicationJson)
-          .body(payload)
-          .response(asJson[AlgoliaResponse])
-
-        request.send(http).flatMap { response =>
-          response.body match {
-            case Right(parsed) => IO.pure(pickBestMatch(wineName, vintage, parsed.hits))
-            case Left(error)   => IO.raiseError(error)
-          }
-        }
-      }
-    }
-  }
+  private[gateways] val similarityThreshold = 0.85
 
   private[gateways] def pickBestMatch(
     wineName: WineName,
@@ -104,10 +66,10 @@ object VivinoGateway {
   }
 
   // Outbound request keeps camelCase; Algolia rejects hits_per_page with a 400.
-  private case class AlgoliaQuery(query: String, hitsPerPage: Int) derives Encoder.AsObject
+  private[gateways] case class AlgoliaQuery(query: String, hitsPerPage: Int) derives Encoder.AsObject
 
   // Inbound response uses snake_case (ratings_count, ratings_average); scoped to decoders below.
-  private given Configuration = Configuration.default.withSnakeCaseMemberNames
+  private[gateways] given Configuration = Configuration.default.withSnakeCaseMemberNames
 
   private[gateways] case class AlgoliaResponse(hits: List[AlgoliaHit]) derives ConfiguredCodec
   private[gateways] case class AlgoliaHit(
@@ -123,6 +85,48 @@ object VivinoGateway {
     ratingsAverage: Option[BigDecimal],
     status: Option[String])
       derives ConfiguredCodec
+}
+
+class VivinoGatewayLive(http: WebSocketStreamBackend[IO, Fs2Streams[IO]], cacheRuntime: CacheRuntime)(using TelemetryContext)
+    extends VivinoGateway
+    with LoggingSupport {
+  import VivinoGateway.*
+
+  private val endpoint       = uri"https://9takgwjuxl-dsn.algolia.net/1/indexes/WINES_prod/query"
+  private val applicationId  = "9TAKGWJUXL"
+  private val apiKey         = "60c11b2f1068885161d95ca068d3a6ae"
+  private val requestTimeout = 3.seconds
+
+  private val cache = cacheRuntime.expiring[(WineName, Option[Vintage]), Option[VivinoRating]](expireAfterWrite = 24.hours, maxSize = 10_000)
+
+  override def findRating(wineName: WineName, vintage: Option[Vintage]): IO[Option[VivinoRating]] =
+    cache.get((wineName, vintage)).flatMap {
+      case Some(cached) => IO.pure(cached)
+      case None =>
+        fetch(wineName, vintage)
+          .timeout(requestTimeout)
+          .flatTap(result => cache.put((wineName, vintage), result))
+          .handleErrorWith(t => logger.warn(t)(s"Vivino lookup failed for $wineName ${vintage.map(_.unwrap)}").as(None))
+    }
+
+  private def fetch(wineName: WineName, vintage: Option[Vintage]): IO[Option[VivinoRating]] = {
+    val queryText = vintage.map(v => s"${wineName.unwrap} ${v.unwrap}").getOrElse(wineName.unwrap)
+    val payload   = AlgoliaQuery(query = queryText, hitsPerPage = 6).asJson.noSpaces
+    val request = basicRequest
+      .post(endpoint)
+      .header("x-algolia-api-key", apiKey)
+      .header("x-algolia-application-id", applicationId)
+      .contentType(MediaType.ApplicationJson)
+      .body(payload)
+      .response(asJson[AlgoliaResponse])
+
+    request.send(http).flatMap { response =>
+      response.body match {
+        case Right(parsed) => IO.pure(pickBestMatch(wineName, vintage, parsed.hits))
+        case Left(error)   => IO.raiseError(error)
+      }
+    }
+  }
 }
 
 private[gateways] object Similarity {
