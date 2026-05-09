@@ -4,6 +4,7 @@ import com.comcast.ip4s.IpAddress
 import madrileno.auction.domain.*
 import madrileno.auth.domain.{AuthContext, *}
 import madrileno.user.domain.*
+import madrileno.utils.imaging.{Height, ImageFormat, Width}
 import madrileno.utils.storage.StorageKey
 import org.http4s.MediaType
 import org.http4s.headers.`Content-Type`
@@ -116,6 +117,11 @@ object TestData {
     sizeBytes: SizeBytes = SizeBytes(1024L),
     position: ImagePosition = ImagePosition(0),
     uploadedAt: Instant = Instant.now(),
-    deletedAt: Option[Instant] = None
-  ): AuctionImage = AuctionImage(id, auctionId, storageKey, fileName, contentType, sizeBytes, position, uploadedAt, deletedAt)
+    deletedAt: Option[Instant] = None,
+    width: Option[Width] = None,
+    height: Option[Height] = None,
+    format: Option[ImageFormat] = None,
+    analyzedAt: Option[Instant] = None
+  ): AuctionImage =
+    AuctionImage(id, auctionId, storageKey, fileName, contentType, sizeBytes, position, uploadedAt, deletedAt, width, height, format, analyzedAt)
 }

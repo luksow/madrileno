@@ -79,7 +79,11 @@ class AuctionImageService(
                   sizeBytes = SizeBytes(actualSize),
                   position = ImagePosition(pos),
                   uploadedAt = now,
-                  deletedAt = None
+                  deletedAt = None,
+                  width = None,
+                  height = None,
+                  format = None,
+                  analyzedAt = None
                 )
         _ <- auctionImageRepository.save(image).seal
       } yield AttachImageResult.Attached(image)).run

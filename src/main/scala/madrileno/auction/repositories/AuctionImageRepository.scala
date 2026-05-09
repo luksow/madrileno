@@ -5,6 +5,7 @@ import cats.syntax.all.*
 import madrileno.auction.domain.*
 import madrileno.utils.db.dsl.*
 import madrileno.utils.db.transactor.{DB, DBInTransaction}
+import madrileno.utils.imaging.{Height, ImageFormat, Width}
 import madrileno.utils.storage.StorageKey
 import org.http4s.Header
 import org.http4s.headers.`Content-Type`
@@ -23,7 +24,11 @@ private[repositories] case class AuctionImageRow(
   sizeBytes: SizeBytes,
   position: ImagePosition,
   uploadedAt: Instant,
-  deletedAt: Option[Instant]) {
+  deletedAt: Option[Instant],
+  width: Option[Width],
+  height: Option[Height],
+  format: Option[ImageFormat],
+  analyzedAt: Option[Instant]) {
   def toAuctionImage: AuctionImage = {
     import io.scalaland.chimney.dsl.*
     this.into[AuctionImage].transform
@@ -55,11 +60,49 @@ private[repositories] object AuctionImageRowTable
   val position: Column[ImagePosition]             = column("position", int4.as[ImagePosition])
   val uploadedAt: Column[Instant]                 = column("uploaded_at", timestamptz.asInstant)
   override val deletedAt: Column[Option[Instant]] = column("deleted_at", timestamptz.asInstant.opt)
+  val width: Column[Option[Width]]                = column("width", int4.as[Width].opt)
+  val height: Column[Option[Height]]              = column("height", int4.as[Height].opt)
+  val format: Column[Option[ImageFormat]]         = column("format", text.asEnum[ImageFormat].opt)
+  val analyzedAt: Column[Option[Instant]]         = column("analyzed_at", timestamptz.asInstant.opt)
 
   override val foreignId: Column[AuctionId] = auctionId
 
   def mapping: (List[Column[?]], Codec[AuctionImageRow]) =
-    (id, auctionId, storageKey, fileName, contentType, sizeBytes, position, uploadedAt, deletedAt)
+    (id, auctionId, storageKey, fileName, contentType, sizeBytes, position, uploadedAt, deletedAt, width, height, format, analyzedAt)
+}
+
+private[repositories] case class AuctionImageVariantRow(
+  auctionImageId: AuctionImageId,
+  label: VariantLabel,
+  storageKey: StorageKey,
+  width: Width,
+  height: Height,
+  format: ImageFormat,
+  generatedAt: Instant) {
+  def toAuctionImageVariant: AuctionImageVariant = {
+    import io.scalaland.chimney.dsl.*
+    this.into[AuctionImageVariant].transform
+  }
+}
+
+private[repositories] object AuctionImageVariantRow {
+  def apply(variant: AuctionImageVariant): AuctionImageVariantRow = {
+    import io.scalaland.chimney.dsl.*
+    variant.into[AuctionImageVariantRow].transform
+  }
+}
+
+private[repositories] object AuctionImageVariantRowTable extends Table[AuctionImageVariantRow]("auction_image_variant") {
+  val auctionImageId: Column[AuctionImageId] = column("auction_image_id", uuid.as[AuctionImageId])
+  val label: Column[VariantLabel]            = column("label", text.as[VariantLabel])
+  val storageKey: Column[StorageKey]         = column("storage_key", text.as[StorageKey])
+  val width: Column[Width]                   = column("width", int4.as[Width])
+  val height: Column[Height]                 = column("height", int4.as[Height])
+  val format: Column[ImageFormat]            = column("format", text.asEnum[ImageFormat])
+  val generatedAt: Column[Instant]           = column("generated_at", timestamptz.asInstant)
+
+  def mapping: (List[Column[?]], Codec[AuctionImageVariantRow]) =
+    (auctionImageId, label, storageKey, width, height, format, generatedAt)
 }
 
 private[repositories] case class AuctionImageRowFilter(
@@ -99,6 +142,43 @@ class AuctionImageRepository {
 
   def softDelete(id: AuctionImageId, now: Instant): DB[Unit] =
     repository.softDeleteById(id, now)
+
+  def markAnalyzed(
+    id: AuctionImageId,
+    width: Width,
+    height: Height,
+    format: ImageFormat,
+    now: Instant
+  ): DB[Unit] = {
+    val table = AuctionImageRowTable
+    val command = sql"""UPDATE ${table.n}
+                        SET ${table.width.n}       = ${table.width.c},
+                            ${table.height.n}      = ${table.height.c},
+                            ${table.format.n}      = ${table.format.c},
+                            ${table.analyzedAt.n}  = ${table.analyzedAt.c}
+                        WHERE ${table.id.n} = ${table.id.c}""".command
+    summon[Session[IO]].execute(command)((Some(width), Some(height), Some(format), Some(now), id)).void
+  }
+
+  def saveVariant(variant: AuctionImageVariant): DB[Unit] = {
+    val table   = AuctionImageVariantRowTable
+    val command = sql"INSERT INTO ${table.n} (${table.*}) VALUES (${table.c})".command
+    summon[Session[IO]].execute(command)(AuctionImageVariantRow(variant)).void
+  }
+
+  def listVariants(imageId: AuctionImageId): DB[List[AuctionImageVariant]] = {
+    val table = AuctionImageVariantRowTable
+    val query = sql"SELECT ${table.*} FROM ${table.n} WHERE ${table.auctionImageId.n} = ${table.auctionImageId.c}".query(table.c)
+    summon[Session[IO]].execute(query)(imageId).map(_.map(_.toAuctionImageVariant))
+  }
+
+  def findVariant(imageId: AuctionImageId, label: VariantLabel): DB[Option[AuctionImageVariant]] = {
+    val table = AuctionImageVariantRowTable
+    val query = sql"""SELECT ${table.*} FROM ${table.n}
+                      WHERE ${table.auctionImageId.n} = ${table.auctionImageId.c}
+                        AND ${table.label.n} = ${table.label.c}""".query(table.c)
+    summon[Session[IO]].option(query)((imageId, label)).map(_.map(_.toAuctionImageVariant))
+  }
 
   def bulkSetPositions(auctionId: AuctionId, updates: List[(AuctionImageId, ImagePosition)]): DBInTransaction[Unit] = {
     val table = AuctionImageRowTable
