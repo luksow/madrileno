@@ -18,7 +18,7 @@ import madrileno.utils.http.{AuthRouteProvider, RateLimiterRuntime, RouteProvide
 import madrileno.utils.mailer.{MailPreview, MailPreviewProvider, Mailer}
 import madrileno.utils.observability.TelemetryContext
 import madrileno.utils.storage.{ObjectStore, SignedUrlTtl}
-import madrileno.utils.task.{RecurringTaskProvider, Task}
+import madrileno.utils.task.{OneTimeTask, OneTimeTaskProvider, RecurringTaskProvider, SchedulerClient, Task}
 import org.http4s.server.websocket.WebSocketBuilder2
 import pl.iterators.stir.server.Route
 import sttp.capabilities.fs2.Fs2Streams
@@ -26,13 +26,20 @@ import sttp.client4.WebSocketStreamBackend
 
 import scala.concurrent.duration.DurationInt
 
-trait AuctionModule extends RouteProvider with AuthRouteProvider with WsRouteProvider with RecurringTaskProvider with MailPreviewProvider {
+trait AuctionModule
+    extends RouteProvider
+    with AuthRouteProvider
+    with WsRouteProvider
+    with RecurringTaskProvider
+    with OneTimeTaskProvider
+    with MailPreviewProvider {
   given telemetryContext: TelemetryContext
   val transactor: Transactor
   val cacheRuntime: CacheRuntime
   val eventBusRuntime: EventBusRuntime
   val rateLimiterRuntime: RateLimiterRuntime
   val objectStore: ObjectStore
+  val schedulerClient: SchedulerClient
   lazy val httpClient: WebSocketStreamBackend[IO, Fs2Streams[IO]]
   lazy val userRepository: UserRepository
   lazy val mailer: Mailer
@@ -64,6 +71,10 @@ trait AuctionModule extends RouteProvider with AuthRouteProvider with WsRoutePro
 
   override abstract def recurringTasks: List[Task[?]] = {
     super.recurringTasks :+ auctionService.closeExpiredAuctionsTask
+  }
+
+  override abstract def oneTimeTasks: List[OneTimeTask[?]] = {
+    super.oneTimeTasks :+ auctionImageService.analyzeImageTask
   }
 
   override abstract def mailPreviews: List[MailPreview] = {

@@ -160,12 +160,16 @@ class AuctionImageRepository {
 
   def markAnalyzed(
     id: AuctionImageId,
+    sizeBytes: SizeBytes,
     width: Width,
     height: Height,
     format: ImageFormat,
     now: Instant
   ): DB[Unit] =
-    repository.updateById(id, _.copy(width = Some(width), height = Some(height), format = Some(format), analyzedAt = Some(now)))
+    repository.updateById(
+      id,
+      _.copy(sizeBytes = sizeBytes, width = Some(width), height = Some(height), format = Some(format), analyzedAt = Some(now))
+    )
 
   def saveVariant(variant: AuctionImageVariant): DB[Unit] =
     variantRepository.create(AuctionImageVariantRow(variant)).void

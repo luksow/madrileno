@@ -3,6 +3,8 @@ package madrileno.auction.services
 import cats.effect.std.UUIDGen
 import cats.effect.testing.scalatest.AsyncIOSpec
 import cats.effect.{Clock, IO}
+import com.sksamuel.scrimage.ImmutableImage
+import com.sksamuel.scrimage.nio.JpegWriter
 import fs2.Stream
 import io.opentelemetry.api.OpenTelemetry
 import madrileno.auction.domain.*
@@ -10,8 +12,10 @@ import madrileno.auction.repositories.{AuctionImageRepository, AuctionRepository
 import madrileno.support.{TestData, TestGivens, TestObjectStoreRuntime, TestTransactor}
 import madrileno.user.domain.User
 import madrileno.user.repositories.UserRepository
+import madrileno.utils.imaging.ImageFormat
 import madrileno.utils.observability.TelemetryContext
 import madrileno.utils.storage.SignedUrlTtl
+import madrileno.utils.task.{Scheduler, SchedulerConfig}
 import org.http4s.MediaType
 import org.http4s.headers.`Content-Type`
 import org.scalatest.matchers.should.Matchers
@@ -19,6 +23,7 @@ import org.scalatest.wordspec.AsyncWordSpec
 import org.typelevel.otel4s.metrics.Meter
 import org.typelevel.otel4s.trace.Tracer
 
+import java.awt.Color
 import java.time.Instant
 import scala.concurrent.duration.DurationInt
 
@@ -34,9 +39,11 @@ class AuctionImageServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matche
 
   private val jpeg = `Content-Type`(MediaType.image.jpeg)
 
+  private lazy val schedulerClient = Scheduler(transactor, SchedulerConfig()).client
+
   private def freshService = {
     val runtime = TestObjectStoreRuntime.inMemory
-    val service = new AuctionImageService(auctionRepo, imageRepo, runtime.objectStore, transactor, SignedUrlTtl(5.minutes))
+    val service = new AuctionImageService(auctionRepo, imageRepo, runtime.objectStore, transactor, schedulerClient, SignedUrlTtl(5.minutes))
     (service, runtime)
   }
 
@@ -285,6 +292,57 @@ class AuctionImageServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matche
         _      <- runtime.objectStore.put(key, jpeg, Stream.emits(bytes))
         result <- service.commitUpload(auction.id, other.id, imageId, "wine.jpg")
       } yield result shouldBe CommitUploadResult.NotOwner
+    }
+  }
+
+  "AuctionImageService.analyzeImageTask" should {
+    "fill width/height/format/analyzedAt for a stored image" in {
+      val (service, runtime) = freshService
+      val jpegBytes          = ImmutableImage.filled(120, 80, Color.RED).bytes(JpegWriter.Default)
+      for {
+        seller  <- seedUser()
+        auction <- seedAuction(seller.id)
+        attached <- service.attachImage(auction.id, seller.id, "wine.jpg", jpeg, Stream.emits(jpegBytes)).flatMap {
+                      case AttachImageResult.Attached(img) => IO.pure(img)
+                      case other                           => IO.raiseError(new AssertionError(s"setup: $other"))
+                    }
+        _       <- service.analyzeImageTask.execution(service.analyzeImageTask.instance(s"analyze-${attached.id.unwrap}", attached.id))
+        refresh <- service.listImages(auction.id).map(_.find(_.id == attached.id))
+      } yield {
+        val _ = runtime
+        refresh shouldBe defined
+        refresh.flatMap(_.width).map(_.unwrap) shouldBe Some(120)
+        refresh.flatMap(_.height).map(_.unwrap) shouldBe Some(80)
+        refresh.flatMap(_.format) shouldBe Some(ImageFormat.Jpeg)
+        refresh.flatMap(_.analyzedAt) shouldBe defined
+      }
+    }
+
+    "be a no-op when the image is already analyzed" in {
+      val (service, _) = freshService
+      val jpegBytes    = ImmutableImage.filled(50, 50, Color.GREEN).bytes(JpegWriter.Default)
+      for {
+        seller  <- seedUser()
+        auction <- seedAuction(seller.id)
+        attached <- service.attachImage(auction.id, seller.id, "wine.jpg", jpeg, Stream.emits(jpegBytes)).flatMap {
+                      case AttachImageResult.Attached(img) => IO.pure(img)
+                      case other                           => IO.raiseError(new AssertionError(s"setup: $other"))
+                    }
+        _      <- service.analyzeImageTask.execution(service.analyzeImageTask.instance(s"analyze-1-${attached.id.unwrap}", attached.id))
+        first  <- service.listImages(auction.id).map(_.find(_.id == attached.id).flatMap(_.analyzedAt))
+        _      <- service.analyzeImageTask.execution(service.analyzeImageTask.instance(s"analyze-2-${attached.id.unwrap}", attached.id))
+        second <- service.listImages(auction.id).map(_.find(_.id == attached.id).flatMap(_.analyzedAt))
+      } yield {
+        first shouldBe defined
+        second shouldBe first
+      }
+    }
+
+    "skip silently when the image row is missing" in {
+      val (service, _) = freshService
+      service.analyzeImageTask
+        .execution(service.analyzeImageTask.instance("analyze-missing", TestData.randomAuctionImageId()))
+        .as(succeed)
     }
   }
 

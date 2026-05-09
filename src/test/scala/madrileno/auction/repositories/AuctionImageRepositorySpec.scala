@@ -97,7 +97,7 @@ class AuctionImageRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Mat
         _     <- userRepo.create(seller, now)
         _     <- auctionRepo.save(auction)
         _     <- imageRepo.save(image)
-        _     <- imageRepo.markAnalyzed(image.id, Width(800), Height(600), ImageFormat.Jpeg, now)
+        _     <- imageRepo.markAnalyzed(image.id, SizeBytes(2048L), Width(800), Height(600), ImageFormat.Jpeg, now)
         found <- imageRepo.find(image.id)
       } yield {
         found.flatMap(_.width) shouldBe Some(Width(800))

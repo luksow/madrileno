@@ -8,8 +8,12 @@ import madrileno.auction.repositories.{AuctionImageRepository, AuctionRepository
 import madrileno.user.domain.UserId
 import madrileno.utils.crypto.IdGenerator
 import madrileno.utils.db.transactor.Transactor
+import madrileno.utils.imaging.{ImageFormat, Imaging, Orientation}
+import madrileno.utils.json.JsonProtocol.given
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
 import madrileno.utils.storage.{ObjectStat, ObjectStore, PresignedPut, SignedUrlTtl, StorageKey}
+import madrileno.utils.task.{OneTimeTask, SchedulerClient, Task, TaskDescriptor}
+import org.http4s.MediaType
 import org.http4s.headers.`Content-Type`
 import pl.iterators.sealedmonad.syntax.*
 
@@ -18,12 +22,51 @@ class AuctionImageService(
   auctionImageRepository: AuctionImageRepository,
   objectStore: ObjectStore,
   transactor: Transactor,
+  schedulerClient: SchedulerClient,
   signedUrlTtl: SignedUrlTtl
 )(using
   TelemetryContext,
   UUIDGen[IO],
   Clock[IO])
     extends LoggingSupport {
+
+  val analyzeImageTask: OneTimeTask[AuctionImageId] =
+    Task.oneTime(TaskDescriptor[AuctionImageId]("analyze-auction-image"))(task => analyze(task.payload))
+
+  private def analyze(imageId: AuctionImageId): IO[Unit] =
+    transactor.inSession(auctionImageRepository.find(imageId)).flatMap {
+      case None                                      => logger.warn(s"analyze: image $imageId not found, skipping")
+      case Some(image) if image.analyzedAt.isDefined => IO.unit
+      case Some(image) =>
+        objectStore.fetchBytes(image.storageKey).flatMap {
+          case None => logger.warn(s"analyze: bytes missing for $imageId at ${image.storageKey.render}, skipping")
+          case Some(bytes) =>
+            Imaging.info(bytes).flatMap {
+              case None => logger.warn(s"analyze: $imageId at ${image.storageKey.render} is not a recognized image, skipping")
+              case Some(info) =>
+                val needsRotation = info.orientation != Orientation.Normal
+                for {
+                  upright <- if (needsRotation) Imaging.applyOrientation(bytes, info.format) else IO.pure(bytes)
+                  _ <- if (needsRotation)
+                         objectStore
+                           .put(image.storageKey, contentTypeFor(info.format), Stream.chunk(fs2.Chunk.byteVector(upright)))
+                           .void
+                       else IO.unit
+                  now <- Clock[IO].realTimeInstant
+                  _ <- transactor.inSession(
+                         auctionImageRepository
+                           .markAnalyzed(imageId, SizeBytes(upright.size), info.dimensions.width, info.dimensions.height, info.format, now)
+                       )
+                } yield ()
+            }
+        }
+    }
+
+  private def contentTypeFor(format: ImageFormat): `Content-Type` = format match {
+    case ImageFormat.Jpeg => `Content-Type`(MediaType.image.jpeg)
+    case ImageFormat.Png  => `Content-Type`(MediaType.image.png)
+    case ImageFormat.Gif  => `Content-Type`(MediaType.image.gif)
+  }
 
   def listImages(auctionId: AuctionId): IO[List[AuctionImage]] =
     transactor.inSession(auctionImageRepository.listByAuction(auctionId))
@@ -208,6 +251,7 @@ class AuctionImageService(
                   uploadedAt = now
                 )
         _ <- auctionImageRepository.save(image)
+        _ <- schedulerClient.scheduleTransactionally(analyzeImageTask.instance(s"analyze-${imageId.unwrap}", imageId))
       } yield image
     }
 
