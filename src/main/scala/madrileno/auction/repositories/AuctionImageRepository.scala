@@ -5,6 +5,7 @@ import cats.syntax.all.*
 import madrileno.auction.domain.*
 import madrileno.utils.db.dsl.*
 import madrileno.utils.db.transactor.{DB, DBInTransaction}
+import madrileno.utils.imaging.{Height, ImageFormat, Width}
 import madrileno.utils.storage.StorageKey
 import org.http4s.Header
 import org.http4s.headers.`Content-Type`
@@ -23,7 +24,11 @@ private[repositories] case class AuctionImageRow(
   sizeBytes: SizeBytes,
   position: ImagePosition,
   uploadedAt: Instant,
-  deletedAt: Option[Instant]) {
+  deletedAt: Option[Instant],
+  width: Option[Width],
+  height: Option[Height],
+  format: Option[ImageFormat],
+  analyzedAt: Option[Instant]) {
   def toAuctionImage: AuctionImage = {
     import io.scalaland.chimney.dsl.*
     this.into[AuctionImage].transform
@@ -55,11 +60,64 @@ private[repositories] object AuctionImageRowTable
   val position: Column[ImagePosition]             = column("position", int4.as[ImagePosition])
   val uploadedAt: Column[Instant]                 = column("uploaded_at", timestamptz.asInstant)
   override val deletedAt: Column[Option[Instant]] = column("deleted_at", timestamptz.asInstant.opt)
+  val width: Column[Option[Width]]                = column("width", int4.as[Width].opt)
+  val height: Column[Option[Height]]              = column("height", int4.as[Height].opt)
+  val format: Column[Option[ImageFormat]]         = column("format", text.asEnum[ImageFormat].opt)
+  val analyzedAt: Column[Option[Instant]]         = column("analyzed_at", timestamptz.asInstant.opt)
 
   override val foreignId: Column[AuctionId] = auctionId
 
   def mapping: (List[Column[?]], Codec[AuctionImageRow]) =
-    (id, auctionId, storageKey, fileName, contentType, sizeBytes, position, uploadedAt, deletedAt)
+    (id, auctionId, storageKey, fileName, contentType, sizeBytes, position, uploadedAt, deletedAt, width, height, format, analyzedAt)
+}
+
+private[repositories] case class AuctionImageVariantRow(
+  id: AuctionImageVariantId,
+  auctionImageId: AuctionImageId,
+  spec: VariantSpec,
+  storageKey: StorageKey,
+  width: Width,
+  height: Height,
+  format: ImageFormat,
+  generatedAt: Instant) {
+  def toAuctionImageVariant: AuctionImageVariant = {
+    import io.scalaland.chimney.dsl.*
+    this.into[AuctionImageVariant].transform
+  }
+}
+
+private[repositories] object AuctionImageVariantRow {
+  def apply(variant: AuctionImageVariant): AuctionImageVariantRow = {
+    import io.scalaland.chimney.dsl.*
+    variant.into[AuctionImageVariantRow].transform
+  }
+}
+
+private[repositories] object AuctionImageVariantRowTable
+    extends Table[AuctionImageVariantRow]("auction_image_variant")
+    with IdTable[AuctionImageVariantRow, AuctionImageVariantId]
+    with ForeignIdTable[AuctionImageId] {
+  override val id: Column[AuctionImageVariantId] = column("id", uuid.as[AuctionImageVariantId])
+  val auctionImageId: Column[AuctionImageId]     = column("auction_image_id", uuid.as[AuctionImageId])
+  val spec: Column[VariantSpec]                  = column("spec", text.asEnum[VariantSpec])
+  val storageKey: Column[StorageKey]             = column("storage_key", text.as[StorageKey])
+  val width: Column[Width]                       = column("width", int4.as[Width])
+  val height: Column[Height]                     = column("height", int4.as[Height])
+  val format: Column[ImageFormat]                = column("format", text.asEnum[ImageFormat])
+  val generatedAt: Column[Instant]               = column("generated_at", timestamptz.asInstant)
+
+  override val foreignId: Column[AuctionImageId] = auctionImageId
+
+  def mapping: (List[Column[?]], Codec[AuctionImageVariantRow]) =
+    (id, auctionImageId, spec, storageKey, width, height, format, generatedAt)
+}
+
+private[repositories] case class AuctionImageVariantRowFilter(
+  auctionImageId: SqlPredicate[AuctionImageId] = p.any,
+  spec: SqlPredicate[VariantSpec] = p.any)
+    extends SqlFilter {
+  override def filterFragment: AppliedFragment =
+    SqlFilterDerivation.filterFragment(this, (AuctionImageVariantRowTable.auctionImageId, AuctionImageVariantRowTable.spec))
 }
 
 private[repositories] case class AuctionImageRowFilter(
@@ -82,6 +140,9 @@ class AuctionImageRepository {
   def find(id: AuctionImageId): DB[Option[AuctionImage]] =
     repository.findById(id).map(_.map(_.toAuctionImage))
 
+  def findIncludingDeleted(id: AuctionImageId): DB[Option[AuctionImage]] =
+    repository.findByIdWithDeleted(id).map(_.map(_.toAuctionImage))
+
   def listByAuction(auctionId: AuctionId): DB[List[AuctionImage]] =
     repository.findByFilter(AuctionImageRowFilter(auctionId = p.equal(auctionId))).map(_.map(_.toAuctionImage))
 
@@ -99,6 +160,37 @@ class AuctionImageRepository {
 
   def softDelete(id: AuctionImageId, now: Instant): DB[Unit] =
     repository.softDeleteById(id, now)
+
+  def markAnalyzed(
+    id: AuctionImageId,
+    sizeBytes: SizeBytes,
+    width: Width,
+    height: Height,
+    format: ImageFormat,
+    now: Instant
+  ): DB[Unit] =
+    repository.updateById(
+      id,
+      _.copy(sizeBytes = sizeBytes, width = Some(width), height = Some(height), format = Some(format), analyzedAt = Some(now))
+    )
+
+  def saveVariant(variant: AuctionImageVariant): DB[Unit] = {
+    val table = AuctionImageVariantRowTable
+    val command = sql"""INSERT INTO ${table.n} (${table.*}) VALUES (${table.c})
+                        ON CONFLICT (${table.auctionImageId.n}, ${table.spec.n}) DO NOTHING""".command
+    summon[Session[IO]].execute(command)(AuctionImageVariantRow(variant)).void
+  }
+
+  def listVariants(imageId: AuctionImageId): DB[List[AuctionImageVariant]] =
+    variantRepository.findByForeignId(imageId).map(_.map(_.toAuctionImageVariant))
+
+  def listVariantsByImages(imageIds: List[AuctionImageId]): DB[Map[AuctionImageId, List[AuctionImageVariant]]] =
+    variantRepository.findByForeignIds(imageIds).map(_.map(_.toAuctionImageVariant).groupBy(_.auctionImageId))
+
+  def findVariant(imageId: AuctionImageId, spec: VariantSpec): DB[Option[AuctionImageVariant]] =
+    variantRepository
+      .findOneByFilter(AuctionImageVariantRowFilter(auctionImageId = p.equal(imageId), spec = p.equal(spec)))
+      .map(_.map(_.toAuctionImageVariant))
 
   def bulkSetPositions(auctionId: AuctionId, updates: List[(AuctionImageId, ImagePosition)]): DBInTransaction[Unit] = {
     val table = AuctionImageRowTable
@@ -121,5 +213,16 @@ class AuctionImageRepository {
       with ForeignIdRepository[AuctionImageRow, AuctionId]
       with FilteringRepository[AuctionImageRow, AuctionImageRowFilter] {
       override val table: AuctionImageRowTable.type = AuctionImageRowTable
+    }
+
+  private val variantRepository
+    : IdRepository[AuctionImageVariantRow, AuctionImageVariantId] & ForeignIdRepository[AuctionImageVariantRow, AuctionImageId] & FilteringRepository[
+      AuctionImageVariantRow,
+      AuctionImageVariantRowFilter
+    ] =
+    new IdRepository[AuctionImageVariantRow, AuctionImageVariantId](_.id)
+      with ForeignIdRepository[AuctionImageVariantRow, AuctionImageId]
+      with FilteringRepository[AuctionImageVariantRow, AuctionImageVariantRowFilter] {
+      override val table: AuctionImageVariantRowTable.type = AuctionImageVariantRowTable
     }
 }

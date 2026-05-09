@@ -4,10 +4,14 @@ import cats.effect.testing.scalatest.AsyncIOSpec
 import madrileno.auction.domain.*
 import madrileno.support.{TestData, TestTransactor}
 import madrileno.user.repositories.UserRepository
+import madrileno.utils.imaging.{Height, ImageFormat, Width}
+import madrileno.utils.storage.StorageKey
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AsyncWordSpec
 
 import java.time.Instant
+import java.time.temporal.ChronoUnit
+import java.util.UUID
 
 class AuctionImageRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matchers with TestTransactor {
 
@@ -83,6 +87,60 @@ class AuctionImageRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Mat
       } yield {
         listed shouldBe empty
         found shouldBe None
+      }
+    }
+
+    "markAnalyzed populates width/height/format/analyzed_at" in withRollback {
+      val (seller, auction) = setup()
+      val image             = TestData.auctionImage(auctionId = auction.id)
+      val now               = Instant.now().truncatedTo(ChronoUnit.MICROS)
+      for {
+        _     <- userRepo.create(seller, now)
+        _     <- auctionRepo.save(auction)
+        _     <- imageRepo.save(image)
+        _     <- imageRepo.markAnalyzed(image.id, SizeBytes(2048L), Width(800), Height(600), ImageFormat.Jpeg, now)
+        found <- imageRepo.find(image.id)
+      } yield {
+        found.flatMap(_.width) shouldBe Some(Width(800))
+        found.flatMap(_.height) shouldBe Some(Height(600))
+        found.flatMap(_.format) shouldBe Some(ImageFormat.Jpeg)
+        found.flatMap(_.analyzedAt) shouldBe Some(now)
+      }
+    }
+
+    "saveVariant + listVariants round-trip; findVariant by spec" in withRollback {
+      val (seller, auction) = setup()
+      val image             = TestData.auctionImage(auctionId = auction.id)
+      val thumb = AuctionImageVariant(
+        id = AuctionImageVariantId(UUID.randomUUID()),
+        auctionImageId = image.id,
+        spec = VariantSpec.Thumb,
+        storageKey = StorageKey(s"auctions/${auction.id}/${image.id}/thumb.jpg"),
+        width = Width(256),
+        height = Height(256),
+        format = ImageFormat.Jpeg,
+        generatedAt = Instant.now().truncatedTo(ChronoUnit.MICROS)
+      )
+      val medium = thumb.copy(
+        id = AuctionImageVariantId(UUID.randomUUID()),
+        spec = VariantSpec.Medium,
+        storageKey = StorageKey(s"auctions/${auction.id}/${image.id}/medium.jpg"),
+        width = Width(1024),
+        height = Height(768)
+      )
+      for {
+        _      <- userRepo.create(seller, Instant.now())
+        _      <- auctionRepo.save(auction)
+        _      <- imageRepo.save(image)
+        _      <- imageRepo.saveVariant(thumb)
+        _      <- imageRepo.saveVariant(medium)
+        listed <- imageRepo.listVariants(image.id)
+        oneT   <- imageRepo.findVariant(image.id, VariantSpec.Thumb)
+        oneM   <- imageRepo.findVariant(image.id, VariantSpec.Medium)
+      } yield {
+        listed.toSet shouldBe Set(thumb, medium)
+        oneT shouldBe Some(thumb)
+        oneM shouldBe Some(medium)
       }
     }
   }

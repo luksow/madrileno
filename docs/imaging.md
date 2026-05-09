@@ -105,5 +105,5 @@ If you need to test EXIF *content* (not just presence), check in a small fixture
 ## Performance notes
 
 - Every operation decodes and re-encodes — there's no "rotate without re-encoding" fast path. For lossless EXIF-only rotation you'd need a JPEG-aware library (`libjpeg-turbo`'s `jpegtran`, or `org.apache.sanselan`).
-- `IO.blocking` puts each call on the cats-effect blocking pool. Don't run hundreds of these concurrently against a busy server — bound your variant generation with a semaphore or a fixed-concurrency stream.
+- `IO.blocking` puts each call on the cats-effect blocking pool. Don't run hundreds of these concurrently against a busy server. The auction-images variant pipeline avoids this by running each `generateVariantTask` on the scheduler — `scheduler.concurrency` (10 by default) is the effective parallelism cap.
 - The buffer cost is bounded by `http.max-request-size` (10 MiB default). Larger files would need a streamed pipeline (`javax.imageio.ImageReader` with a custom InputStream); not in scope for this template.

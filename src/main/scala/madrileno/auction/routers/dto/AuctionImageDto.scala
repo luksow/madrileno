@@ -1,11 +1,20 @@
 package madrileno.auction.routers.dto
 
 import madrileno.auction.domain.*
+import madrileno.utils.imaging.{Height, Width}
 import madrileno.utils.json.JsonProtocol.*
 import org.http4s.Header
 import org.http4s.headers.`Content-Type`
 
 import java.time.Instant
+
+case class VariantDto(
+  url: String,
+  width: Width,
+  height: Height,
+  format: String)
+    derives Encoder.AsObject,
+      Decoder
 
 case class AuctionImageDto(
   id: AuctionImageId,
@@ -15,12 +24,19 @@ case class AuctionImageDto(
   contentType: String,
   sizeBytes: SizeBytes,
   position: ImagePosition,
-  uploadedAt: Instant)
+  uploadedAt: Instant,
+  width: Option[Width],
+  height: Option[Height],
+  variants: Map[String, VariantDto])
     derives Encoder.AsObject,
       Decoder
 
 object AuctionImageDto {
-  def apply(image: AuctionImage, apiPrefix: String): AuctionImageDto =
+  def apply(
+    image: AuctionImage,
+    apiPrefix: String,
+    variants: List[AuctionImageVariant] = Nil
+  ): AuctionImageDto =
     AuctionImageDto(
       id = image.id,
       auctionId = image.auctionId,
@@ -29,7 +45,19 @@ object AuctionImageDto {
       contentType = Header[`Content-Type`].value(image.contentType),
       sizeBytes = image.sizeBytes,
       position = image.position,
-      uploadedAt = image.uploadedAt
+      uploadedAt = image.uploadedAt,
+      width = image.width,
+      height = image.height,
+      variants = variants
+        .map(variant =>
+          variant.spec.toString -> VariantDto(
+            url = s"/$apiPrefix/auctions/${image.auctionId}/images/${image.id}/variants/${variant.spec}/content",
+            width = variant.width,
+            height = variant.height,
+            format = variant.format.toString
+          )
+        )
+        .toMap
     )
 }
 

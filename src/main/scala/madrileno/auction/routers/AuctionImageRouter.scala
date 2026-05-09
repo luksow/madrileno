@@ -20,26 +20,47 @@ class AuctionImageRouter(auctionImageService: AuctionImageService, apiPrefix: St
   val routes: Route = {
     (get & path("auctions" / JavaUUID.as[AuctionId] / "images") & pathEndOrSingleSlash) { auctionId =>
       complete {
-        auctionImageService.listImages(auctionId).map[ToResponseMarshallable] { images =>
-          Ok -> images.map(AuctionImageDto(_, apiPrefix))
+        auctionImageService.listImagesWithVariants(auctionId).map[ToResponseMarshallable] { pairs =>
+          Ok -> pairs.map { case (image, variants) => AuctionImageDto(image, apiPrefix, variants) }
         }
       }
     } ~
       (get & path("auctions" / JavaUUID.as[AuctionId] / "images" / JavaUUID.as[AuctionImageId] / "content") & pathEndOrSingleSlash) {
         (auctionId, imageId) =>
           complete {
-            auctionImageService.serveImage(auctionId, imageId).map[ToResponseMarshallable] {
-              case None | Some(ObjectStore.GetResult.NotFound) => error(NotFound, "image-not-found", "Image not found")
-              case Some(ObjectStore.GetResult.Redirected(url)) => Response[IO](Status.SeeOther, headers = Headers(Location(url)))
-              case Some(ObjectStore.GetResult.Streamed(ct, fileName, body)) =>
-                val baseHeaders = Headers(ct)
-                val headers =
-                  fileName.fold(baseHeaders)(name => baseHeaders.put(`Content-Disposition`("attachment", Map(ci"filename" -> name))))
-                Response[IO](Status.Ok, headers = headers, body = body)
+            renderGetResult(auctionImageService.serveImage(auctionId, imageId), "image-not-found", "Image not found")
+          }
+      } ~
+      (get & path(
+        "auctions" / JavaUUID.as[AuctionId] / "images" / JavaUUID.as[AuctionImageId] / "variants" / Segment / "content"
+      ) & pathEndOrSingleSlash) {
+        (
+          auctionId,
+          imageId,
+          specSegment
+        ) =>
+          complete {
+            VariantSpec.byName(specSegment) match {
+              case None       => IO.pure[ToResponseMarshallable](error(NotFound, "variant-not-found", s"Unknown variant: $specSegment"))
+              case Some(spec) => renderGetResult(auctionImageService.serveVariant(auctionId, imageId, spec), "variant-not-found", "Variant not found")
             }
           }
       }
   }
+
+  private def renderGetResult(
+    io: IO[Option[ObjectStore.GetResult]],
+    notFoundCode: String,
+    notFoundMessage: String
+  ): IO[ToResponseMarshallable] =
+    io.map[ToResponseMarshallable] {
+      case None | Some(ObjectStore.GetResult.NotFound) => error(NotFound, notFoundCode, notFoundMessage)
+      case Some(ObjectStore.GetResult.Redirected(url)) => Response[IO](Status.SeeOther, headers = Headers(Location(url)))
+      case Some(ObjectStore.GetResult.Streamed(ct, fileName, body)) =>
+        val baseHeaders = Headers(ct)
+        val headers     = fileName.fold(baseHeaders)(name => baseHeaders.put(`Content-Disposition`("attachment", Map(ci"filename" -> name))))
+        Response[IO](Status.Ok, headers = headers, body = body)
+    }
 
   def authedRoutes(authContext: AuthContext): Route = {
     (post & path("auctions" / JavaUUID.as[AuctionId] / "images") & pathEndOrSingleSlash & entity(as[Multipart[IO]])) { (auctionId, multipart) =>
@@ -78,6 +99,45 @@ class AuctionImageRouter(auctionImageService: AuctionImageService, apiPrefix: St
               case ReorderImagesResult.MismatchedIds =>
                 error(BadRequest, "mismatched-ids", "Reorder list must contain exactly the existing image ids")
             }
+          }
+      } ~
+      (post & path("auctions" / JavaUUID.as[AuctionId] / "images" / "presign") & pathEndOrSingleSlash & entity(as[PresignUploadRequest])) {
+        (auctionId, request) =>
+          complete {
+            `Content-Type`.parse(request.contentType).toOption match {
+              case None => IO.pure[ToResponseMarshallable](error(BadRequest, "invalid-content-type", s"Invalid Content-Type: ${request.contentType}"))
+              case _ if request.contentLength <= 0 =>
+                IO.pure[ToResponseMarshallable](error(BadRequest, "invalid-content-length", "Content-Length must be positive"))
+              case Some(ct) =>
+                auctionImageService
+                  .presignUpload(auctionId, authContext.userId, ct, request.contentLength)
+                  .map[ToResponseMarshallable] {
+                    case PresignUploadResult.Presigned(imageId, presigned) =>
+                      Created -> PresignedUploadDto(
+                        imageId = imageId,
+                        url = presigned.url.renderString,
+                        signedHeaders = presigned.signedHeaders.headers.map(h => h.name.toString -> h.value).toMap
+                      )
+                    case PresignUploadResult.AuctionNotFound => error(NotFound, "auction-not-found", "Auction not found")
+                    case PresignUploadResult.NotOwner        => error(Forbidden, "not-owner", "Only the seller can upload images to this auction")
+                  }
+            }
+          }
+      } ~
+      (post & path("auctions" / JavaUUID.as[AuctionId] / "images" / "commit") & pathEndOrSingleSlash & entity(as[CommitUploadRequest])) {
+        (auctionId, request) =>
+          complete {
+            auctionImageService
+              .commitUpload(auctionId, authContext.userId, request.imageId, request.fileName)
+              .map[ToResponseMarshallable] {
+                case CommitUploadResult.Committed(image) => Created -> AuctionImageDto(image, apiPrefix)
+                case CommitUploadResult.AuctionNotFound  => error(NotFound, "auction-not-found", "Auction not found")
+                case CommitUploadResult.NotOwner         => error(Forbidden, "not-owner", "Only the seller can commit uploads for this auction")
+                case CommitUploadResult.ObjectNotFound =>
+                  error(NotFound, "object-not-found", "No object found at the expected key — did the direct upload complete?")
+                case CommitUploadResult.Conflict =>
+                  error(Conflict, "image-id-conflict", "This image id is already in use; presign a fresh one")
+              }
           }
       }
   }
