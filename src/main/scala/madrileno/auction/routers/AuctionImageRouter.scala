@@ -135,6 +135,8 @@ class AuctionImageRouter(auctionImageService: AuctionImageService, apiPrefix: St
                 case CommitUploadResult.NotOwner         => error(Forbidden, "not-owner", "Only the seller can commit uploads for this auction")
                 case CommitUploadResult.ObjectNotFound =>
                   error(NotFound, "object-not-found", "No object found at the expected key — did the direct upload complete?")
+                case CommitUploadResult.Conflict =>
+                  error(Conflict, "image-id-conflict", "This image id is already in use; presign a fresh one")
               }
           }
       }

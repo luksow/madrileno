@@ -140,6 +140,9 @@ class AuctionImageRepository {
   def find(id: AuctionImageId): DB[Option[AuctionImage]] =
     repository.findById(id).map(_.map(_.toAuctionImage))
 
+  def findIncludingDeleted(id: AuctionImageId): DB[Option[AuctionImage]] =
+    repository.findByIdWithDeleted(id).map(_.map(_.toAuctionImage))
+
   def listByAuction(auctionId: AuctionId): DB[List[AuctionImage]] =
     repository.findByFilter(AuctionImageRowFilter(auctionId = p.equal(auctionId))).map(_.map(_.toAuctionImage))
 

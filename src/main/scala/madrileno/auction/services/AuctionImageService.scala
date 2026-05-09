@@ -297,13 +297,14 @@ class AuctionImageService(
     val precheck: IO[Either[CommitUploadResult, Unit]] = transactor.inSession {
       for {
         auctionOpt <- auctionRepository.find(auctionId)
-        imageOpt   <- auctionImageRepository.find(imageId)
+        imageOpt   <- auctionImageRepository.findIncludingDeleted(imageId)
       } yield (auctionOpt, imageOpt) match {
         case (None, _)                                          => Left(CommitUploadResult.AuctionNotFound)
         case (Some(auction), _) if auction.sellerId != sellerId => Left(CommitUploadResult.NotOwner)
         case (_, Some(existing)) if existing.auctionId == auctionId && existing.deletedAt.isEmpty =>
           Left(CommitUploadResult.Committed(existing))
-        case _ => Right(())
+        case (_, Some(_)) => Left(CommitUploadResult.Conflict)
+        case _            => Right(())
       }
     }
     precheck.flatMap {
@@ -333,12 +334,13 @@ class AuctionImageService(
                .valueOr[CommitUploadResult](CommitUploadResult.AuctionNotFound)
                .ensure(_.sellerId == sellerId, CommitUploadResult.NotOwner)
         _ <- auctionImageRepository
-               .find(imageId)
+               .findIncludingDeleted(imageId)
                .seal[CommitUploadResult]
                .attempt[Unit, CommitUploadResult] {
                  case Some(existing) if existing.auctionId == auctionId && existing.deletedAt.isEmpty =>
                    Left(CommitUploadResult.Committed(existing))
-                 case _ => Right(())
+                 case Some(_) => Left(CommitUploadResult.Conflict)
+                 case None    => Right(())
                }
         pos <- auctionImageRepository.nextPosition(auctionId).seal
         image = AuctionImage.newlyAttached(
@@ -398,6 +400,7 @@ enum CommitUploadResult {
   case AuctionNotFound
   case NotOwner
   case ObjectNotFound
+  case Conflict
 }
 
 final case class GenerateVariantPayload(imageId: AuctionImageId, spec: VariantSpec) derives Codec.AsObject
