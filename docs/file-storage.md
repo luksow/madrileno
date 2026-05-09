@@ -93,6 +93,10 @@ trait AuctionModule extends RouteProvider with AuthRouteProvider /* ... */ {
 
 ## Storing a file
 
+Two flows are wired in `AuctionImageService`. Multipart-through-the-API works against any backend (including the disk backend in dev). Direct upload uses a presigned PUT URL so client bytes never touch the API server — production-friendly with S3.
+
+### Multipart upload
+
 The pattern is **upload first, persist second, clean up storage on persist failure.** Anything else either leaves a row pointing at a missing object (worse: `404` for a row that exists) or leaves an orphan blob with no row.
 
 `AuctionImageService.attachImage` (simplified):
@@ -111,9 +115,30 @@ for {
 } yield result
 ```
 
-The persist runs inside `transactor.inTransaction` and locks the auction row via `auctionRepository.findForUpdate(auctionId)` — this serializes concurrent uploads to the same auction so `nextPosition` doesn't race.
+The persist runs inside `transactor.inTransaction` and locks the auction row via `auctionRepository.findForUpdate(auctionId)` — this serializes concurrent uploads to the same auction so `nextPosition` doesn't race. It also enqueues the analyzer task (see below) atomically with the row insert.
 
 `actualSize` is what we actually wrote (`put` returns it). The DB row uses that, not any client-provided `Content-Length` header — multipart parts frequently lie about size or omit the header entirely.
+
+### Direct upload (presign + commit)
+
+S3-only. The client makes two calls to the API plus one PUT to S3:
+
+1. **`POST /auctions/{auctionId}/images/presign`** — server validates ownership, generates `imageId` + storage key, returns `PresignedUploadDto(imageId, url, signedHeaders)`.
+2. **Client `PUT`s** the bytes to the presigned URL, echoing every header in `signedHeaders` (the bucket rejects with `SignatureDoesNotMatch` if any signed header is missing or differs).
+3. **`POST /auctions/{auctionId}/images/commit`** with `{imageId, fileName}` — server `head`s the storage key to verify the object landed (and learn `sizeBytes` + `contentType` directly from S3), inserts the row, and enqueues the analyzer task. **Idempotent**: a retry that lands after a successful first commit returns `Committed(existingRow)` instead of failing on the PK.
+
+No upload-then-cleanup pattern here — the bucket is authoritative; if the client never finishes step 2, no row is ever created and the orphan blob is reaped by bucket-level lifecycle rules (set up out-of-band).
+
+### Analyzer and variant generation
+
+Persisting a row enqueues `analyzeImageTask` (a one-time scheduler task) in the same transaction. The analyzer:
+
+1. `fetchBytes` from storage (`storage.max-fetch-bytes` cap applies — see the storage utils).
+2. `Imaging.info` to extract format/dimensions/orientation.
+3. If EXIF orientation isn't `Normal`, `Imaging.applyOrientation` and write the upright bytes back. Re-runs `Imaging.info` on the upright bytes so `markAnalyzed` records post-rotation dimensions.
+4. `markAnalyzed(id, sizeBytes, width, height, format, now)` and enqueues one `generateVariantTask` per `VariantSpec` — all in one transaction, so a scheduler outage between mark + enqueue rolls back and the retry replays cleanly.
+
+Each variant task renders its spec (`VariantSpec.Thumb` → `Imaging.cover(256, 256)`, `VariantSpec.Medium` → `Imaging.resize(1024)`), `put`s the bytes, and inserts the variant row via `INSERT … ON CONFLICT (auction_image_id, spec) DO NOTHING` so concurrent retries can't violate the unique constraint. On insert failure the task best-effort-deletes the rendered blob and re-raises so the scheduler retries.
 
 ## Serving a file
 
@@ -155,9 +180,9 @@ The `ImagePosition` opaque type still rejects negatives in the domain — the ne
 
 ## Testing
 
-- **`TestObjectStoreRuntime.inMemory`** — a `Ref`-backed in-memory `ObjectStore`. Used by `TestApplicationLoader` so route specs don't need MinIO. `get` returns `Streamed` (no presigned URL needed).
+- **`TestObjectStoreRuntime.inMemory`** — a `Ref`-backed in-memory `ObjectStore`. Used by `TestApplicationLoader` so route specs don't need MinIO. `get` returns `Streamed` (no presigned URL needed). `presignPut` returns a fake `PresignedPut` (URL like `https://example.test/<key>`) so service-level tests can exercise the presign/commit/analyzer/variant pipeline without a real bucket.
 - **`S3ObjectStoreSpec`** — runs against a MinIO Testcontainer pinned to `RELEASE.2024-11-07T00-52-20Z`. Creates the test bucket explicitly (the app no longer auto-creates) using a `Resource.fromAutoCloseable` S3 client so nothing leaks.
-- **`AuctionImageServiceSpec`** — exercises the service against real Postgres + the in-memory store. Covers attach success/positioning/owner checks, detach, reorder swap (which exercises the two-phase repo helper), and serve cross-auction guards.
+- **`AuctionImageServiceSpec`** — exercises the service against real Postgres + the in-memory store. Covers multipart attach, detach, reorder, serve cross-auction guards, presign + commit (happy + missing-object + wrong-owner + idempotent retry), the analyzer task (happy + already-analyzed no-op + missing row), and variant generation (`Thumb` 256×256, `Medium` 1024-on-long-edge, idempotent re-runs).
 - **`AuctionImageRouterSpec`** — full baklava DSL against `TestApplicationLoader`. Uses `pl.iterators.baklava.{Multipart, FilePart}` for the upload body so the endpoints land in `target/baklava/openapi/openapi.yml` (and the ts-rest / simple-HTML outputs).
 
 ## Things that catch people out
