@@ -293,6 +293,29 @@ class AuctionImageServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matche
         result <- service.commitUpload(auction.id, other.id, imageId, "wine.jpg")
       } yield result shouldBe CommitUploadResult.NotOwner
     }
+
+    "be idempotent — a second commit with the same imageId returns Committed with the existing row" in {
+      val (service, runtime) = freshService
+      val bytes              = "uploaded".getBytes("UTF-8")
+      for {
+        seller  <- seedUser()
+        auction <- seedAuction(seller.id)
+        imageId <- service.presignUpload(auction.id, seller.id, "wine.jpg", jpeg, bytes.length.toLong).flatMap {
+                     case PresignUploadResult.Presigned(id, _) => IO.pure(id)
+                     case other                                => IO.raiseError(new AssertionError(s"setup: $other"))
+                   }
+        key = StorageKey(s"auctions/${auction.id}/images/$imageId")
+        _      <- runtime.objectStore.put(key, jpeg, Stream.emits(bytes))
+        first  <- service.commitUpload(auction.id, seller.id, imageId, "wine.jpg")
+        second <- service.commitUpload(auction.id, seller.id, imageId, "wine.jpg")
+        listed <- service.listImages(auction.id)
+      } yield (first, second) match {
+        case (CommitUploadResult.Committed(a), CommitUploadResult.Committed(b)) =>
+          a.id shouldBe b.id
+          listed.map(_.id) shouldBe List(a.id)
+        case other => fail(s"Expected two Committed, got $other")
+      }
+    }
   }
 
   "AuctionImageService.analyzeImageTask" should {

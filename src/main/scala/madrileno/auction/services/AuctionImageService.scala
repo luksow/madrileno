@@ -292,15 +292,27 @@ class AuctionImageService(
     fileName: String
   ): IO[CommitUploadResult] = {
     val key = StorageKey(s"auctions/$auctionId/images/$imageId")
-    (for {
-      _ <- transactor
-             .inSession(auctionRepository.find(auctionId))
-             .valueOr[CommitUploadResult](CommitUploadResult.AuctionNotFound)
-             .ensure(_.sellerId == sellerId, CommitUploadResult.NotOwner)
-      stat  <- objectStore.head(key).valueOr[CommitUploadResult](CommitUploadResult.ObjectNotFound)
-      now   <- Clock[IO].realTimeInstant.seal
-      image <- persistCommittedRow(auctionId, imageId, key, fileName, stat, now).seal
-    } yield CommitUploadResult.Committed(image)).run
+    val precheck: IO[Either[CommitUploadResult, Unit]] = transactor.inSession {
+      for {
+        auctionOpt <- auctionRepository.find(auctionId)
+        imageOpt   <- auctionImageRepository.find(imageId)
+      } yield (auctionOpt, imageOpt) match {
+        case (None, _)                                          => Left(CommitUploadResult.AuctionNotFound)
+        case (Some(auction), _) if auction.sellerId != sellerId => Left(CommitUploadResult.NotOwner)
+        case (_, Some(existing)) if existing.auctionId == auctionId && existing.deletedAt.isEmpty =>
+          Left(CommitUploadResult.Committed(existing))
+        case _ => Right(())
+      }
+    }
+    precheck.flatMap {
+      case Left(result) => IO.pure(result)
+      case Right(_) =>
+        (for {
+          stat  <- objectStore.head(key).valueOr[CommitUploadResult](CommitUploadResult.ObjectNotFound)
+          now   <- Clock[IO].realTimeInstant.seal
+          image <- persistCommittedRow(auctionId, imageId, key, fileName, stat, now).seal
+        } yield CommitUploadResult.Committed(image)).run
+    }
   }
 
   private def persistCommittedRow(
