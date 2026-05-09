@@ -4,6 +4,8 @@ import cats.effect.{IO, Ref}
 import fs2.Stream
 import madrileno.utils.storage.{ObjectStat, ObjectStore, ObjectStoreRuntime, ObjectTooLarge, PresignedPut, SignedUrlTtl, StorageKey}
 import org.http4s.headers.`Content-Type`
+import org.http4s.{Header, Headers, Uri}
+import org.typelevel.ci.CIString
 import scodec.bits.ByteVector
 
 object TestObjectStoreRuntime {
@@ -42,8 +44,13 @@ object TestObjectStoreRuntime {
           contentType: `Content-Type`,
           contentLength: Long
         ): IO[PresignedPut] = {
-          val _ = (key, ttl, contentType, contentLength)
-          IO.raiseError(new UnsupportedOperationException("presignPut not supported by the in-memory test runtime"))
+          val _   = ttl
+          val url = Uri.unsafeFromString(s"https://example.test/${key.render}")
+          val headers = Headers(
+            Header.Raw(CIString("content-type"), Header[`Content-Type`].value(contentType)),
+            Header.Raw(CIString("content-length"), contentLength.toString)
+          )
+          IO.pure(PresignedPut(url, headers))
         }
 
         override def head(key: StorageKey): IO[Option[ObjectStat]] =

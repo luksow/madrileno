@@ -198,6 +198,96 @@ class AuctionImageServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matche
     }
   }
 
+  "AuctionImageService.presignUpload" should {
+    "return Presigned with a fresh imageId for the seller" in {
+      val (service, _) = freshService
+      for {
+        seller  <- seedUser()
+        auction <- seedAuction(seller.id)
+        result  <- service.presignUpload(auction.id, seller.id, "wine.jpg", jpeg, contentLength = 1024L)
+      } yield result match {
+        case PresignUploadResult.Presigned(imageId, presigned) =>
+          presigned.url.renderString should startWith(s"https://example.test/auctions/${auction.id}/images/$imageId")
+          presigned.signedHeaders.get(org.typelevel.ci.CIString("content-length")).map(_.head.value) shouldBe Some("1024")
+        case other => fail(s"Expected Presigned, got $other")
+      }
+    }
+
+    "return AuctionNotFound for unknown auction" in {
+      val (service, _) = freshService
+      for {
+        seller <- seedUser()
+        result <- service.presignUpload(TestData.randomAuctionId(), seller.id, "wine.jpg", jpeg, 1024L)
+      } yield result shouldBe PresignUploadResult.AuctionNotFound
+    }
+
+    "return NotOwner when caller is not the seller" in {
+      val (service, _) = freshService
+      for {
+        seller  <- seedUser()
+        other   <- seedUser()
+        auction <- seedAuction(seller.id)
+        result  <- service.presignUpload(auction.id, other.id, "wine.jpg", jpeg, 1024L)
+      } yield result shouldBe PresignUploadResult.NotOwner
+    }
+  }
+
+  "AuctionImageService.commitUpload" should {
+    "return ObjectNotFound when the client never uploaded" in {
+      val (service, _) = freshService
+      for {
+        seller  <- seedUser()
+        auction <- seedAuction(seller.id)
+        result <- service.presignUpload(auction.id, seller.id, "wine.jpg", jpeg, 1024L).flatMap {
+                    case PresignUploadResult.Presigned(imageId, _) => service.commitUpload(auction.id, seller.id, imageId, "wine.jpg")
+                    case other                                     => IO.raiseError(new AssertionError(s"setup: $other"))
+                  }
+      } yield result shouldBe CommitUploadResult.ObjectNotFound
+    }
+
+    "return Committed and persist the row when the upload landed" in {
+      val (service, runtime) = freshService
+      val bytes              = "uploaded".getBytes("UTF-8")
+      for {
+        seller  <- seedUser()
+        auction <- seedAuction(seller.id)
+        imageId <- service.presignUpload(auction.id, seller.id, "wine.jpg", jpeg, bytes.length.toLong).flatMap {
+                     case PresignUploadResult.Presigned(id, _) => IO.pure(id)
+                     case other                                => IO.raiseError(new AssertionError(s"setup: $other"))
+                   }
+        key = madrileno.utils.storage.StorageKey(s"auctions/${auction.id}/images/$imageId")
+        _      <- runtime.objectStore.put(key, jpeg, Stream.emits(bytes))
+        result <- service.commitUpload(auction.id, seller.id, imageId, "wine.jpg")
+        listed <- service.listImages(auction.id)
+      } yield result match {
+        case CommitUploadResult.Committed(image) =>
+          image.fileName shouldBe "wine.jpg"
+          image.sizeBytes shouldBe SizeBytes(bytes.length.toLong)
+          image.position shouldBe ImagePosition(0)
+          image.analyzedAt shouldBe None
+          listed.map(_.id) shouldBe List(image.id)
+        case other => fail(s"Expected Committed, got $other")
+      }
+    }
+
+    "return NotOwner when caller is not the seller" in {
+      val (service, runtime) = freshService
+      val bytes              = "uploaded".getBytes("UTF-8")
+      for {
+        seller  <- seedUser()
+        other   <- seedUser()
+        auction <- seedAuction(seller.id)
+        imageId <- service.presignUpload(auction.id, seller.id, "wine.jpg", jpeg, bytes.length.toLong).flatMap {
+                     case PresignUploadResult.Presigned(id, _) => IO.pure(id)
+                     case other                                => IO.raiseError(new AssertionError(s"setup: $other"))
+                   }
+        key = madrileno.utils.storage.StorageKey(s"auctions/${auction.id}/images/$imageId")
+        _      <- runtime.objectStore.put(key, jpeg, Stream.emits(bytes))
+        result <- service.commitUpload(auction.id, other.id, imageId, "wine.jpg")
+      } yield result shouldBe CommitUploadResult.NotOwner
+    }
+  }
+
   "AuctionImageService.serveImage" should {
     "return None when the image belongs to a different auction" in {
       val (service, _) = freshService

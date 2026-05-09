@@ -79,6 +79,43 @@ class AuctionImageRouter(auctionImageService: AuctionImageService, apiPrefix: St
                 error(BadRequest, "mismatched-ids", "Reorder list must contain exactly the existing image ids")
             }
           }
+      } ~
+      (post & path("auctions" / JavaUUID.as[AuctionId] / "images" / "presign") & pathEndOrSingleSlash & entity(as[PresignUploadRequest])) {
+        (auctionId, request) =>
+          complete {
+            `Content-Type`.parse(request.contentType).toOption match {
+              case None => IO.pure[ToResponseMarshallable](error(BadRequest, "invalid-content-type", s"Invalid Content-Type: ${request.contentType}"))
+              case _ if request.contentLength <= 0 =>
+                IO.pure[ToResponseMarshallable](error(BadRequest, "invalid-content-length", "Content-Length must be positive"))
+              case Some(ct) =>
+                auctionImageService
+                  .presignUpload(auctionId, authContext.userId, request.fileName, ct, request.contentLength)
+                  .map[ToResponseMarshallable] {
+                    case PresignUploadResult.Presigned(imageId, presigned) =>
+                      Created -> PresignedUploadDto(
+                        imageId = imageId,
+                        url = presigned.url.renderString,
+                        signedHeaders = presigned.signedHeaders.headers.map(h => h.name.toString -> h.value).toMap
+                      )
+                    case PresignUploadResult.AuctionNotFound => error(NotFound, "auction-not-found", "Auction not found")
+                    case PresignUploadResult.NotOwner        => error(Forbidden, "not-owner", "Only the seller can upload images to this auction")
+                  }
+            }
+          }
+      } ~
+      (post & path("auctions" / JavaUUID.as[AuctionId] / "images" / "commit") & pathEndOrSingleSlash & entity(as[CommitUploadRequest])) {
+        (auctionId, request) =>
+          complete {
+            auctionImageService
+              .commitUpload(auctionId, authContext.userId, request.imageId, request.fileName)
+              .map[ToResponseMarshallable] {
+                case CommitUploadResult.Committed(image) => Created -> AuctionImageDto(image, apiPrefix)
+                case CommitUploadResult.AuctionNotFound  => error(NotFound, "auction-not-found", "Auction not found")
+                case CommitUploadResult.NotOwner         => error(Forbidden, "not-owner", "Only the seller can commit uploads for this auction")
+                case CommitUploadResult.ObjectNotFound =>
+                  error(NotFound, "object-not-found", "No object found at the expected key — did the direct upload complete?")
+              }
+          }
       }
   }
 

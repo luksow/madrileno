@@ -9,7 +9,7 @@ import madrileno.user.domain.UserId
 import madrileno.utils.crypto.IdGenerator
 import madrileno.utils.db.transactor.Transactor
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
-import madrileno.utils.storage.{ObjectStore, SignedUrlTtl, StorageKey}
+import madrileno.utils.storage.{ObjectStat, ObjectStore, PresignedPut, SignedUrlTtl, StorageKey}
 import org.http4s.headers.`Content-Type`
 import pl.iterators.sealedmonad.syntax.*
 
@@ -153,6 +153,83 @@ class AuctionImageService(
     }
   }
 
+  def presignUpload(
+    auctionId: AuctionId,
+    sellerId: UserId,
+    fileName: String,
+    contentType: `Content-Type`,
+    contentLength: Long
+  ): IO[PresignUploadResult] = {
+    val _ = fileName
+    transactor.inSession(auctionRepository.find(auctionId)).flatMap {
+      case None                                          => IO.pure(PresignUploadResult.AuctionNotFound)
+      case Some(auction) if auction.sellerId != sellerId => IO.pure(PresignUploadResult.NotOwner)
+      case Some(_) =>
+        for {
+          imageId <- IdGenerator.generateId(AuctionImageId)
+          key = StorageKey(s"auctions/$auctionId/images/$imageId")
+          presigned <- objectStore.presignPut(key, signedUrlTtl, contentType, contentLength)
+        } yield PresignUploadResult.Presigned(imageId, presigned)
+    }
+  }
+
+  def commitUpload(
+    auctionId: AuctionId,
+    sellerId: UserId,
+    imageId: AuctionImageId,
+    fileName: String
+  ): IO[CommitUploadResult] = {
+    val key = StorageKey(s"auctions/$auctionId/images/$imageId")
+    transactor.inSession(auctionRepository.find(auctionId)).flatMap {
+      case None                                          => IO.pure(CommitUploadResult.AuctionNotFound)
+      case Some(auction) if auction.sellerId != sellerId => IO.pure(CommitUploadResult.NotOwner)
+      case Some(_) =>
+        objectStore.head(key).flatMap {
+          case None => IO.pure(CommitUploadResult.ObjectNotFound)
+          case Some(stat) =>
+            for {
+              now    <- Clock[IO].realTimeInstant
+              result <- persistCommitted(auctionId, sellerId, imageId, key, fileName, stat, now)
+            } yield result
+        }
+    }
+  }
+
+  private def persistCommitted(
+    auctionId: AuctionId,
+    sellerId: UserId,
+    imageId: AuctionImageId,
+    key: StorageKey,
+    fileName: String,
+    stat: ObjectStat,
+    now: java.time.Instant
+  ): IO[CommitUploadResult] =
+    transactor.inTransaction {
+      (for {
+        _ <- auctionRepository
+               .findForUpdate(auctionId)
+               .valueOr[CommitUploadResult](CommitUploadResult.AuctionNotFound)
+               .ensure(_.sellerId == sellerId, CommitUploadResult.NotOwner)
+        pos <- auctionImageRepository.nextPosition(auctionId).seal
+        image = AuctionImage(
+                  id = imageId,
+                  auctionId = auctionId,
+                  storageKey = key,
+                  fileName = fileName,
+                  contentType = stat.contentType,
+                  sizeBytes = SizeBytes(stat.sizeBytes),
+                  position = ImagePosition(pos),
+                  uploadedAt = now,
+                  deletedAt = None,
+                  width = None,
+                  height = None,
+                  format = None,
+                  analyzedAt = None
+                )
+        _ <- auctionImageRepository.save(image).seal
+      } yield CommitUploadResult.Committed(image)).run
+    }
+
   def serveImage(auctionId: AuctionId, imageId: AuctionImageId): IO[Option[ObjectStore.GetResult]] =
     transactor.inSession(auctionImageRepository.find(imageId)).flatMap {
       case Some(image) if image.auctionId == auctionId =>
@@ -181,4 +258,17 @@ enum ReorderImagesResult {
   case AuctionNotFound
   case NotOwner
   case MismatchedIds
+}
+
+enum PresignUploadResult {
+  case Presigned(imageId: AuctionImageId, presigned: PresignedPut)
+  case AuctionNotFound
+  case NotOwner
+}
+
+enum CommitUploadResult {
+  case Committed(image: AuctionImage)
+  case AuctionNotFound
+  case NotOwner
+  case ObjectNotFound
 }
