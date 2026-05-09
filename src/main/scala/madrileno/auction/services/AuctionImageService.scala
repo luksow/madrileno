@@ -332,6 +332,14 @@ class AuctionImageService(
                .findForUpdate(auctionId)
                .valueOr[CommitUploadResult](CommitUploadResult.AuctionNotFound)
                .ensure(_.sellerId == sellerId, CommitUploadResult.NotOwner)
+        _ <- auctionImageRepository
+               .find(imageId)
+               .seal[CommitUploadResult]
+               .attempt[Unit, CommitUploadResult] {
+                 case Some(existing) if existing.auctionId == auctionId && existing.deletedAt.isEmpty =>
+                   Left(CommitUploadResult.Committed(existing))
+                 case _ => Right(())
+               }
         pos <- auctionImageRepository.nextPosition(auctionId).seal
         image = AuctionImage.newlyAttached(
                   id = imageId,
