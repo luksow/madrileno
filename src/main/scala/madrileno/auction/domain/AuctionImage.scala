@@ -48,6 +48,33 @@ final case class AuctionImage(
   format: Option[ImageFormat],
   analyzedAt: Option[Instant])
 
+object AuctionImage {
+  def newlyAttached(
+    id: AuctionImageId,
+    auctionId: AuctionId,
+    storageKey: StorageKey,
+    fileName: String,
+    contentType: `Content-Type`,
+    sizeBytes: SizeBytes,
+    position: ImagePosition,
+    uploadedAt: Instant
+  ): AuctionImage = AuctionImage(
+    id = id,
+    auctionId = auctionId,
+    storageKey = storageKey,
+    fileName = fileName,
+    contentType = contentType,
+    sizeBytes = sizeBytes,
+    position = position,
+    uploadedAt = uploadedAt,
+    deletedAt = None,
+    width = None,
+    height = None,
+    format = None,
+    analyzedAt = None
+  )
+}
+
 final case class AuctionImageVariant(
   id: AuctionImageVariantId,
   auctionImageId: AuctionImageId,

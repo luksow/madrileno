@@ -70,7 +70,7 @@ class AuctionImageService(
                .valueOr[AttachImageResult](AttachImageResult.AuctionNotFound)
                .ensure(_.sellerId == sellerId, AttachImageResult.NotOwner)
         pos <- auctionImageRepository.nextPosition(auctionId).seal
-        image = AuctionImage(
+        image = AuctionImage.newlyAttached(
                   id = id,
                   auctionId = auctionId,
                   storageKey = key,
@@ -78,12 +78,7 @@ class AuctionImageService(
                   contentType = contentType,
                   sizeBytes = SizeBytes(actualSize),
                   position = ImagePosition(pos),
-                  uploadedAt = now,
-                  deletedAt = None,
-                  width = None,
-                  height = None,
-                  format = None,
-                  analyzedAt = None
+                  uploadedAt = now
                 )
         _ <- auctionImageRepository.save(image).seal
       } yield AttachImageResult.Attached(image)).run
@@ -161,16 +156,25 @@ class AuctionImageService(
     contentLength: Long
   ): IO[PresignUploadResult] = {
     val _ = fileName
-    transactor.inSession(auctionRepository.find(auctionId)).flatMap {
-      case None                                          => IO.pure(PresignUploadResult.AuctionNotFound)
-      case Some(auction) if auction.sellerId != sellerId => IO.pure(PresignUploadResult.NotOwner)
-      case Some(_) =>
-        for {
-          imageId <- IdGenerator.generateId(AuctionImageId)
-          key = StorageKey(s"auctions/$auctionId/images/$imageId")
-          presigned <- objectStore.presignPut(key, signedUrlTtl, contentType, contentLength)
-        } yield PresignUploadResult.Presigned(imageId, presigned)
-    }
+    type Outcome = Either[PresignUploadResult, Unit]
+    transactor
+      .inSession {
+        (for {
+          _ <- auctionRepository
+                 .find(auctionId)
+                 .valueOr[Outcome](Left(PresignUploadResult.AuctionNotFound))
+                 .ensure(_.sellerId == sellerId, Left(PresignUploadResult.NotOwner))
+        } yield Right(()): Outcome).run
+      }
+      .flatMap {
+        case Left(failure) => IO.pure(failure)
+        case Right(_) =>
+          for {
+            imageId <- IdGenerator.generateId(AuctionImageId)
+            key = StorageKey(s"auctions/$auctionId/images/$imageId")
+            presigned <- objectStore.presignPut(key, signedUrlTtl, contentType, contentLength)
+          } yield PresignUploadResult.Presigned(imageId, presigned)
+      }
   }
 
   def commitUpload(
@@ -180,19 +184,28 @@ class AuctionImageService(
     fileName: String
   ): IO[CommitUploadResult] = {
     val key = StorageKey(s"auctions/$auctionId/images/$imageId")
-    transactor.inSession(auctionRepository.find(auctionId)).flatMap {
-      case None                                          => IO.pure(CommitUploadResult.AuctionNotFound)
-      case Some(auction) if auction.sellerId != sellerId => IO.pure(CommitUploadResult.NotOwner)
-      case Some(_) =>
-        objectStore.head(key).flatMap {
-          case None => IO.pure(CommitUploadResult.ObjectNotFound)
-          case Some(stat) =>
-            for {
-              now    <- Clock[IO].realTimeInstant
-              result <- persistCommitted(auctionId, sellerId, imageId, key, fileName, stat, now)
-            } yield result
-        }
-    }
+    type Outcome = Either[CommitUploadResult, Unit]
+    transactor
+      .inSession {
+        (for {
+          _ <- auctionRepository
+                 .find(auctionId)
+                 .valueOr[Outcome](Left(CommitUploadResult.AuctionNotFound))
+                 .ensure(_.sellerId == sellerId, Left(CommitUploadResult.NotOwner))
+        } yield Right(()): Outcome).run
+      }
+      .flatMap {
+        case Left(failure) => IO.pure(failure)
+        case Right(_) =>
+          objectStore.head(key).flatMap {
+            case None => IO.pure(CommitUploadResult.ObjectNotFound)
+            case Some(stat) =>
+              for {
+                now    <- Clock[IO].realTimeInstant
+                result <- persistCommitted(auctionId, sellerId, imageId, key, fileName, stat, now)
+              } yield result
+          }
+      }
   }
 
   private def persistCommitted(
@@ -211,7 +224,7 @@ class AuctionImageService(
                .valueOr[CommitUploadResult](CommitUploadResult.AuctionNotFound)
                .ensure(_.sellerId == sellerId, CommitUploadResult.NotOwner)
         pos <- auctionImageRepository.nextPosition(auctionId).seal
-        image = AuctionImage(
+        image = AuctionImage.newlyAttached(
                   id = imageId,
                   auctionId = auctionId,
                   storageKey = key,
@@ -219,12 +232,7 @@ class AuctionImageService(
                   contentType = stat.contentType,
                   sizeBytes = SizeBytes(stat.sizeBytes),
                   position = ImagePosition(pos),
-                  uploadedAt = now,
-                  deletedAt = None,
-                  width = None,
-                  height = None,
-                  format = None,
-                  analyzedAt = None
+                  uploadedAt = now
                 )
         _ <- auctionImageRepository.save(image).seal
       } yield CommitUploadResult.Committed(image)).run
