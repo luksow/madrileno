@@ -107,12 +107,13 @@ class AuctionImageRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Mat
       }
     }
 
-    "saveVariant + listVariants round-trip; findVariant by label" in withRollback {
+    "saveVariant + listVariants round-trip; findVariant by spec" in withRollback {
       val (seller, auction) = setup()
       val image             = TestData.auctionImage(auctionId = auction.id)
       val thumb = AuctionImageVariant(
+        id = AuctionImageVariantId(java.util.UUID.randomUUID()),
         auctionImageId = image.id,
-        label = VariantSpec.Thumb.label,
+        spec = VariantSpec.Thumb,
         storageKey = StorageKey(s"auctions/${auction.id.unwrap}/${image.id.unwrap}/thumb.jpg"),
         width = Width(256),
         height = Height(256),
@@ -120,7 +121,8 @@ class AuctionImageRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Mat
         generatedAt = Instant.now().truncatedTo(ChronoUnit.MICROS)
       )
       val medium = thumb.copy(
-        label = VariantSpec.Medium.label,
+        id = AuctionImageVariantId(java.util.UUID.randomUUID()),
+        spec = VariantSpec.Medium,
         storageKey = StorageKey(s"auctions/${auction.id.unwrap}/${image.id.unwrap}/medium.jpg"),
         width = Width(1024),
         height = Height(768)
@@ -132,8 +134,8 @@ class AuctionImageRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Mat
         _      <- imageRepo.saveVariant(thumb)
         _      <- imageRepo.saveVariant(medium)
         listed <- imageRepo.listVariants(image.id)
-        oneT   <- imageRepo.findVariant(image.id, VariantSpec.Thumb.label)
-        oneM   <- imageRepo.findVariant(image.id, VariantSpec.Medium.label)
+        oneT   <- imageRepo.findVariant(image.id, VariantSpec.Thumb)
+        oneM   <- imageRepo.findVariant(image.id, VariantSpec.Medium)
       } yield {
         listed.toSet shouldBe Set(thumb, medium)
         oneT shouldBe Some(thumb)

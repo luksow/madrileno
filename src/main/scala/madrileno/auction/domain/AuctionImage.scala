@@ -25,24 +25,13 @@ object ImagePosition extends Opaque[ImagePosition, Int] {
   given Ordering[ImagePosition] = Ordering[Int].on(_.unwrap)
 }
 
-opaque type VariantLabel = String
-object VariantLabel extends Opaque[VariantLabel, String] {
-  private val pattern = "^[a-z0-9][a-z0-9-]*$".r
-
-  override def validate(value: String): Either[String, VariantLabel] =
-    if (pattern.matches(value)) Right(value)
-    else Left("VariantLabel must be lower-case alphanumeric/dash, starting with alphanumeric")
+enum VariantSpec(val format: ImageFormat) {
+  case Thumb  extends VariantSpec(ImageFormat.Jpeg)
+  case Medium extends VariantSpec(ImageFormat.Jpeg)
 }
 
-enum VariantSpec(val label: VariantLabel, val format: ImageFormat) {
-  case Thumb  extends VariantSpec(VariantLabel("thumb"), ImageFormat.Jpeg)
-  case Medium extends VariantSpec(VariantLabel("medium"), ImageFormat.Jpeg)
-}
-
-object VariantSpec {
-  val All: List[VariantSpec]                            = values.toList
-  def byLabel(label: VariantLabel): Option[VariantSpec] = All.find(_.label == label)
-}
+opaque type AuctionImageVariantId = UUID
+object AuctionImageVariantId extends Opaque[AuctionImageVariantId, UUID]
 
 final case class AuctionImage(
   id: AuctionImageId,
@@ -60,8 +49,9 @@ final case class AuctionImage(
   analyzedAt: Option[Instant])
 
 final case class AuctionImageVariant(
+  id: AuctionImageVariantId,
   auctionImageId: AuctionImageId,
-  label: VariantLabel,
+  spec: VariantSpec,
   storageKey: StorageKey,
   width: Width,
   height: Height,
