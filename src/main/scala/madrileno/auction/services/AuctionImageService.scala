@@ -4,6 +4,7 @@ import cats.effect.std.UUIDGen
 import cats.effect.{Clock, IO}
 import cats.syntax.all.*
 import fs2.Stream
+import io.circe.{Codec, Decoder, Encoder}
 import madrileno.auction.domain.*
 import madrileno.auction.repositories.{AuctionImageRepository, AuctionRepository}
 import madrileno.user.domain.UserId
@@ -125,19 +126,19 @@ class AuctionImageService(
     auctionId: AuctionId,
     imageId: AuctionImageId,
     spec: VariantSpec
-  ): IO[Option[ObjectStore.GetResult]] =
-    transactor.inSession(auctionImageRepository.find(imageId)).flatMap {
-      case Some(image) if image.auctionId == auctionId =>
-        transactor.inSession(auctionImageRepository.findVariant(imageId, spec)).flatMap {
-          case Some(variant) =>
-            objectStore.get(variant.storageKey, signedUrlTtl, fileName = None).map {
-              case ObjectStore.GetResult.NotFound => None
-              case other                          => Some(other)
-            }
-          case None => IO.pure(None)
-        }
-      case _ => IO.pure(None)
-    }
+  ): IO[Option[ObjectStore.GetResult]] = (for {
+    _ <- transactor
+           .inSession(auctionImageRepository.find(imageId))
+           .valueOr[Option[ObjectStore.GetResult]](None)
+           .ensure(_.auctionId == auctionId, None)
+    variant <- transactor
+                 .inSession(auctionImageRepository.findVariant(imageId, spec))
+                 .valueOr[Option[ObjectStore.GetResult]](None)
+    result <- objectStore.get(variant.storageKey, signedUrlTtl, fileName = None).seal
+  } yield result match {
+    case ObjectStore.GetResult.NotFound => None
+    case other                          => Some(other)
+  }).run
 
   def attachImage(
     auctionId: AuctionId,
@@ -323,15 +324,16 @@ class AuctionImageService(
       } yield image
     }
 
-  def serveImage(auctionId: AuctionId, imageId: AuctionImageId): IO[Option[ObjectStore.GetResult]] =
-    transactor.inSession(auctionImageRepository.find(imageId)).flatMap {
-      case Some(image) if image.auctionId == auctionId =>
-        objectStore.get(image.storageKey, signedUrlTtl, Some(image.fileName)).map {
-          case ObjectStore.GetResult.NotFound => None
-          case other                          => Some(other)
-        }
-      case _ => IO.pure(None)
-    }
+  def serveImage(auctionId: AuctionId, imageId: AuctionImageId): IO[Option[ObjectStore.GetResult]] = (for {
+    image <- transactor
+               .inSession(auctionImageRepository.find(imageId))
+               .valueOr[Option[ObjectStore.GetResult]](None)
+               .ensure(_.auctionId == auctionId, None)
+    result <- objectStore.get(image.storageKey, signedUrlTtl, Some(image.fileName)).seal
+  } yield result match {
+    case ObjectStore.GetResult.NotFound => None
+    case other                          => Some(other)
+  }).run
 }
 
 enum AttachImageResult {
@@ -366,4 +368,9 @@ enum CommitUploadResult {
   case ObjectNotFound
 }
 
-final case class GenerateVariantPayload(imageId: AuctionImageId, spec: VariantSpec) derives io.circe.Codec.AsObject
+final case class GenerateVariantPayload(imageId: AuctionImageId, spec: VariantSpec) derives Codec.AsObject
+
+object GenerateVariantPayload {
+  given Encoder[VariantSpec] = Encoder.encodeString.contramap(_.toString)
+  given Decoder[VariantSpec] = Decoder.decodeString.emap(s => VariantSpec.byName(s).toRight(s"Unknown VariantSpec: $s"))
+}
