@@ -9,7 +9,7 @@ import madrileno.user.domain.UserId
 import madrileno.utils.crypto.IdGenerator
 import madrileno.utils.db.transactor.Transactor
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
-import madrileno.utils.storage.{ObjectStat, ObjectStore, PresignedPut, SignedUrlTtl, StorageKey}
+import madrileno.utils.storage.{ObjectStore, PresignedPut, SignedUrlTtl, StorageKey}
 import org.http4s.headers.`Content-Type`
 import pl.iterators.sealedmonad.syntax.*
 
@@ -156,25 +156,17 @@ class AuctionImageService(
     contentLength: Long
   ): IO[PresignUploadResult] = {
     val _ = fileName
-    type Outcome = Either[PresignUploadResult, Unit]
-    transactor
-      .inSession {
-        (for {
-          _ <- auctionRepository
-                 .find(auctionId)
-                 .valueOr[Outcome](Left(PresignUploadResult.AuctionNotFound))
-                 .ensure(_.sellerId == sellerId, Left(PresignUploadResult.NotOwner))
-        } yield Right(()): Outcome).run
-      }
-      .flatMap {
-        case Left(failure) => IO.pure(failure)
-        case Right(_) =>
-          for {
-            imageId <- IdGenerator.generateId(AuctionImageId)
-            key = StorageKey(s"auctions/$auctionId/images/$imageId")
-            presigned <- objectStore.presignPut(key, signedUrlTtl, contentType, contentLength)
-          } yield PresignUploadResult.Presigned(imageId, presigned)
-      }
+    transactor.inSession {
+      (for {
+        _ <- auctionRepository
+               .find(auctionId)
+               .valueOr[PresignUploadResult](PresignUploadResult.AuctionNotFound)
+               .ensure(_.sellerId == sellerId, PresignUploadResult.NotOwner)
+        imageId <- IdGenerator.generateId(AuctionImageId).seal
+        key = StorageKey(s"auctions/$auctionId/images/$imageId")
+        presigned <- objectStore.presignPut(key, signedUrlTtl, contentType, contentLength).seal
+      } yield PresignUploadResult.Presigned(imageId, presigned)).run
+    }
   }
 
   def commitUpload(
@@ -184,46 +176,15 @@ class AuctionImageService(
     fileName: String
   ): IO[CommitUploadResult] = {
     val key = StorageKey(s"auctions/$auctionId/images/$imageId")
-    type Outcome = Either[CommitUploadResult, Unit]
-    transactor
-      .inSession {
-        (for {
-          _ <- auctionRepository
-                 .find(auctionId)
-                 .valueOr[Outcome](Left(CommitUploadResult.AuctionNotFound))
-                 .ensure(_.sellerId == sellerId, Left(CommitUploadResult.NotOwner))
-        } yield Right(()): Outcome).run
-      }
-      .flatMap {
-        case Left(failure) => IO.pure(failure)
-        case Right(_) =>
-          objectStore.head(key).flatMap {
-            case None => IO.pure(CommitUploadResult.ObjectNotFound)
-            case Some(stat) =>
-              for {
-                now    <- Clock[IO].realTimeInstant
-                result <- persistCommitted(auctionId, sellerId, imageId, key, fileName, stat, now)
-              } yield result
-          }
-      }
-  }
-
-  private def persistCommitted(
-    auctionId: AuctionId,
-    sellerId: UserId,
-    imageId: AuctionImageId,
-    key: StorageKey,
-    fileName: String,
-    stat: ObjectStat,
-    now: java.time.Instant
-  ): IO[CommitUploadResult] =
     transactor.inTransaction {
       (for {
         _ <- auctionRepository
                .findForUpdate(auctionId)
                .valueOr[CommitUploadResult](CommitUploadResult.AuctionNotFound)
                .ensure(_.sellerId == sellerId, CommitUploadResult.NotOwner)
-        pos <- auctionImageRepository.nextPosition(auctionId).seal
+        stat <- objectStore.head(key).valueOr[CommitUploadResult](CommitUploadResult.ObjectNotFound)
+        now  <- Clock[IO].realTimeInstant.seal
+        pos  <- auctionImageRepository.nextPosition(auctionId).seal
         image = AuctionImage.newlyAttached(
                   id = imageId,
                   auctionId = auctionId,
@@ -237,6 +198,7 @@ class AuctionImageService(
         _ <- auctionImageRepository.save(image).seal
       } yield CommitUploadResult.Committed(image)).run
     }
+  }
 
   def serveImage(auctionId: AuctionId, imageId: AuctionImageId): IO[Option[ObjectStore.GetResult]] =
     transactor.inSession(auctionImageRepository.find(imageId)).flatMap {
