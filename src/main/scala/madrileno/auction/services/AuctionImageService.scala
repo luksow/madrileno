@@ -2,13 +2,14 @@ package madrileno.auction.services
 
 import cats.effect.std.UUIDGen
 import cats.effect.{Clock, IO}
+import cats.syntax.all.*
 import fs2.Stream
 import madrileno.auction.domain.*
 import madrileno.auction.repositories.{AuctionImageRepository, AuctionRepository}
 import madrileno.user.domain.UserId
 import madrileno.utils.crypto.IdGenerator
 import madrileno.utils.db.transactor.Transactor
-import madrileno.utils.imaging.{ImageFormat, Imaging, Orientation}
+import madrileno.utils.imaging.{Height, ImageFormat, Imaging, Orientation, Width}
 import madrileno.utils.json.JsonProtocol.given
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
 import madrileno.utils.storage.{ObjectStat, ObjectStore, PresignedPut, SignedUrlTtl, StorageKey}
@@ -16,6 +17,7 @@ import madrileno.utils.task.{OneTimeTask, SchedulerClient, Task, TaskDescriptor}
 import org.http4s.MediaType
 import org.http4s.headers.`Content-Type`
 import pl.iterators.sealedmonad.syntax.*
+import scodec.bits.ByteVector
 
 class AuctionImageService(
   auctionRepository: AuctionRepository,
@@ -32,6 +34,11 @@ class AuctionImageService(
 
   val analyzeImageTask: OneTimeTask[AuctionImageId] =
     Task.oneTime(TaskDescriptor[AuctionImageId]("analyze-auction-image"))(task => analyze(task.payload))
+
+  val generateVariantTask: OneTimeTask[GenerateVariantPayload] =
+    Task.oneTime(TaskDescriptor[GenerateVariantPayload]("generate-auction-image-variant"))(task =>
+      generateVariant(task.payload.imageId, task.payload.spec)
+    )
 
   private def analyze(imageId: AuctionImageId): IO[Unit] = (for {
     image <- transactor
@@ -55,7 +62,47 @@ class AuctionImageService(
              auctionImageRepository.markAnalyzed(imageId, SizeBytes(upright.size), info.dimensions.width, info.dimensions.height, info.format, now)
            )
            .seal
+    _ <- VariantSpec.All.traverse_(spec => schedulerClient.schedule(variantTaskInstance(imageId, spec))).seal
   } yield ()).run
+
+  private def generateVariant(imageId: AuctionImageId, spec: VariantSpec): IO[Unit] = (for {
+    image <- transactor
+               .inSession(auctionImageRepository.find(imageId))
+               .valueOrF[Unit](logger.warn(s"generateVariant: image $imageId not found, skipping"))
+    _ <- transactor
+           .inSession(auctionImageRepository.findVariant(imageId, spec))
+           .ensure(_.isEmpty, ())
+    bytes <- objectStore
+               .fetchBytes(image.storageKey)
+               .valueOrF[Unit](logger.warn(s"generateVariant: bytes missing for $imageId at ${image.storageKey.render}, skipping"))
+    rendered <- renderVariant(spec, bytes).seal
+    info <- Imaging
+              .info(rendered)
+              .valueOrF[Unit](logger.warn(s"generateVariant: rendered output for ($imageId, $spec) is not recognizable"))
+    variantId <- IdGenerator.generateId(AuctionImageVariantId).seal
+    variantKey = StorageKey(s"auctions/${image.auctionId}/images/$imageId/variants/$spec")
+    _   <- objectStore.put(variantKey, contentTypeFor(spec.format), Stream.chunk(fs2.Chunk.byteVector(rendered))).void.seal
+    now <- Clock[IO].realTimeInstant.seal
+    variant = AuctionImageVariant(
+                id = variantId,
+                auctionImageId = imageId,
+                spec = spec,
+                storageKey = variantKey,
+                width = info.dimensions.width,
+                height = info.dimensions.height,
+                format = spec.format,
+                generatedAt = now
+              )
+    _ <- transactor.inSession(auctionImageRepository.saveVariant(variant)).seal
+  } yield ()).run
+
+  private def renderVariant(spec: VariantSpec, bytes: ByteVector): IO[ByteVector] = spec match {
+    case VariantSpec.Thumb  => Imaging.cover(bytes, Width(256), Height(256), spec.format)
+    case VariantSpec.Medium => Imaging.resize(bytes, maxDimension = 1024, spec.format)
+  }
+
+  private def variantTaskInstance(imageId: AuctionImageId, spec: VariantSpec): madrileno.utils.task.Task[GenerateVariantPayload] =
+    generateVariantTask.instance(s"variant-${imageId.unwrap}-$spec", GenerateVariantPayload(imageId, spec))
 
   private def contentTypeFor(format: ImageFormat): `Content-Type` = format match {
     case ImageFormat.Jpeg => `Content-Type`(MediaType.image.jpeg)
@@ -65,6 +112,32 @@ class AuctionImageService(
 
   def listImages(auctionId: AuctionId): IO[List[AuctionImage]] =
     transactor.inSession(auctionImageRepository.listByAuction(auctionId))
+
+  def listImagesWithVariants(auctionId: AuctionId): IO[List[(AuctionImage, List[AuctionImageVariant])]] =
+    transactor.inSession {
+      for {
+        images   <- auctionImageRepository.listByAuction(auctionId)
+        variants <- auctionImageRepository.listVariantsByImages(images.map(_.id))
+      } yield images.map(image => image -> variants.getOrElse(image.id, Nil))
+    }
+
+  def serveVariant(
+    auctionId: AuctionId,
+    imageId: AuctionImageId,
+    spec: VariantSpec
+  ): IO[Option[ObjectStore.GetResult]] =
+    transactor.inSession(auctionImageRepository.find(imageId)).flatMap {
+      case Some(image) if image.auctionId == auctionId =>
+        transactor.inSession(auctionImageRepository.findVariant(imageId, spec)).flatMap {
+          case Some(variant) =>
+            objectStore.get(variant.storageKey, signedUrlTtl, fileName = None).map {
+              case ObjectStore.GetResult.NotFound => None
+              case other                          => Some(other)
+            }
+          case None => IO.pure(None)
+        }
+      case _ => IO.pure(None)
+    }
 
   def attachImage(
     auctionId: AuctionId,
@@ -292,3 +365,5 @@ enum CommitUploadResult {
   case NotOwner
   case ObjectNotFound
 }
+
+final case class GenerateVariantPayload(imageId: AuctionImageId, spec: VariantSpec) derives io.circe.Codec.AsObject

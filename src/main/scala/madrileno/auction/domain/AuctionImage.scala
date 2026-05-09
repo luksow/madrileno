@@ -1,5 +1,6 @@
 package madrileno.auction.domain
 
+import io.circe.{Decoder, Encoder}
 import madrileno.utils.imaging.{Height, ImageFormat, Width}
 import madrileno.utils.storage.StorageKey
 import org.http4s.headers.`Content-Type`
@@ -28,6 +29,14 @@ object ImagePosition extends Opaque[ImagePosition, Int] {
 enum VariantSpec(val format: ImageFormat) {
   case Thumb  extends VariantSpec(ImageFormat.Jpeg)
   case Medium extends VariantSpec(ImageFormat.Jpeg)
+}
+
+object VariantSpec {
+  val All: List[VariantSpec]                    = values.toList
+  def byName(name: String): Option[VariantSpec] = All.find(_.toString == name)
+
+  given Encoder[VariantSpec] = Encoder.encodeString.contramap(_.toString)
+  given Decoder[VariantSpec] = Decoder.decodeString.emap(s => byName(s).toRight(s"Unknown VariantSpec: $s"))
 }
 
 opaque type AuctionImageVariantId = UUID

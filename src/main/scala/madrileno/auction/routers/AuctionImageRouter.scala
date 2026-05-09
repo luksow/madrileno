@@ -20,26 +20,43 @@ class AuctionImageRouter(auctionImageService: AuctionImageService, apiPrefix: St
   val routes: Route = {
     (get & path("auctions" / JavaUUID.as[AuctionId] / "images") & pathEndOrSingleSlash) { auctionId =>
       complete {
-        auctionImageService.listImages(auctionId).map[ToResponseMarshallable] { images =>
-          Ok -> images.map(AuctionImageDto(_, apiPrefix))
+        auctionImageService.listImagesWithVariants(auctionId).map[ToResponseMarshallable] { pairs =>
+          Ok -> pairs.map { case (image, variants) => AuctionImageDto(image, apiPrefix, variants) }
         }
       }
     } ~
       (get & path("auctions" / JavaUUID.as[AuctionId] / "images" / JavaUUID.as[AuctionImageId] / "content") & pathEndOrSingleSlash) {
         (auctionId, imageId) =>
           complete {
-            auctionImageService.serveImage(auctionId, imageId).map[ToResponseMarshallable] {
-              case None | Some(ObjectStore.GetResult.NotFound) => error(NotFound, "image-not-found", "Image not found")
-              case Some(ObjectStore.GetResult.Redirected(url)) => Response[IO](Status.SeeOther, headers = Headers(Location(url)))
-              case Some(ObjectStore.GetResult.Streamed(ct, fileName, body)) =>
-                val baseHeaders = Headers(ct)
-                val headers =
-                  fileName.fold(baseHeaders)(name => baseHeaders.put(`Content-Disposition`("attachment", Map(ci"filename" -> name))))
-                Response[IO](Status.Ok, headers = headers, body = body)
+            renderGetResult(auctionImageService.serveImage(auctionId, imageId))
+          }
+      } ~
+      (get & path(
+        "auctions" / JavaUUID.as[AuctionId] / "images" / JavaUUID.as[AuctionImageId] / "variants" / Segment / "content"
+      ) & pathEndOrSingleSlash) {
+        (
+          auctionId,
+          imageId,
+          specSegment
+        ) =>
+          complete {
+            VariantSpec.byName(specSegment) match {
+              case None       => IO.pure[ToResponseMarshallable](error(NotFound, "variant-not-found", s"Unknown variant: $specSegment"))
+              case Some(spec) => renderGetResult(auctionImageService.serveVariant(auctionId, imageId, spec))
             }
           }
       }
   }
+
+  private def renderGetResult(io: IO[Option[ObjectStore.GetResult]]): IO[ToResponseMarshallable] =
+    io.map[ToResponseMarshallable] {
+      case None | Some(ObjectStore.GetResult.NotFound) => error(NotFound, "image-not-found", "Image not found")
+      case Some(ObjectStore.GetResult.Redirected(url)) => Response[IO](Status.SeeOther, headers = Headers(Location(url)))
+      case Some(ObjectStore.GetResult.Streamed(ct, fileName, body)) =>
+        val baseHeaders = Headers(ct)
+        val headers     = fileName.fold(baseHeaders)(name => baseHeaders.put(`Content-Disposition`("attachment", Map(ci"filename" -> name))))
+        Response[IO](Status.Ok, headers = headers, body = body)
+    }
 
   def authedRoutes(authContext: AuthContext): Route = {
     (post & path("auctions" / JavaUUID.as[AuctionId] / "images") & pathEndOrSingleSlash & entity(as[Multipart[IO]])) { (auctionId, multipart) =>

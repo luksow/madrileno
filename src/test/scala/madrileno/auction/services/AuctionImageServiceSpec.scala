@@ -346,6 +346,83 @@ class AuctionImageServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matche
     }
   }
 
+  "AuctionImageService.generateVariantTask" should {
+    "produce a 256x256 thumb and store an AuctionImageVariant row" in {
+      val (service, _) = freshService
+      val landscape    = ImmutableImage.filled(400, 200, Color.RED).bytes(JpegWriter.Default)
+      for {
+        seller  <- seedUser()
+        auction <- seedAuction(seller.id)
+        attached <- service.attachImage(auction.id, seller.id, "wine.jpg", jpeg, Stream.emits(landscape)).flatMap {
+                      case AttachImageResult.Attached(img) => IO.pure(img)
+                      case other                           => IO.raiseError(new AssertionError(s"setup: $other"))
+                    }
+        _ <-
+          service.generateVariantTask
+            .execution(service.generateVariantTask.instance(s"v-${attached.id.unwrap}-thumb", GenerateVariantPayload(attached.id, VariantSpec.Thumb)))
+        listed <- service.listImagesWithVariants(auction.id)
+      } yield {
+        val variants = listed.find(_._1.id == attached.id).map(_._2).getOrElse(Nil)
+        variants.find(_.spec == VariantSpec.Thumb) match {
+          case Some(thumb) =>
+            thumb.width.unwrap shouldBe 256
+            thumb.height.unwrap shouldBe 256
+            thumb.format shouldBe ImageFormat.Jpeg
+          case None => fail(s"expected a Thumb variant, got: $variants")
+        }
+      }
+    }
+
+    "produce a Medium variant resized to 1024 on the long edge" in {
+      val (service, _) = freshService
+      val landscape    = ImmutableImage.filled(2000, 1000, Color.GREEN).bytes(JpegWriter.Default)
+      for {
+        seller  <- seedUser()
+        auction <- seedAuction(seller.id)
+        attached <- service.attachImage(auction.id, seller.id, "wine.jpg", jpeg, Stream.emits(landscape)).flatMap {
+                      case AttachImageResult.Attached(img) => IO.pure(img)
+                      case other                           => IO.raiseError(new AssertionError(s"setup: $other"))
+                    }
+        _ <- service.generateVariantTask
+               .execution(
+                 service.generateVariantTask.instance(s"v-${attached.id.unwrap}-medium", GenerateVariantPayload(attached.id, VariantSpec.Medium))
+               )
+        listed <- service.listImagesWithVariants(auction.id)
+      } yield {
+        val variants = listed.find(_._1.id == attached.id).map(_._2).getOrElse(Nil)
+        variants.find(_.spec == VariantSpec.Medium) match {
+          case Some(medium) =>
+            medium.width.unwrap shouldBe 1024
+            medium.height.unwrap shouldBe 512
+          case None => fail(s"expected a Medium variant, got: $variants")
+        }
+      }
+    }
+
+    "be idempotent on a second invocation for the same (image, spec)" in {
+      val (service, _) = freshService
+      val bytes        = ImmutableImage.filled(400, 200, Color.BLUE).bytes(JpegWriter.Default)
+      for {
+        seller  <- seedUser()
+        auction <- seedAuction(seller.id)
+        attached <- service.attachImage(auction.id, seller.id, "wine.jpg", jpeg, Stream.emits(bytes)).flatMap {
+                      case AttachImageResult.Attached(img) => IO.pure(img)
+                      case other                           => IO.raiseError(new AssertionError(s"setup: $other"))
+                    }
+        runOnce =
+          service.generateVariantTask
+            .execution(service.generateVariantTask.instance(s"v-${attached.id.unwrap}-thumb", GenerateVariantPayload(attached.id, VariantSpec.Thumb)))
+        _      <- runOnce
+        first  <- service.listImagesWithVariants(auction.id).map(_.find(_._1.id == attached.id).map(_._2.size).getOrElse(0))
+        _      <- runOnce
+        second <- service.listImagesWithVariants(auction.id).map(_.find(_._1.id == attached.id).map(_._2.size).getOrElse(0))
+      } yield {
+        first shouldBe 1
+        second shouldBe 1
+      }
+    }
+  }
+
   "AuctionImageService.serveImage" should {
     "return None when the image belongs to a different auction" in {
       val (service, _) = freshService

@@ -74,7 +74,7 @@ trait AuctionModule
   }
 
   override abstract def oneTimeTasks: List[OneTimeTask[?]] = {
-    super.oneTimeTasks :+ auctionImageService.analyzeImageTask
+    super.oneTimeTasks :+ auctionImageService.analyzeImageTask :+ auctionImageService.generateVariantTask
   }
 
   override abstract def mailPreviews: List[MailPreview] = {

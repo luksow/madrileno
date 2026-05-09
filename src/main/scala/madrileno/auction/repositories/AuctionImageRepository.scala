@@ -177,6 +177,9 @@ class AuctionImageRepository {
   def listVariants(imageId: AuctionImageId): DB[List[AuctionImageVariant]] =
     variantRepository.findByForeignId(imageId).map(_.map(_.toAuctionImageVariant))
 
+  def listVariantsByImages(imageIds: List[AuctionImageId]): DB[Map[AuctionImageId, List[AuctionImageVariant]]] =
+    variantRepository.findByForeignIds(imageIds).map(_.map(_.toAuctionImageVariant).groupBy(_.auctionImageId))
+
   def findVariant(imageId: AuctionImageId, spec: VariantSpec): DB[Option[AuctionImageVariant]] =
     variantRepository
       .findOneByFilter(AuctionImageVariantRowFilter(auctionImageId = p.equal(imageId), spec = p.equal(spec)))
