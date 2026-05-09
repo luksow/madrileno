@@ -28,7 +28,7 @@ class AuctionImageRouter(auctionImageService: AuctionImageService, apiPrefix: St
       (get & path("auctions" / JavaUUID.as[AuctionId] / "images" / JavaUUID.as[AuctionImageId] / "content") & pathEndOrSingleSlash) {
         (auctionId, imageId) =>
           complete {
-            renderGetResult(auctionImageService.serveImage(auctionId, imageId))
+            renderGetResult(auctionImageService.serveImage(auctionId, imageId), "image-not-found", "Image not found")
           }
       } ~
       (get & path(
@@ -42,15 +42,19 @@ class AuctionImageRouter(auctionImageService: AuctionImageService, apiPrefix: St
           complete {
             VariantSpec.byName(specSegment) match {
               case None       => IO.pure[ToResponseMarshallable](error(NotFound, "variant-not-found", s"Unknown variant: $specSegment"))
-              case Some(spec) => renderGetResult(auctionImageService.serveVariant(auctionId, imageId, spec))
+              case Some(spec) => renderGetResult(auctionImageService.serveVariant(auctionId, imageId, spec), "variant-not-found", "Variant not found")
             }
           }
       }
   }
 
-  private def renderGetResult(io: IO[Option[ObjectStore.GetResult]]): IO[ToResponseMarshallable] =
+  private def renderGetResult(
+    io: IO[Option[ObjectStore.GetResult]],
+    notFoundCode: String,
+    notFoundMessage: String
+  ): IO[ToResponseMarshallable] =
     io.map[ToResponseMarshallable] {
-      case None | Some(ObjectStore.GetResult.NotFound) => error(NotFound, "image-not-found", "Image not found")
+      case None | Some(ObjectStore.GetResult.NotFound) => error(NotFound, notFoundCode, notFoundMessage)
       case Some(ObjectStore.GetResult.Redirected(url)) => Response[IO](Status.SeeOther, headers = Headers(Location(url)))
       case Some(ObjectStore.GetResult.Streamed(ct, fileName, body)) =>
         val baseHeaders = Headers(ct)
@@ -106,7 +110,7 @@ class AuctionImageRouter(auctionImageService: AuctionImageService, apiPrefix: St
                 IO.pure[ToResponseMarshallable](error(BadRequest, "invalid-content-length", "Content-Length must be positive"))
               case Some(ct) =>
                 auctionImageService
-                  .presignUpload(auctionId, authContext.userId, request.fileName, ct, request.contentLength)
+                  .presignUpload(auctionId, authContext.userId, ct, request.contentLength)
                   .map[ToResponseMarshallable] {
                     case PresignUploadResult.Presigned(imageId, presigned) =>
                       Created -> PresignedUploadDto(

@@ -171,8 +171,12 @@ class AuctionImageRepository {
       _.copy(sizeBytes = sizeBytes, width = Some(width), height = Some(height), format = Some(format), analyzedAt = Some(now))
     )
 
-  def saveVariant(variant: AuctionImageVariant): DB[Unit] =
-    variantRepository.create(AuctionImageVariantRow(variant)).void
+  def saveVariant(variant: AuctionImageVariant): DB[Unit] = {
+    val table = AuctionImageVariantRowTable
+    val command = sql"""INSERT INTO ${table.n} (${table.*}) VALUES (${table.c})
+                        ON CONFLICT (${table.auctionImageId.n}, ${table.spec.n}) DO NOTHING""".command
+    summon[Session[IO]].execute(command)(AuctionImageVariantRow(variant)).void
+  }
 
   def listVariants(imageId: AuctionImageId): DB[List[AuctionImageVariant]] =
     variantRepository.findByForeignId(imageId).map(_.map(_.toAuctionImageVariant))

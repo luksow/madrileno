@@ -211,7 +211,7 @@ class AuctionImageServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matche
       for {
         seller  <- seedUser()
         auction <- seedAuction(seller.id)
-        result  <- service.presignUpload(auction.id, seller.id, "wine.jpg", jpeg, contentLength = 1024L)
+        result  <- service.presignUpload(auction.id, seller.id, jpeg, contentLength = 1024L)
       } yield result match {
         case PresignUploadResult.Presigned(imageId, presigned) =>
           presigned.url.renderString should startWith(s"https://example.test/auctions/${auction.id}/images/$imageId")
@@ -224,7 +224,7 @@ class AuctionImageServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matche
       val (service, _) = freshService
       for {
         seller <- seedUser()
-        result <- service.presignUpload(TestData.randomAuctionId(), seller.id, "wine.jpg", jpeg, 1024L)
+        result <- service.presignUpload(TestData.randomAuctionId(), seller.id, jpeg, 1024L)
       } yield result shouldBe PresignUploadResult.AuctionNotFound
     }
 
@@ -234,7 +234,7 @@ class AuctionImageServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matche
         seller  <- seedUser()
         other   <- seedUser()
         auction <- seedAuction(seller.id)
-        result  <- service.presignUpload(auction.id, other.id, "wine.jpg", jpeg, 1024L)
+        result  <- service.presignUpload(auction.id, other.id, jpeg, 1024L)
       } yield result shouldBe PresignUploadResult.NotOwner
     }
   }
@@ -245,7 +245,7 @@ class AuctionImageServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matche
       for {
         seller  <- seedUser()
         auction <- seedAuction(seller.id)
-        result <- service.presignUpload(auction.id, seller.id, "wine.jpg", jpeg, 1024L).flatMap {
+        result <- service.presignUpload(auction.id, seller.id, jpeg, 1024L).flatMap {
                     case PresignUploadResult.Presigned(imageId, _) => service.commitUpload(auction.id, seller.id, imageId, "wine.jpg")
                     case other                                     => IO.raiseError(new AssertionError(s"setup: $other"))
                   }
@@ -258,7 +258,7 @@ class AuctionImageServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matche
       for {
         seller  <- seedUser()
         auction <- seedAuction(seller.id)
-        imageId <- service.presignUpload(auction.id, seller.id, "wine.jpg", jpeg, bytes.length.toLong).flatMap {
+        imageId <- service.presignUpload(auction.id, seller.id, jpeg, bytes.length.toLong).flatMap {
                      case PresignUploadResult.Presigned(id, _) => IO.pure(id)
                      case other                                => IO.raiseError(new AssertionError(s"setup: $other"))
                    }
@@ -284,7 +284,7 @@ class AuctionImageServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matche
         seller  <- seedUser()
         other   <- seedUser()
         auction <- seedAuction(seller.id)
-        imageId <- service.presignUpload(auction.id, seller.id, "wine.jpg", jpeg, bytes.length.toLong).flatMap {
+        imageId <- service.presignUpload(auction.id, seller.id, jpeg, bytes.length.toLong).flatMap {
                      case PresignUploadResult.Presigned(id, _) => IO.pure(id)
                      case other                                => IO.raiseError(new AssertionError(s"setup: $other"))
                    }
@@ -300,7 +300,7 @@ class AuctionImageServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matche
       for {
         seller  <- seedUser()
         auction <- seedAuction(seller.id)
-        imageId <- service.presignUpload(auction.id, seller.id, "wine.jpg", jpeg, bytes.length.toLong).flatMap {
+        imageId <- service.presignUpload(auction.id, seller.id, jpeg, bytes.length.toLong).flatMap {
                      case PresignUploadResult.Presigned(id, _) => IO.pure(id)
                      case other                                => IO.raiseError(new AssertionError(s"setup: $other"))
                    }

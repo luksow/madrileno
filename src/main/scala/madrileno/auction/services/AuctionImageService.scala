@@ -75,9 +75,6 @@ class AuctionImageService(
     image <- transactor
                .inSession(auctionImageRepository.find(imageId))
                .valueOrF[Unit](logger.warn(s"generateVariant: image $imageId not found, skipping"))
-    _ <- transactor
-           .inSession(auctionImageRepository.findVariant(imageId, spec))
-           .ensure(_.isEmpty, ())
     bytes <- objectStore
                .fetchBytes(image.storageKey)
                .valueOrF[Unit](logger.warn(s"generateVariant: bytes missing for $imageId at ${image.storageKey.render}, skipping"))
@@ -99,7 +96,14 @@ class AuctionImageService(
                 format = spec.format,
                 generatedAt = now
               )
-    _ <- transactor.inSession(auctionImageRepository.saveVariant(variant)).seal
+    _ <- transactor
+           .inSession(auctionImageRepository.saveVariant(variant))
+           .handleErrorWith(t =>
+             objectStore.delete(variantKey).attempt *>
+               logger.warn(t)(s"generateVariant: insert failed for ($imageId, $spec); cleaned up blob") *>
+               IO.raiseError(t)
+           )
+           .seal
   } yield ()).run
 
   private def renderVariant(spec: VariantSpec, bytes: ByteVector): IO[ByteVector] = spec match {
@@ -269,11 +273,9 @@ class AuctionImageService(
   def presignUpload(
     auctionId: AuctionId,
     sellerId: UserId,
-    fileName: String,
     contentType: `Content-Type`,
     contentLength: Long
   ): IO[PresignUploadResult] = {
-    val _ = fileName
     (for {
       _ <- transactor
              .inSession(auctionRepository.find(auctionId))
@@ -308,25 +310,29 @@ class AuctionImageService(
       case Left(result) => IO.pure(result)
       case Right(_) =>
         (for {
-          stat  <- objectStore.head(key).valueOr[CommitUploadResult](CommitUploadResult.ObjectNotFound)
-          now   <- Clock[IO].realTimeInstant.seal
-          image <- persistCommittedRow(auctionId, imageId, key, fileName, stat, now).seal
-        } yield CommitUploadResult.Committed(image)).run
+          stat   <- objectStore.head(key).valueOr[CommitUploadResult](CommitUploadResult.ObjectNotFound)
+          now    <- Clock[IO].realTimeInstant.seal
+          result <- persistCommittedRow(auctionId, sellerId, imageId, key, fileName, stat, now).seal
+        } yield result).run
     }
   }
 
   private def persistCommittedRow(
     auctionId: AuctionId,
+    sellerId: UserId,
     imageId: AuctionImageId,
     key: StorageKey,
     fileName: String,
     stat: ObjectStat,
     now: java.time.Instant
-  ): IO[AuctionImage] =
+  ): IO[CommitUploadResult] =
     transactor.inTransaction {
-      for {
-        _   <- auctionRepository.findForUpdate(auctionId).void
-        pos <- auctionImageRepository.nextPosition(auctionId)
+      (for {
+        _ <- auctionRepository
+               .findForUpdate(auctionId)
+               .valueOr[CommitUploadResult](CommitUploadResult.AuctionNotFound)
+               .ensure(_.sellerId == sellerId, CommitUploadResult.NotOwner)
+        pos <- auctionImageRepository.nextPosition(auctionId).seal
         image = AuctionImage.newlyAttached(
                   id = imageId,
                   auctionId = auctionId,
@@ -337,9 +343,9 @@ class AuctionImageService(
                   position = ImagePosition(pos),
                   uploadedAt = now
                 )
-        _ <- auctionImageRepository.save(image)
-        _ <- schedulerClient.scheduleTransactionally(analyzeImageTask.instance(s"analyze-$imageId", imageId))
-      } yield image
+        _ <- auctionImageRepository.save(image).seal
+        _ <- schedulerClient.scheduleTransactionally(analyzeImageTask.instance(s"analyze-$imageId", imageId)).seal
+      } yield CommitUploadResult.Committed(image)).run
     }
 
   def serveImage(auctionId: AuctionId, imageId: AuctionImageId): IO[Option[ObjectStore.GetResult]] = (for {
