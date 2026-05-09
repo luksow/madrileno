@@ -33,34 +33,29 @@ class AuctionImageService(
   val analyzeImageTask: OneTimeTask[AuctionImageId] =
     Task.oneTime(TaskDescriptor[AuctionImageId]("analyze-auction-image"))(task => analyze(task.payload))
 
-  private def analyze(imageId: AuctionImageId): IO[Unit] =
-    transactor.inSession(auctionImageRepository.find(imageId)).flatMap {
-      case None                                      => logger.warn(s"analyze: image $imageId not found, skipping")
-      case Some(image) if image.analyzedAt.isDefined => IO.unit
-      case Some(image) =>
-        objectStore.fetchBytes(image.storageKey).flatMap {
-          case None => logger.warn(s"analyze: bytes missing for $imageId at ${image.storageKey.render}, skipping")
-          case Some(bytes) =>
-            Imaging.info(bytes).flatMap {
-              case None => logger.warn(s"analyze: $imageId at ${image.storageKey.render} is not a recognized image, skipping")
-              case Some(info) =>
-                val needsRotation = info.orientation != Orientation.Normal
-                for {
-                  upright <- if (needsRotation) Imaging.applyOrientation(bytes, info.format) else IO.pure(bytes)
-                  _ <- if (needsRotation)
-                         objectStore
-                           .put(image.storageKey, contentTypeFor(info.format), Stream.chunk(fs2.Chunk.byteVector(upright)))
-                           .void
-                       else IO.unit
-                  now <- Clock[IO].realTimeInstant
-                  _ <- transactor.inSession(
-                         auctionImageRepository
-                           .markAnalyzed(imageId, SizeBytes(upright.size), info.dimensions.width, info.dimensions.height, info.format, now)
-                       )
-                } yield ()
-            }
-        }
-    }
+  private def analyze(imageId: AuctionImageId): IO[Unit] = (for {
+    image <- transactor
+               .inSession(auctionImageRepository.find(imageId))
+               .valueOrF[Unit](logger.warn(s"analyze: image $imageId not found, skipping"))
+               .ensure(_.analyzedAt.isEmpty, ())
+    bytes <- objectStore
+               .fetchBytes(image.storageKey)
+               .valueOrF[Unit](logger.warn(s"analyze: bytes missing for $imageId at ${image.storageKey.render}, skipping"))
+    info <- Imaging
+              .info(bytes)
+              .valueOrF[Unit](logger.warn(s"analyze: $imageId at ${image.storageKey.render} is not a recognized image, skipping"))
+    needsRotation = info.orientation != Orientation.Normal
+    upright <- (if (needsRotation) Imaging.applyOrientation(bytes, info.format) else IO.pure(bytes)).seal
+    _ <- (if (needsRotation)
+            objectStore.put(image.storageKey, contentTypeFor(info.format), Stream.chunk(fs2.Chunk.byteVector(upright))).void
+          else IO.unit).seal
+    now <- Clock[IO].realTimeInstant.seal
+    _ <- transactor
+           .inSession(
+             auctionImageRepository.markAnalyzed(imageId, SizeBytes(upright.size), info.dimensions.width, info.dimensions.height, info.format, now)
+           )
+           .seal
+  } yield ()).run
 
   private def contentTypeFor(format: ImageFormat): `Content-Type` = format match {
     case ImageFormat.Jpeg => `Content-Type`(MediaType.image.jpeg)
