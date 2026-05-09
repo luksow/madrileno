@@ -57,13 +57,18 @@ class AuctionImageService(
     _ <- (if (needsRotation)
             objectStore.put(image.storageKey, contentTypeFor(info.format), Stream.chunk(fs2.Chunk.byteVector(upright))).void
           else IO.unit).seal
+    uprightInfo <- Imaging
+                     .info(upright)
+                     .valueOrF[Unit](logger.warn(s"analyze: upright bytes for $imageId no longer recognizable, skipping"))
     now <- Clock[IO].realTimeInstant.seal
-    _ <- transactor
-           .inSession(
-             auctionImageRepository.markAnalyzed(imageId, SizeBytes(upright.size), info.dimensions.width, info.dimensions.height, info.format, now)
-           )
-           .seal
-    _ <- VariantSpec.All.traverse_(spec => schedulerClient.schedule(variantTaskInstance(imageId, spec))).seal
+    _ <- transactor.inTransaction {
+           for {
+             _ <-
+               auctionImageRepository
+                 .markAnalyzed(imageId, SizeBytes(upright.size), uprightInfo.dimensions.width, uprightInfo.dimensions.height, uprightInfo.format, now)
+             _ <- VariantSpec.All.traverse_(spec => schedulerClient.scheduleTransactionally(variantTaskInstance(imageId, spec)))
+           } yield ()
+         }.seal
   } yield ()).run
 
   private def generateVariant(imageId: AuctionImageId, spec: VariantSpec): IO[Unit] = (for {
@@ -103,7 +108,7 @@ class AuctionImageService(
   }
 
   private def variantTaskInstance(imageId: AuctionImageId, spec: VariantSpec): madrileno.utils.task.Task[GenerateVariantPayload] =
-    generateVariantTask.instance(s"variant-${imageId.unwrap}-$spec", GenerateVariantPayload(imageId, spec))
+    generateVariantTask.instance(s"variant-$imageId-$spec", GenerateVariantPayload(imageId, spec))
 
   private def contentTypeFor(format: ImageFormat): `Content-Type` = format match {
     case ImageFormat.Jpeg => `Content-Type`(MediaType.image.jpeg)
@@ -193,6 +198,7 @@ class AuctionImageService(
                   uploadedAt = now
                 )
         _ <- auctionImageRepository.save(image).seal
+        _ <- schedulerClient.scheduleTransactionally(analyzeImageTask.instance(s"analyze-$id", id)).seal
       } yield AttachImageResult.Attached(image)).run
     }
   }
@@ -320,7 +326,7 @@ class AuctionImageService(
                   uploadedAt = now
                 )
         _ <- auctionImageRepository.save(image)
-        _ <- schedulerClient.scheduleTransactionally(analyzeImageTask.instance(s"analyze-${imageId.unwrap}", imageId))
+        _ <- schedulerClient.scheduleTransactionally(analyzeImageTask.instance(s"analyze-$imageId", imageId))
       } yield image
     }
 

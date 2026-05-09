@@ -12,9 +12,9 @@ import madrileno.auction.repositories.{AuctionImageRepository, AuctionRepository
 import madrileno.support.{TestData, TestGivens, TestObjectStoreRuntime, TestTransactor}
 import madrileno.user.domain.User
 import madrileno.user.repositories.UserRepository
-import madrileno.utils.imaging.ImageFormat
+import madrileno.utils.imaging.{Height, ImageFormat, Width}
 import madrileno.utils.observability.TelemetryContext
-import madrileno.utils.storage.SignedUrlTtl
+import madrileno.utils.storage.{SignedUrlTtl, StorageKey}
 import madrileno.utils.task.{Scheduler, SchedulerConfig}
 import org.http4s.MediaType
 import org.http4s.headers.`Content-Type`
@@ -262,7 +262,7 @@ class AuctionImageServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matche
                      case PresignUploadResult.Presigned(id, _) => IO.pure(id)
                      case other                                => IO.raiseError(new AssertionError(s"setup: $other"))
                    }
-        key = madrileno.utils.storage.StorageKey(s"auctions/${auction.id}/images/$imageId")
+        key = StorageKey(s"auctions/${auction.id}/images/$imageId")
         _      <- runtime.objectStore.put(key, jpeg, Stream.emits(bytes))
         result <- service.commitUpload(auction.id, seller.id, imageId, "wine.jpg")
         listed <- service.listImages(auction.id)
@@ -288,7 +288,7 @@ class AuctionImageServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matche
                      case PresignUploadResult.Presigned(id, _) => IO.pure(id)
                      case other                                => IO.raiseError(new AssertionError(s"setup: $other"))
                    }
-        key = madrileno.utils.storage.StorageKey(s"auctions/${auction.id}/images/$imageId")
+        key = StorageKey(s"auctions/${auction.id}/images/$imageId")
         _      <- runtime.objectStore.put(key, jpeg, Stream.emits(bytes))
         result <- service.commitUpload(auction.id, other.id, imageId, "wine.jpg")
       } yield result shouldBe CommitUploadResult.NotOwner
@@ -306,13 +306,13 @@ class AuctionImageServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matche
                       case AttachImageResult.Attached(img) => IO.pure(img)
                       case other                           => IO.raiseError(new AssertionError(s"setup: $other"))
                     }
-        _       <- service.analyzeImageTask.execution(service.analyzeImageTask.instance(s"analyze-${attached.id.unwrap}", attached.id))
+        _       <- service.analyzeImageTask.execution(service.analyzeImageTask.instance(s"analyze-${attached.id}", attached.id))
         refresh <- service.listImages(auction.id).map(_.find(_.id == attached.id))
       } yield {
         val _ = runtime
         refresh shouldBe defined
-        refresh.flatMap(_.width).map(_.unwrap) shouldBe Some(120)
-        refresh.flatMap(_.height).map(_.unwrap) shouldBe Some(80)
+        refresh.flatMap(_.width) shouldBe Some(Width(120))
+        refresh.flatMap(_.height) shouldBe Some(Height(80))
         refresh.flatMap(_.format) shouldBe Some(ImageFormat.Jpeg)
         refresh.flatMap(_.analyzedAt) shouldBe defined
       }
@@ -328,9 +328,9 @@ class AuctionImageServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matche
                       case AttachImageResult.Attached(img) => IO.pure(img)
                       case other                           => IO.raiseError(new AssertionError(s"setup: $other"))
                     }
-        _      <- service.analyzeImageTask.execution(service.analyzeImageTask.instance(s"analyze-1-${attached.id.unwrap}", attached.id))
+        _      <- service.analyzeImageTask.execution(service.analyzeImageTask.instance(s"analyze-1-${attached.id}", attached.id))
         first  <- service.listImages(auction.id).map(_.find(_.id == attached.id).flatMap(_.analyzedAt))
-        _      <- service.analyzeImageTask.execution(service.analyzeImageTask.instance(s"analyze-2-${attached.id.unwrap}", attached.id))
+        _      <- service.analyzeImageTask.execution(service.analyzeImageTask.instance(s"analyze-2-${attached.id}", attached.id))
         second <- service.listImages(auction.id).map(_.find(_.id == attached.id).flatMap(_.analyzedAt))
       } yield {
         first shouldBe defined
@@ -359,14 +359,14 @@ class AuctionImageServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matche
                     }
         _ <-
           service.generateVariantTask
-            .execution(service.generateVariantTask.instance(s"v-${attached.id.unwrap}-thumb", GenerateVariantPayload(attached.id, VariantSpec.Thumb)))
+            .execution(service.generateVariantTask.instance(s"v-${attached.id}-thumb", GenerateVariantPayload(attached.id, VariantSpec.Thumb)))
         listed <- service.listImagesWithVariants(auction.id)
       } yield {
         val variants = listed.find(_._1.id == attached.id).map(_._2).getOrElse(Nil)
         variants.find(_.spec == VariantSpec.Thumb) match {
           case Some(thumb) =>
-            thumb.width.unwrap shouldBe 256
-            thumb.height.unwrap shouldBe 256
+            thumb.width shouldBe Width(256)
+            thumb.height shouldBe Height(256)
             thumb.format shouldBe ImageFormat.Jpeg
           case None => fail(s"expected a Thumb variant, got: $variants")
         }
@@ -384,16 +384,14 @@ class AuctionImageServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matche
                       case other                           => IO.raiseError(new AssertionError(s"setup: $other"))
                     }
         _ <- service.generateVariantTask
-               .execution(
-                 service.generateVariantTask.instance(s"v-${attached.id.unwrap}-medium", GenerateVariantPayload(attached.id, VariantSpec.Medium))
-               )
+               .execution(service.generateVariantTask.instance(s"v-${attached.id}-medium", GenerateVariantPayload(attached.id, VariantSpec.Medium)))
         listed <- service.listImagesWithVariants(auction.id)
       } yield {
         val variants = listed.find(_._1.id == attached.id).map(_._2).getOrElse(Nil)
         variants.find(_.spec == VariantSpec.Medium) match {
           case Some(medium) =>
-            medium.width.unwrap shouldBe 1024
-            medium.height.unwrap shouldBe 512
+            medium.width shouldBe Width(1024)
+            medium.height shouldBe Height(512)
           case None => fail(s"expected a Medium variant, got: $variants")
         }
       }
@@ -411,7 +409,7 @@ class AuctionImageServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matche
                     }
         runOnce =
           service.generateVariantTask
-            .execution(service.generateVariantTask.instance(s"v-${attached.id.unwrap}-thumb", GenerateVariantPayload(attached.id, VariantSpec.Thumb)))
+            .execution(service.generateVariantTask.instance(s"v-${attached.id}-thumb", GenerateVariantPayload(attached.id, VariantSpec.Thumb)))
         _      <- runOnce
         first  <- service.listImagesWithVariants(auction.id).map(_.find(_._1.id == attached.id).map(_._2.size).getOrElse(0))
         _      <- runOnce
