@@ -38,11 +38,9 @@ sbt --client scalafmtAll                                     # format before com
 sbt --client scalafixAll                                     # lint
 ```
 
-Migrations are applied by Flyway automatically:
-- In tests, via `TestTransactor` on each suite's Testcontainers Postgres.
-- When running the app (`sbt "~reStart"`), via Flyway on startup.
-
-You don't have to run migrations manually — dropping the SQL file in `src/main/resources/db/migration/` is enough.
+Migration timing is split:
+- **In tests**, `TestTransactor` runs Flyway against each suite's Testcontainers Postgres at container start — drop the SQL file in `src/main/resources/db/migration/` and it's picked up automatically.
+- **When running the app**, the app does **not** auto-migrate. Run `sbt --client flywayMigrate` against your dev DB after adding a migration (and after `docker compose down -v`). See [dev-workflow.md](dev-workflow.md).
 
 ## The order matters
 
@@ -551,7 +549,7 @@ Two app-wide dependencies are already constructed by `ApplicationLoader` and ava
 - `val httpClient: WebSocketStreamBackend[IO, Fs2Streams[IO]]` — shared sttp backend (tracing, metrics, request logging already wired).
 - `val cacheRuntime: CacheRuntime` — Transactor-shaped factory. Modules call `cacheRuntime.expiring(ttl, maxSize)` to mint their own typed `Cache[K, V]`.
 
-Gateways live under `<module>/gateways/`. Keep the trait domain-shaped; the live factory owns its cache internally so the rest of the module never sees `Cache[...]` in a signature. `VivinoGateway` is the reference:
+Gateways live under `<module>/gateways/`. The trait is the swap point (one method ⇒ tests stub it as a one-line SAM lambda); a `Live` class is the production implementation, owning its cache internally so the rest of the module never sees `Cache[...]` in a signature. `VivinoGateway` is the reference — see [external-apis.md](external-apis.md) for the rationale:
 
 ```scala
 package madrileno.product.gateways
@@ -568,23 +566,25 @@ trait CatalogGateway {
   def lookup(sku: Sku): IO[Option[CatalogEntry]]
 }
 
-object CatalogGateway {
-  def live(http: WebSocketStreamBackend[IO, Fs2Streams[IO]], cacheRuntime: CacheRuntime)(using TelemetryContext): CatalogGateway = {
-    val cache = cacheRuntime.expiring[Sku, Option[CatalogEntry]](expireAfterWrite = 12.hours, maxSize = 10_000)
-    new CatalogGateway with LoggingSupport {
-      override def lookup(sku: Sku): IO[Option[CatalogEntry]] =
-        cache.get(sku).flatMap {
-          case Some(cached) => IO.pure(cached)
-          case None =>
-            fetch(sku)
-              .timeout(3.seconds)
-              .flatTap(result => cache.put(sku, result))
-              .handleErrorWith(t => logger.warn(t)(s"Catalog lookup failed for $sku").as(None))
-        }
+class CatalogGatewayLive(
+  http: WebSocketStreamBackend[IO, Fs2Streams[IO]],
+  cacheRuntime: CacheRuntime
+)(using TelemetryContext)
+    extends CatalogGateway with LoggingSupport {
 
-      private def fetch(sku: Sku): IO[Option[CatalogEntry]] = ???
+  private val cache = cacheRuntime.expiring[Sku, Option[CatalogEntry]](expireAfterWrite = 12.hours, maxSize = 10_000)
+
+  override def lookup(sku: Sku): IO[Option[CatalogEntry]] =
+    cache.get(sku).flatMap {
+      case Some(cached) => IO.pure(cached)
+      case None =>
+        fetch(sku)
+          .timeout(3.seconds)
+          .flatTap(result => cache.put(sku, result))
+          .handleErrorWith(t => logger.warn(t)(s"Catalog lookup failed for $sku").as(None))
     }
-  }
+
+  private def fetch(sku: Sku): IO[Option[CatalogEntry]] = ???
 }
 ```
 
@@ -602,7 +602,7 @@ trait ProductModule extends RouteProvider with AuthRouteProvider {
   val cacheRuntime: CacheRuntime
   lazy val httpClient: WebSocketStreamBackend[IO, Fs2Streams[IO]]
 
-  protected lazy val catalogGateway: CatalogGateway = CatalogGateway.live(httpClient, cacheRuntime)
+  protected lazy val catalogGateway: CatalogGateway = wire[CatalogGatewayLive]
 
   private val productRepository = wire[ProductRepository]
   private val productService    = wire[ProductService]
@@ -652,12 +652,15 @@ The `name` becomes the Postgres `LISTEN` / `NOTIFY` channel under the Postgres b
 
 #### Service: publish after commit
 
-Service publishes after the commit lands — failures are logged, never raised:
+Service publishes after the commit lands. Wrap `publish` so a failure is logged and swallowed — never raised, since the business operation has already committed:
 
 ```scala
+private def publish(event: ProductEvent): IO[Unit] =
+  eventBus.publish(event).handleErrorWith(t => logger.warn(t)(s"Failed to publish $event"))
+
 def register(cmd): IO[RegisterResult] =
   transactor.inTransaction { … }.flatTap {
-    case RegisterResult.Registered(p) => eventBus.publish(ProductEvent.registered(p))
+    case RegisterResult.Registered(p) => publish(ProductEvent.registered(p))
     case _                            => IO.unit
   }
 ```
@@ -811,7 +814,7 @@ import java.util.UUID
 
 class ProductRouterSpec extends BaseRouteSpec with TestApplicationLoader {
 
-  override def route: Route = application.routes
+  override def route: Route = application.routes(wsb)
 
   // Fresh repository instance — private vals inside ProductModule aren't accessible from here
   private val productRepository = new ProductRepository

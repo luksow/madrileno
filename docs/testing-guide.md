@@ -80,7 +80,7 @@ class UserRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
   "create and get a user" in withRollback {
     val user = TestData.user()
     for {
-      created <- repo.create(user)
+      created <- repo.create(user, Instant.now())
       fetched <- repo.get(created.id)
     } yield fetched.id shouldBe user.id
   }
