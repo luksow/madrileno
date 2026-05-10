@@ -1,11 +1,14 @@
 package madrileno.auth.services
 
+import io.circe.{Encoder, parser}
 import madrileno.auth.domain.AuthContext
 import madrileno.support.TestData
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
 
+import java.nio.charset.StandardCharsets
 import java.time.{Duration, Instant}
+import java.util.Base64
 
 class JwtServiceSpec extends AnyWordSpec with Matchers {
   private val config  = JwtService.Config(secret = "test-secret-at-least-256-bits-long-for-hs256!!", validFor = Duration.ofMinutes(5))
@@ -32,8 +35,8 @@ class JwtServiceSpec extends AnyWordSpec with Matchers {
       val expectedExp = now.plus(config.validFor).getEpochSecond
 
       val parts       = jwt.toString.split('.')
-      val payloadJson = new String(java.util.Base64.getUrlDecoder.decode(parts(1)), java.nio.charset.StandardCharsets.UTF_8)
-      val exp = io.circe.parser.parse(payloadJson).flatMap(_.hcursor.get[Long]("exp")) match {
+      val payloadJson = new String(Base64.getUrlDecoder.decode(parts(1)), StandardCharsets.UTF_8)
+      val exp = parser.parse(payloadJson).flatMap(_.hcursor.get[Long]("exp")) match {
         case Right(value) => value
         case Left(error)  => fail(s"Failed to parse exp claim: $error")
       }
@@ -74,7 +77,7 @@ class JwtServiceSpec extends AnyWordSpec with Matchers {
     "return ParsingFailure for a valid JWT with wrong payload structure" in {
       val now = Instant.now()
       // Encode a string instead of AuthContext
-      val jwt = service.encode("just a string", now)(using io.circe.Encoder.encodeString)
+      val jwt = service.encode("just a string", now)(using Encoder.encodeString)
 
       service.decode[AuthContext](jwt.toString) match {
         case JwtService.DecodingResult.ParsingFailure(_) => succeed

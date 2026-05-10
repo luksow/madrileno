@@ -1,6 +1,7 @@
 package madrileno.support
 
 import com.comcast.ip4s.IpAddress
+import io.circe.Json
 import madrileno.auction.domain.*
 import madrileno.auth.domain.{AuthContext, *}
 import madrileno.user.domain.*
@@ -9,6 +10,7 @@ import madrileno.utils.storage.StorageKey
 import org.http4s.MediaType
 import org.http4s.headers.`Content-Type`
 
+import java.net.URI
 import java.time.Instant
 import java.util.{Currency, UUID}
 
@@ -27,7 +29,7 @@ object TestData {
     fullName: Option[FullName] = Some(FullName("Test User")),
     emailAddress: Option[EmailAddress] = Some(EmailAddress(s"test-${UUID.randomUUID()}@example.com")),
     emailVerified: Boolean = true,
-    avatarUrl: Option[java.net.URI] = None,
+    avatarUrl: Option[URI] = None,
     blockedAt: Option[Instant] = None
   ): User = User(id, fullName, emailAddress, emailVerified, avatarUrl, blockedAt)
 
@@ -48,13 +50,8 @@ object TestData {
     fullName: Option[FullName] = Some(FullName("Test User")),
     emailAddress: Option[EmailAddress] = Some(EmailAddress(s"test-${UUID.randomUUID()}@example.com")),
     emailVerified: Boolean = true
-  ): VerifiedExternalToken = VerifiedExternalToken(
-    provider,
-    providerUserId,
-    credential,
-    ExternalProfile(fullName, emailAddress, emailVerified, None),
-    Metadata(io.circe.Json.obj())
-  )
+  ): VerifiedExternalToken =
+    VerifiedExternalToken(provider, providerUserId, credential, ExternalProfile(fullName, emailAddress, emailVerified, None), Metadata(Json.obj()))
 
   val defaultIpAddress: IpAddress = IpAddress.fromString("127.0.0.1").get
 

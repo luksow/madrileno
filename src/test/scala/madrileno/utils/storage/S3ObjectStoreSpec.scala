@@ -20,6 +20,7 @@ import sttp.client4.httpurlconnection.HttpURLConnectionBackend
 import sttp.model.Uri as SttpUri
 
 import java.net.URI
+import java.util.UUID
 import scala.concurrent.duration.DurationInt
 
 class S3ObjectStoreSpec extends AsyncWordSpec with AsyncIOSpec with Matchers with TestContainerForAll {
@@ -37,7 +38,7 @@ class S3ObjectStoreSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wit
     objectStorage = S3Config(
       endpoint = s"http://${container.host}:${container.mappedPort(9000)}",
       region = "us-east-1",
-      bucket = s"test-${java.util.UUID.randomUUID()}",
+      bucket = s"test-${UUID.randomUUID()}",
       accessKeyId = "minioadmin",
       secretAccessKey = "minioadmin"
     )
