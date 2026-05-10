@@ -37,5 +37,7 @@
     </root>
 
     <logger name="org.apache.hc" level="WARN"/>
+    <logger name="software.amazon.awssdk" level="WARN"/>
+    <logger name="io.netty" level="WARN"/>
 
 </configuration>
