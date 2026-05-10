@@ -1,8 +1,10 @@
 package madrileno.auth.repositories
 
 import cats.effect.testing.scalatest.AsyncIOSpec
+import io.circe.Json
 import madrileno.auth.domain.*
 import madrileno.support.{TestData, TestTransactor}
+import madrileno.user.repositories.UserRepository
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AsyncWordSpec
 
@@ -11,7 +13,7 @@ import java.time.Instant
 class UserAuthRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matchers with TestTransactor {
 
   private lazy val repo     = new UserAuthRepository
-  private lazy val userRepo = new madrileno.user.repositories.UserRepository
+  private lazy val userRepo = new UserRepository
 
   private def createUserAuth() = {
     val user  = TestData.user()
@@ -43,7 +45,7 @@ class UserAuthRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matcher
 
     "upsert updates existing record on save" in withRollback {
       val (user, auth, _) = createUserAuth()
-      val updatedMetadata = Metadata(io.circe.Json.obj("updated" -> io.circe.Json.fromBoolean(true)))
+      val updatedMetadata = Metadata(Json.obj("updated" -> Json.fromBoolean(true)))
       for {
         _     <- userRepo.create(user, Instant.now())
         _     <- repo.save(auth, Instant.now())
@@ -58,7 +60,7 @@ class UserAuthRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matcher
 
     "updateMetadata changes only the metadata field" in withRollback {
       val (user, auth, _) = createUserAuth()
-      val newMetadata     = Metadata(io.circe.Json.obj("key" -> io.circe.Json.fromString("value")))
+      val newMetadata     = Metadata(Json.obj("key" -> Json.fromString("value")))
       for {
         _     <- userRepo.create(user, Instant.now())
         _     <- repo.save(auth, Instant.now())

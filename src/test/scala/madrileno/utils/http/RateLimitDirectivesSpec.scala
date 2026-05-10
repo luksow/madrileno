@@ -3,7 +3,7 @@ package madrileno.utils.http
 import cats.effect.IO
 import cats.effect.unsafe.IORuntime
 import madrileno.utils.observability.TelemetryContext
-import org.http4s.{Method, Request, Status, Uri}
+import org.http4s.{Header, Method, Request, Status, Uri}
 import org.scalatest.funspec.AnyFunSpec
 import org.scalatest.matchers.should.Matchers
 import org.typelevel.ci.CIString
@@ -32,7 +32,7 @@ class RateLimitDirectivesSpec extends AnyFunSpec with Matchers {
 
   private def hit(routes: Route, header: Option[(String, String)] = None) = {
     val base    = Request[IO](Method.GET, Uri.unsafeFromString("/hello"))
-    val request = header.fold(base) { case (n, v) => base.putHeaders(org.http4s.Header.Raw(CIString(n), v)) }
+    val request = header.fold(base) { case (n, v) => base.putHeaders(Header.Raw(CIString(n), v)) }
     routes.toHttpRoutes.orNotFound.run(request).unsafeRunSync()
   }
 

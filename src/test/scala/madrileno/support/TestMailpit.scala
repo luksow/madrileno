@@ -2,9 +2,10 @@ package madrileno.support
 
 import cats.effect.IO
 import com.dimafeng.testcontainers.GenericContainer
-import io.circe.parser
+import io.circe.{ACursor, Json, parser}
 import org.scalatest.{BeforeAndAfterAll, Suite}
 import org.testcontainers.containers.wait.strategy.Wait
+import sttp.client4.Response
 import sttp.client4.quick.*
 
 import scala.concurrent.duration.*
@@ -54,7 +55,7 @@ trait TestMailpit extends BeforeAndAfterAll { self: Suite =>
 
   private def apiUrl: String = s"http://${mailpitContainer.host}:${mailpitContainer.mappedPort(8025)}/api/v1"
 
-  private def requireSuccess(response: sttp.client4.Response[String], context: String): io.circe.Json = {
+  private def requireSuccess(response: Response[String], context: String): Json = {
     if (!response.code.isSuccess)
       throw new RuntimeException(s"Mailpit $context failed: ${response.code} ${response.body}")
     parser.parse(response.body) match {
@@ -69,13 +70,13 @@ trait TestMailpit extends BeforeAndAfterAll { self: Suite =>
       throw new RuntimeException(s"Mailpit clear failed: ${response.code} ${response.body}")
   }
 
-  private def parseAddress(json: io.circe.Json): MailpitAddress =
+  private def parseAddress(json: Json): MailpitAddress =
     MailpitAddress(name = json.hcursor.get[String]("Name").getOrElse(""), address = json.hcursor.get[String]("Address").getOrElse(""))
 
-  private def parseAddressList(cursor: io.circe.ACursor): List[MailpitAddress] =
+  private def parseAddressList(cursor: ACursor): List[MailpitAddress] =
     cursor.focus.flatMap(_.asArray).getOrElse(Vector.empty).map(parseAddress).toList
 
-  private def parseAddressOpt(cursor: io.circe.ACursor): Option[MailpitAddress] =
+  private def parseAddressOpt(cursor: ACursor): Option[MailpitAddress] =
     cursor.focus.filterNot(_.isNull).map(parseAddress)
 
   def getMessages: IO[Seq[MailpitMessage]] = IO.blocking {

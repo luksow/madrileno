@@ -12,6 +12,7 @@ import sttp.client4.circe.*
 import sttp.client4.{UriContext, WebSocketStreamBackend, basicRequest}
 import sttp.model.MediaType
 
+import java.text.Normalizer
 import scala.annotation.tailrec
 import scala.concurrent.duration.*
 
@@ -131,7 +132,7 @@ class VivinoGatewayLive(http: WebSocketStreamBackend[IO, Fs2Streams[IO]], cacheR
 
 private[gateways] object Similarity {
   def normalize(s: String): String = {
-    val decomposed = java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFD)
+    val decomposed = Normalizer.normalize(s, Normalizer.Form.NFD)
     val stripped   = decomposed.replaceAll("\\p{M}", "")
     stripped.toLowerCase.replaceAll("[^a-z0-9 ]", " ").replaceAll("\\s+", " ").trim
   }
