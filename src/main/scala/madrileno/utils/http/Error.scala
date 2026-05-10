@@ -1,6 +1,6 @@
 package madrileno.utils.http
 
-import io.circe.Json
+import io.circe.{DecodingFailure, HCursor, Json}
 import madrileno.utils.json.JsonProtocol.*
 import org.http4s.Status
 
@@ -37,10 +37,10 @@ object Error {
 
   private def decodeURI(s: String, field: String): Decoder.Result[URI] =
     try Right(URI.create(s))
-    catch { case e: IllegalArgumentException => Left(io.circe.DecodingFailure(s"Invalid URI in '$field': ${e.getMessage}", Nil)) }
+    catch { case e: IllegalArgumentException => Left(DecodingFailure(s"Invalid URI in '$field': ${e.getMessage}", Nil)) }
 
   private def decodeStatus(code: Int): Decoder.Result[Status] =
-    Status.fromInt(code).left.map(e => io.circe.DecodingFailure(s"Invalid status code: ${e.message}", Nil))
+    Status.fromInt(code).left.map(e => DecodingFailure(s"Invalid status code: ${e.message}", Nil))
 
   private def traverseOpt[A, B](opt: Option[A])(f: A => Decoder.Result[B]): Decoder.Result[Option[B]] =
     opt match {
@@ -49,7 +49,7 @@ object Error {
     }
 
   given Decoder[Error[Unit]] = new Decoder[Error[Unit]] {
-    def apply(c: io.circe.HCursor): Decoder.Result[Error[Unit]] = {
+    def apply(c: HCursor): Decoder.Result[Error[Unit]] = {
       for {
         tpe      <- c.downField("type").as[Option[String]]
         tpeUri   <- traverseOpt(tpe)(decodeURI(_, "type"))

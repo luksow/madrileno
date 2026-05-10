@@ -20,6 +20,8 @@ import org.http4s.headers.`Content-Type`
 import pl.iterators.sealedmonad.syntax.*
 import scodec.bits.ByteVector
 
+import java.time.Instant
+
 class AuctionImageService(
   auctionRepository: AuctionRepository,
   auctionImageRepository: AuctionImageRepository,
@@ -182,7 +184,7 @@ class AuctionImageService(
     fileName: String,
     contentType: `Content-Type`,
     actualSize: Long,
-    now: java.time.Instant
+    now: Instant
   ): IO[AttachImageResult] = {
     transactor.inTransaction {
       (for {
@@ -325,7 +327,7 @@ class AuctionImageService(
     key: StorageKey,
     fileName: String,
     stat: ObjectStat,
-    now: java.time.Instant
+    now: Instant
   ): IO[CommitUploadResult] =
     transactor.inTransaction {
       (for {

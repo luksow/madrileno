@@ -2,6 +2,7 @@ package madrileno.utils.storage
 
 import pl.iterators.kebs.opaque.Opaque
 
+import java.time.Duration
 import scala.concurrent.duration.FiniteDuration
 
 opaque type SignedUrlTtl = FiniteDuration
@@ -15,5 +16,5 @@ object SignedUrlTtl extends Opaque[SignedUrlTtl, FiniteDuration] {
     else if (value.toSeconds > MaxSeconds) Left("SignedUrlTtl must not exceed 7 days (AWS SigV4 limit)")
     else Right(value)
 
-  extension (ttl: SignedUrlTtl) def asJavaDuration: java.time.Duration = java.time.Duration.ofSeconds(ttl.unwrap.toSeconds)
+  extension (ttl: SignedUrlTtl) def asJavaDuration: Duration = Duration.ofSeconds(ttl.unwrap.toSeconds)
 }
