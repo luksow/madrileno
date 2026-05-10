@@ -66,7 +66,7 @@ The two methods are conventional, not enforced: `routes` for public routes (matc
   "type": "result:auction-not-found",
   "status": 404,
   "title": "Auction not found",
-  "trace": "trace-id:7a1f8e6c…"
+  "instance": "trace-id:7a1f8e6c…"
 }
 ```
 
