@@ -65,18 +65,36 @@ The dev-stack `.env` is *not* a production template; it's a local-development co
 
 ## Migrations are a separate step
 
-The app does **not** auto-migrate on startup. Run `sbt flywayMigrate` (or the underlying `flyway migrate` command) as a deploy step, before the new image rolls out:
+The app does **not** auto-migrate on startup. Run them as a discrete deploy step before rolling out the new image:
 
 ```
 build image → push image → run migrations → roll out new pods
 ```
 
+The Docker image ships a second launcher, `bin/madrileno-migrate`, that runs Flyway against the same `PG_*` env vars the app reads. Same image, same Git SHA, same config — schema and code can't drift apart. As a Kubernetes `Job` (or Helm `pre-install` / `pre-upgrade` hook, or Argo step):
+
+```yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: madrileno-migrate
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: madrileno:<sha>
+          command: ["/opt/docker/bin/madrileno-migrate"]
+          envFrom: [{ secretRef: { name: madrileno-env } }]
+```
+
+Gate the rollout on `kubectl wait --for=condition=Complete job/madrileno-migrate` or your platform's equivalent.
+
 Two reasons this is the right separation:
 
 - **Migrations are slow and rare.** Running them on every pod start would slow rollouts and make crash-loop debugging painful.
 - **Migrations are dangerous.** Locking, long-running, can fail mid-way. They want a single owner per deploy, not N pods racing.
-
-The flyway-sbt task reads the same `PG_*` env vars the app does. Run it from a CI job or a one-shot container; just make sure exactly one of those runs per deploy.
 
 For zero-downtime rollouts, follow the standard expand/contract dance:
 

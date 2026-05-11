@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+exec "$(dirname "$0")/madrileno" -main madrileno.main.MigrateMain "$@"
