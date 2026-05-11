@@ -24,7 +24,8 @@ trait BaseRouter
     with KebsHttp4sStirUnmarshallers
     with KebsHttp4sStirEnumUnmarshallers
     with KebsHttp4sStirValueEnumUnmarshallers
-    with KebsEnum {
+    with KebsEnum
+    with PaginationDirectives {
   export Status.*
 
   def error[E: Encoder](

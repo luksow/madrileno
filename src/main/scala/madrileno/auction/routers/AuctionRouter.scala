@@ -10,7 +10,6 @@ import madrileno.user.domain.UserId
 import madrileno.utils.events.EventBus
 import madrileno.utils.http.{BaseRouter, RateLimitDirectives, RateLimiter, RateLimiterRuntime}
 import madrileno.utils.observability.TelemetryContext
-import madrileno.utils.pagination.{Limit, Offset, PageRequest, SortDirection}
 import org.http4s.Request
 import org.http4s.server.websocket.WebSocketBuilder2
 import org.http4s.websocket.WebSocketFrame
@@ -30,25 +29,16 @@ class AuctionRouter(
   override protected val rateLimiter: RateLimiter = rateLimiterRuntime.rateLimiter
 
   val routes: Route = {
-    (get & path("auctions") & pathEndOrSingleSlash & parameters(
-      "status".as[AuctionStatus].?,
-      "seller-id".as[UserId].?,
-      "sortBy".as[AuctionSortField].withDefault(AuctionSortField.CreatedAt),
-      "sortDir".as[SortDirection].withDefault(SortDirection.Desc),
-      "limit".as[Int].withDefault(Limit.Default.unwrap),
-      "offset".as[Int].withDefault(0)
+    (get & path("auctions") & pathEndOrSingleSlash & parameters("status".as[AuctionStatus].?, "seller-id".as[UserId].?) & paginated(
+      AuctionSortField.CreatedAt
     )) {
       (
         status,
         sellerId,
-        sortBy,
-        sortDir,
-        limit,
-        offset
+        page
       ) =>
         rateLimited("auctions.list", to = 60, within = 1.minute) {
           complete {
-            val page   = PageRequest(Limit(limit.max(1).min(Limit.Max)), Offset(offset.max(0)), sortBy, sortDir)
             val filter = ListAuctionsFilter(status = status, sellerId = sellerId, page = page)
             auctionService.listAuctions(filter).map[ToResponseMarshallable] { result =>
               Ok -> result.map(AuctionDto(_))

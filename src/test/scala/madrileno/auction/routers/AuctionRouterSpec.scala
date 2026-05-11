@@ -150,8 +150,8 @@ class AuctionRouterSpec extends BaseRouteSpec with TestApplicationLoader {
       queryParameters = (
         q[Option[AuctionStatus]]("status", "Filter by auction status"),
         q[Option[UserId]]("seller-id", "Filter by seller id"),
-        q[Option[AuctionSortField]]("sortBy", "Sort field — CreatedAt | EndsAt | StartingPrice (default CreatedAt)"),
-        q[Option[SortDirection]]("sortDir", "Sort direction — Asc | Desc (default Desc)"),
+        q[Option[AuctionSortField]]("sort-by", "Sort field — CreatedAt | EndsAt | StartingPrice (default CreatedAt)"),
+        q[Option[SortDirection]]("sort-dir", "Sort direction — Asc | Desc (default Desc)"),
         q[Option[Int]]("limit", "Page size, 1–100 (default 20; out-of-range values are clamped)"),
         q[Option[Int]]("offset", "Rows to skip (default 0)")
       ),
