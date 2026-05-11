@@ -88,7 +88,7 @@ class AuctionRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matchers
       }
     }
 
-    "findPageByFilter returns the page (ordered, with the id tie-break) plus the matching total" in withRollback {
+    "findPageByFilter returns the requested page in order plus the matching total" in withRollback {
       val seller = TestData.user()
       val older  = TestData.auction(sellerId = seller.id, createdAt = Instant.parse("2026-01-01T00:00:00Z"))
       val middle = TestData.auction(sellerId = seller.id, createdAt = Instant.parse("2026-02-01T00:00:00Z"))
@@ -105,6 +105,25 @@ class AuctionRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matchers
         val (rows, total) = result
         rows.map(_.id) shouldBe List(newer.id, middle.id)
         total shouldBe 3L
+      }
+    }
+
+    "findPageByFilter breaks sort-key ties with the primary key, following the sort direction" in withRollback {
+      val seller = TestData.user()
+      val at     = Instant.parse("2026-02-01T00:00:00Z")
+      val a      = TestData.auction(sellerId = seller.id, createdAt = at)
+      val b      = TestData.auction(sellerId = seller.id, createdAt = at)
+      def filterBy(dir: SortDirection) =
+        AuctionRowFilter(sellerId = p.equal(seller.id), page = Some(PageRequest(Limit(10), Offset(0), AuctionSortField.CreatedAt, dir)))
+      for {
+        _    <- userRepo.create(seller, Instant.now())
+        _    <- auctionRepo.save(a)
+        _    <- auctionRepo.save(b)
+        asc  <- auctionFilteringRepo.findPageByFilter(filterBy(SortDirection.Asc))
+        desc <- auctionFilteringRepo.findPageByFilter(filterBy(SortDirection.Desc))
+      } yield {
+        asc._1.map(_.id).toSet shouldBe Set(a.id, b.id)
+        desc._1.map(_.id) shouldBe asc._1.map(_.id).reverse
       }
     }
 

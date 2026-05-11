@@ -12,10 +12,9 @@ import madrileno.user.repositories.UserRepository
 import madrileno.utils.crypto.IdGenerator
 import madrileno.utils.db.transactor.{DB, DBInTransaction, Transactor}
 import madrileno.utils.events.EventBus
-import madrileno.utils.http.Page
 import madrileno.utils.mailer.{Language, Mailer}
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
-import madrileno.utils.pagination.PageRequest
+import madrileno.utils.pagination.{Page, PageRequest}
 import madrileno.utils.task.{CronExpression, Schedule, Task}
 import pl.iterators.sealedmonad.syntax.*
 

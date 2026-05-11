@@ -1,4 +1,4 @@
-package madrileno.utils.http
+package madrileno.utils.pagination
 
 import madrileno.utils.json.JsonProtocol.*
 

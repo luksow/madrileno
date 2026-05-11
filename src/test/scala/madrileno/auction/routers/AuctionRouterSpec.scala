@@ -8,9 +8,9 @@ import madrileno.auth.domain.AuthContext
 import madrileno.support.{BaseRouteSpec, TestApplicationLoader, TestData}
 import madrileno.user.domain.{User, UserId}
 import madrileno.utils.db.transactor.DB
-import madrileno.utils.http.{Error, Page}
+import madrileno.utils.http.Error
 import madrileno.utils.json.JsonProtocol.*
-import madrileno.utils.pagination.SortDirection
+import madrileno.utils.pagination.{Page, SortDirection}
 import org.http4s.EntityDecoder
 import org.http4s.Method.*
 import org.http4s.Status.*
@@ -145,7 +145,7 @@ class AuctionRouterSpec extends BaseRouteSpec with TestApplicationLoader {
     supports(
       GET,
       description =
-        "List auctions (paginated). Filter by status / seller; page with `limit` (1–100, default 20) + `offset`; sort by `createdAt` / `endsAt` / `startingPrice`, `Asc` / `Desc` (default `createdAt` `Desc`), with `id` as a stable tie-break.",
+        "List auctions (paginated). Filter by status / seller; page with `limit` (1–100, default 20) + `offset`; sort by `CreatedAt` / `EndsAt` / `StartingPrice`, `Asc` / `Desc` (default `CreatedAt` `Desc`), with `id` as a stable tie-break.",
       summary = "Unauthenticated: a page of auctions, optionally filtered and sorted",
       queryParameters = (
         q[Option[AuctionStatus]]("status", "Filter by auction status"),
