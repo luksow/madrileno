@@ -468,6 +468,71 @@ Two route trees: `routes` is public (list + get), `authedRoutes(auth)` requires 
 - ownership/access → 403
 - input shape → 400 (most 400s happen at DTO decode time, before your handler runs)
 
+## Step 5.5 — Pagination, when the list can grow
+
+The `list` route above returns every match — fine for a small table, wrong once it grows. List endpoints in this codebase are offset-paginated; [http.md](http.md) is the full reference, but here's the diff to paginate the product list, layer by layer. (`Page` / `PageRequest` / `SortDirection` live in `madrileno.utils.pagination`; `PageableSqlFilter` in `madrileno.utils.db.dsl`.)
+
+**Domain** — the columns the client may sort by, as an enum (the allow-list — an unknown value is a 400, never a free-form `ORDER BY`):
+
+```scala
+enum ProductSortField { case CreatedAt, Name, Price }
+```
+
+**Repo** — `ProductRowFilter` mixes in `PageableSqlFilter[ProductSortField]`, gains a `page` field, and implements `pageRequest` / `sortColumnFor` / `tieBreakColumn`:
+
+```scala
+private[repositories] final case class ProductRowFilter(
+  id: SqlPredicate[ProductId] = p.any,
+  name: SqlPredicate[ProductName] = p.any,
+  deletedAt: SqlPredicate[Instant] = p.isNull,
+  page: Option[PageRequest[ProductSortField]] = None)
+    extends PageableSqlFilter[ProductSortField] {
+  override def filterFragment: AppliedFragment =
+    fromPredicates((id -> ProductRowTable.id, name -> ProductRowTable.name, deletedAt -> ProductRowTable.deletedAt))
+  override protected def pageRequest: Option[PageRequest[ProductSortField]] = page
+  override protected def tieBreakColumn: Column[?]                          = ProductRowTable.id
+  override protected def sortColumnFor(field: ProductSortField): Column[?] = field match {
+    case ProductSortField.CreatedAt => ProductRowTable.createdAt
+    case ProductSortField.Name      => ProductRowTable.name
+    case ProductSortField.Price     => ProductRowTable.price
+  }
+}
+```
+
+Note that `filterFragment` switches from the `SqlFilterDerivation.filterFragment(this, cols)` macro to `fromPredicates((pred -> col, …))`: the macro derives over the case class's fields and can't see past the extra `page` field. (`fromPredicates` is the lower-level primitive the macro is built on; it's already on `SqlFilter`.) `PageableSqlFilter` appends the primary key — same direction — as a tie-break to whatever sort the client picked, so paging never silently skips or duplicates rows on equal keys.
+
+The repo `list` takes the page and returns `(rows, total)`:
+
+```scala
+def list(name: Option[ProductName], page: PageRequest[ProductSortField]): DB[(List[Product], Long)] = {
+  val filter = ProductRowFilter(name = name.fold(p.any[ProductName])(p.equal), page = Some(page))
+  repository.findPageByFilter(filter).map { case (rows, total) => (rows.map(_.toProduct), total) }
+}
+```
+
+**Service** — wraps it in `Page[Product]`:
+
+```scala
+def listProducts(name: Option[ProductName], page: PageRequest[ProductSortField]): IO[Page[Product]] =
+  transactor.inSession(productRepository.list(name, page)).map { case (rows, total) =>
+    Page(rows, total, page.limitValue, page.offsetValue)
+  }
+```
+
+**Router** — add `& paginated(ProductSortField.CreatedAt)` (the `BaseRouter` directive that pulls `?sort-by` / `?sort-dir` / `?limit` / `?offset`, clamping the last two), and map the `Page` through to DTOs:
+
+```scala
+(get & path("products") & parameter("name".as[ProductName].?) & paginated(ProductSortField.CreatedAt) & pathEndOrSingleSlash) { (name, page) =>
+  complete {
+    productService.listProducts(name, page).map[ToResponseMarshallable](result => Ok -> result.map(ProductDto(_)))
+  }
+}
+```
+
+**Specs** — the repo/service list tests now destructure `(rows, total)`; the router spec's `queryParameters` gain `q[Option[ProductSortField]]("sort-by", …)` / `q[Option[SortDirection]]("sort-dir", …)` / `q[Option[Int]]("limit", …)` / `q[Option[Int]]("offset", …)` and `respondsWith[Page[ProductDto]]`.
+
+That's offset pagination — right for a catalogue ("page 4 of 12"). For a high-write feed (a bid stream, an activity log) the right tool is keyset/cursor pagination instead: `KeysetSqlFilter[S, I]` + the `cursorPaginated` directive + the `Cursor[A]` envelope — same idea, no `COUNT(*)`, no skipped rows under concurrent inserts. See [http.md](http.md).
+
 ## Step 6 — TestData factories
 
 Spec files seed DB state through a central `TestData` object. Extend it now so repository/service/router specs can use `TestData.product(...)` and `TestData.randomProductId()`.
@@ -1011,7 +1076,7 @@ Skim this list. Each item is something a reviewer (human or Copilot) has flagged
 - [ ] Public list/find methods use typed args (e.g. `status: Option[Status]`); the repo builds the `RowFilter` internally
 - [ ] `RowFilter` defaults exclude soft-deleted rows (`deletedAt = p.isNull`)
 - [ ] Modify paths go through `update(id, f: Aggregate => Either[E, Aggregate])`; the persisting overload is `private`
-- [ ] Naming: `find` returns `Option`, `list` returns `List`
+- [ ] Naming: `find` returns `Option`, `list` returns `List` (a paginated `list` returns `(List, Long)` — see Step 5.5)
 - [ ] Any custom raw-SQL query has a matching index in the migration
 
 **Service**
@@ -1026,6 +1091,7 @@ Skim this list. Each item is something a reviewer (human or Copilot) has flagged
 - [ ] Every service result maps to a specific status code
 - [ ] Path params use `JavaUUID.as[OpaqueId]`
 - [ ] DTOs derive `Decoder, Encoder.AsObject` and use opaque domain types directly
+- [ ] A list endpoint that can grow is paginated — `paginated(...)` + `PageableSqlFilter` + `Page[Dto]`, or `cursorPaginated` + `KeysetSqlFilter` + `Cursor[A]` for a feed (Step 5.5)
 
 **Module wiring**
 - [ ] Trait extends the right providers (`RouteProvider`, `AuthRouteProvider`, optionally `RecurringTaskProvider`, `MailPreviewProvider`)
