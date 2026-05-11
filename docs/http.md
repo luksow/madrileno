@@ -156,6 +156,16 @@ Admin is not a module — `ApplicationLoader` gates the whole subtree once and m
 
 Routers that need request-rate caps mix in `RateLimitDirectives` and use `rateLimited(name, to, within, by = …)` around a `complete`. The `name` is the bucket key; `to` is the burst, `within` the window; `by` keys per-user (`_ => "user:..."`) or per-IP (default). Implementation lives in `RateLimiterRuntime` and is in-memory by default — see [rate-limiting.md](rate-limiting.md) to swap it for Redis.
 
+## Pagination
+
+List endpoints are offset-paginated. The reusable pieces are in `madrileno.utils.http`: `Limit` / `Offset` (validated opaque types), `SortDirection` (`Asc` / `Desc`), `PageRequest[F]` (limit + offset + a `sortBy: F` field-enum + direction), and the response envelope `Page[A] { items, total, limit, offset }` (`derives Encoder.AsObject, Decoder` — generic, like `Error[T]`).
+
+`GET /v1/auctions` is the worked example: `?limit=` (1–100, default 20, out-of-range values are clamped — not rejected), `?offset=` (default 0), `?sortBy=` (a per-endpoint enum — `CreatedAt | EndsAt | StartingPrice` here, default `CreatedAt`), `?sortDir=` (default `Desc`). An unknown `sortBy`/`sortDir` value is a 400 (kebs derives the param codec from the enum). The repository appends the primary key (`id ASC`) as a tie-break to whatever sort the client picked — without it, paging silently skips or duplicates rows when the sort keys tie. The total is one extra `COUNT(*)` with the same `WHERE`; the client derives `totalPages` / `hasMore` from `total`, `limit`, `offset`.
+
+To add it to another list endpoint: define a `SortField` enum for it, take a `PageRequest[ThatSortField]` in the service command, and have the repository build `ORDER BY <col> <dir>, <pk> ASC` + `OFFSET ? LIMIT ?` and a sibling `COUNT(*)`. The `SqlFilter` DSL already exposes `orderByFragment` / `offsetLimitFragment` hooks for the common `findByFilter` path; the auctions endpoint builds them inline because its `list` query is a hand-written join (for `currentPrice`).
+
+**Offset, not cursor — for now.** Offset is right for a catalogue ("jump to page 4"). It has two known weaknesses: deep offsets are O(offset) (irrelevant until the table is large *and* clients page far), and concurrent inserts can shift rows between pages (mildly annoying for infinite scroll, invisible for a paged grid). The fix where it matters — high-write feeds, e.g. bid history — is keyset/cursor pagination (`WHERE (sortKey, id) < (?, ?)`, response `{ items, nextCursor }`, no `total`). `Page[A]` and a future `Cursor[A]` are deliberately separate types so neither constrains the other.
+
 ## Testing routes
 
 Two flavours:

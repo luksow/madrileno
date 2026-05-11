@@ -12,6 +12,7 @@ import madrileno.user.repositories.UserRepository
 import madrileno.utils.crypto.IdGenerator
 import madrileno.utils.db.transactor.{DB, DBInTransaction, Transactor}
 import madrileno.utils.events.EventBus
+import madrileno.utils.http.{Page, PageRequest}
 import madrileno.utils.mailer.{Language, Mailer}
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
 import madrileno.utils.task.{CronExpression, Schedule, Task}
@@ -90,9 +91,11 @@ class AuctionService(
       }
   }
 
-  def listAuctions(filter: ListAuctionsFilter): IO[List[AuctionView]] = {
+  def listAuctions(filter: ListAuctionsFilter): IO[Page[AuctionView]] = {
     transactor.inSession {
-      auctionRepository.list(filter.status, filter.sellerId).map(_.map { case (auction, price) => AuctionView(auction, price) })
+      auctionRepository.list(filter.status, filter.sellerId, filter.page).map { case (rows, total) =>
+        Page(rows.map { case (auction, price) => AuctionView(auction, price) }, total, filter.page.limitValue, filter.page.offsetValue)
+      }
     }
   }
 
@@ -256,7 +259,10 @@ class AuctionService(
 
 }
 
-final case class ListAuctionsFilter(status: Option[AuctionStatus] = None, sellerId: Option[UserId] = None)
+final case class ListAuctionsFilter(
+  status: Option[AuctionStatus] = None,
+  sellerId: Option[UserId] = None,
+  page: PageRequest[AuctionSortField] = PageRequest.firstPageBy(AuctionSortField.CreatedAt))
 
 final case class CreateAuctionCommand(
   sellerId: UserId,

@@ -5,6 +5,7 @@ import madrileno.auction.domain.*
 import madrileno.user.domain.UserId
 import madrileno.utils.db.dsl.*
 import madrileno.utils.db.transactor.{DB, DBInTransaction}
+import madrileno.utils.http.{PageRequest, SortDirection}
 import skunk.*
 import skunk.codec.all.*
 import skunk.implicits.*
@@ -121,14 +122,18 @@ class AuctionRepository {
   def findForUpdate(id: AuctionId): DBInTransaction[Option[Auction]] =
     repository.findById(id, Lock.ForUpdate).map(_.map(_.toAuction))
 
-  def list(status: Option[AuctionStatus], sellerId: Option[UserId]): DB[List[(Auction, Price)]] = {
-    val session  = summon[Session[IO]]
-    val filter   = AuctionRowFilter(status = status.fold(p.any[AuctionStatus])(p.equal), sellerId = sellerId.fold(p.any[UserId])(p.equal))
-    val applied  = filter.filterFragment
-    val orderBy  = filter.orderByFragment
-    val offLim   = filter.offsetLimitFragment
-    val rowCodec = AuctionRowTable.c ~ BidRowTable.amount.c
-    val query = sql"""
+  def list(
+    status: Option[AuctionStatus],
+    sellerId: Option[UserId],
+    page: PageRequest[AuctionSortField]
+  ): DB[(List[(Auction, Price)], Long)] = {
+    val session   = summon[Session[IO]]
+    val filter    = AuctionRowFilter(status = status.fold(p.any[AuctionStatus])(p.equal), sellerId = sellerId.fold(p.any[UserId])(p.equal))
+    val applied   = filter.filterFragment
+    val orderBy   = orderByFragment(page.sortBy, page.sortDir)
+    val offsetLim = sql"OFFSET $int8 LIMIT $int8" (page.offsetValue.toLong, page.limitValue.toLong)
+    val rowCodec  = AuctionRowTable.c ~ BidRowTable.amount.c
+    val rowsQuery = sql"""
       SELECT ${AuctionRowTable.*("a")}, COALESCE(b.amount, a.${AuctionRowTable.startingPrice.n})
       FROM ${AuctionRowTable.n} a
       LEFT JOIN LATERAL (
@@ -140,9 +145,26 @@ class AuctionRepository {
       ) b ON TRUE
       WHERE ${applied.fragment}
       $orderBy
-      ${offLim.fragment}
+      ${offsetLim.fragment}
     """.query(rowCodec)
-    session.execute(query)(applied.argument, offLim.argument).map(_.map { case (row, price) => (row.toAuction, price) })
+    val countQuery = sql"SELECT COUNT(*) FROM ${AuctionRowTable.n} WHERE ${applied.fragment}".query(int8)
+    for {
+      rows  <- session.execute(rowsQuery)(applied.argument, offsetLim.argument)
+      total <- session.unique(countQuery)(applied.argument)
+    } yield (rows.map { case (row, price) => (row.toAuction, price) }, total)
+  }
+
+  private def orderByFragment(sortBy: AuctionSortField, sortDir: SortDirection): Fragment[Void] = {
+    val column = sortBy match {
+      case AuctionSortField.CreatedAt     => AuctionRowTable.createdAt
+      case AuctionSortField.EndsAt        => AuctionRowTable.endsAt
+      case AuctionSortField.StartingPrice => AuctionRowTable.startingPrice
+    }
+    val direction = sortDir match {
+      case SortDirection.Asc  => sql"ASC"
+      case SortDirection.Desc => sql"DESC"
+    }
+    sql"ORDER BY ${column.n} $direction, ${AuctionRowTable.id.n} ASC"
   }
 
   def listExpired(now: Instant): DB[List[AuctionId]] = {

@@ -8,7 +8,7 @@ import madrileno.auction.services.*
 import madrileno.auth.domain.AuthContext
 import madrileno.user.domain.UserId
 import madrileno.utils.events.EventBus
-import madrileno.utils.http.{BaseRouter, RateLimitDirectives, RateLimiter, RateLimiterRuntime}
+import madrileno.utils.http.{BaseRouter, Limit, Offset, PageRequest, RateLimitDirectives, RateLimiter, RateLimiterRuntime, SortDirection}
 import madrileno.utils.observability.TelemetryContext
 import org.http4s.Request
 import org.http4s.server.websocket.WebSocketBuilder2
@@ -29,15 +29,31 @@ class AuctionRouter(
   override protected val rateLimiter: RateLimiter = rateLimiterRuntime.rateLimiter
 
   val routes: Route = {
-    (get & path("auctions") & pathEndOrSingleSlash & parameters("status".as[AuctionStatus].?, "seller-id".as[UserId].?)) { (status, sellerId) =>
-      rateLimited("auctions.list", to = 60, within = 1.minute) {
-        complete {
-          val filter = ListAuctionsFilter(status = status, sellerId = sellerId)
-          auctionService.listAuctions(filter).map[ToResponseMarshallable] { views =>
-            Ok -> views.map(AuctionDto(_))
+    (get & path("auctions") & pathEndOrSingleSlash & parameters(
+      "status".as[AuctionStatus].?,
+      "seller-id".as[UserId].?,
+      "sortBy".as[AuctionSortField].withDefault(AuctionSortField.CreatedAt),
+      "sortDir".as[SortDirection].withDefault(SortDirection.Desc),
+      "limit".as[Int].withDefault(Limit.Default.unwrap),
+      "offset".as[Int].withDefault(0)
+    )) {
+      (
+        status,
+        sellerId,
+        sortBy,
+        sortDir,
+        limit,
+        offset
+      ) =>
+        rateLimited("auctions.list", to = 60, within = 1.minute) {
+          complete {
+            val page   = PageRequest(Limit(limit.max(1).min(Limit.Max)), Offset(offset.max(0)), sortBy, sortDir)
+            val filter = ListAuctionsFilter(status = status, sellerId = sellerId, page = page)
+            auctionService.listAuctions(filter).map[ToResponseMarshallable] { result =>
+              Ok -> result.map(AuctionDto(_))
+            }
           }
         }
-      }
     } ~
       (get & path("auctions" / JavaUUID.as[AuctionId]) & pathEndOrSingleSlash) { auctionId =>
         rateLimited("auctions.get", to = 120, within = 1.minute) {

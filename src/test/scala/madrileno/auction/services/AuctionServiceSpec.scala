@@ -11,6 +11,7 @@ import madrileno.support.{TestData, TestGivens, TestMailpit, TestTransactor}
 import madrileno.user.domain.{User, UserId}
 import madrileno.user.repositories.UserRepository
 import madrileno.utils.events.{EventBus, EventBusRuntime}
+import madrileno.utils.http.{Limit, Offset, PageRequest, SortDirection}
 import madrileno.utils.mailer.*
 import madrileno.utils.observability.TelemetryContext
 import madrileno.utils.task.*
@@ -188,7 +189,34 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
         a2     <- createAuctionOrFail(createCommand(seller.id))
         open   <- service.listAuctions(ListAuctionsFilter(status = Some(AuctionStatus.Open)))
       } yield {
-        open.map(_.id) should contain(a2.id)
+        open.items.map(_.id) should contain(a2.id)
+      }
+    }
+
+    "paginate and sort auctions" in {
+      val seller = TestData.user()
+      val older  = TestData.auction(sellerId = seller.id, createdAt = Instant.parse("2026-01-01T00:00:00Z"))
+      val middle = TestData.auction(sellerId = seller.id, createdAt = Instant.parse("2026-02-01T00:00:00Z"))
+      val newer  = TestData.auction(sellerId = seller.id, createdAt = Instant.parse("2026-03-01T00:00:00Z"))
+      def page(
+        limit: Int,
+        offset: Int,
+        dir: SortDirection
+      ) =
+        ListAuctionsFilter(sellerId = Some(seller.id), page = PageRequest(Limit(limit), Offset(offset), AuctionSortField.CreatedAt, dir))
+      for {
+        _     <- seedUser(seller)
+        _     <- transactor.inSession(auctionRepo.save(older) *> auctionRepo.save(middle) *> auctionRepo.save(newer))
+        page1 <- service.listAuctions(page(2, 0, SortDirection.Desc))
+        page2 <- service.listAuctions(page(2, 2, SortDirection.Desc))
+        asc   <- service.listAuctions(page(2, 0, SortDirection.Asc))
+      } yield {
+        page1.total shouldBe 3L
+        page1.limit shouldBe 2
+        page1.offset shouldBe 0
+        page1.items.map(_.id) shouldBe List(newer.id, middle.id)
+        page2.items.map(_.id) shouldBe List(older.id)
+        asc.items.map(_.id) shouldBe List(older.id, middle.id)
       }
     }
 

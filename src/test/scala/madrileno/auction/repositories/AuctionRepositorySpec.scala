@@ -4,6 +4,7 @@ import cats.effect.testing.scalatest.AsyncIOSpec
 import madrileno.auction.domain.*
 import madrileno.support.{TestData, TestTransactor}
 import madrileno.user.repositories.UserRepository
+import madrileno.utils.http.PageRequest
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AsyncWordSpec
 
@@ -49,10 +50,12 @@ class AuctionRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matchers
         _      <- userRepo.create(seller, Instant.now())
         _      <- auctionRepo.save(open)
         _      <- auctionRepo.save(closed)
-        result <- auctionRepo.list(status = Some(AuctionStatus.Open), sellerId = None)
+        result <- auctionRepo.list(status = Some(AuctionStatus.Open), sellerId = None, page = PageRequest.firstPageBy(AuctionSortField.CreatedAt))
       } yield {
-        result.map(_._1.id) should contain only open.id
-        result.map(_._2) should contain only Price(BigDecimal(100))
+        val (rows, total) = result
+        rows.map(_._1.id) should contain only open.id
+        rows.map(_._2) should contain only Price(BigDecimal(100))
+        total shouldBe 1L
       }
     }
 
@@ -72,10 +75,12 @@ class AuctionRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matchers
         _      <- auctionRepo.save(a2)
         _      <- bidRepo.save(lowBid)
         _      <- bidRepo.save(highBid)
-        result <- auctionRepo.list(status = None, sellerId = Some(seller1.id))
+        result <- auctionRepo.list(status = None, sellerId = Some(seller1.id), page = PageRequest.firstPageBy(AuctionSortField.CreatedAt))
       } yield {
-        result.map(_._1.id) should contain only a1.id
-        result.map(_._2) should contain only Price(BigDecimal(225))
+        val (rows, total) = result
+        rows.map(_._1.id) should contain only a1.id
+        rows.map(_._2) should contain only Price(BigDecimal(225))
+        total shouldBe 1L
       }
     }
 
