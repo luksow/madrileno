@@ -76,7 +76,6 @@ class JwtServiceSpec extends AnyWordSpec with Matchers {
 
     "return ParsingFailure for a valid JWT with wrong payload structure" in {
       val now = Instant.now()
-      // Encode a string instead of AuthContext
       val jwt = service.encode("just a string", now)(using Encoder.encodeString)
 
       service.decode[AuthContext](jwt.toString) match {

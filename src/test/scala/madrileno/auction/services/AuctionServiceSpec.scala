@@ -62,7 +62,6 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
     transactor.inSession { userRepo.create(user, Instant.now()) }
   }
 
-  // Convenience for tests that expect creation to succeed
   private def createAuctionOrFail(command: CreateAuctionCommand): IO[AuctionView] = {
     service.createAuction(command).map {
       case CreateAuctionResult.Created(view) => view
