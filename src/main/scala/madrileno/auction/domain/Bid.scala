@@ -30,7 +30,7 @@ final case class BidHistoryEntry(
 
 object BidHistoryEntry {
   def fromBids(bids: List[Bid], currency: Currency): List[BidHistoryEntry] = {
-    val byTime      = bids.sortBy(bid => (bid.createdAt.getEpochSecond, bid.createdAt.getNano, bid.id.unwrap.toString))
+    val byTime      = bids.sortBy(bid => (bid.createdAt.getEpochSecond, bid.createdAt.getNano, bid.id.toString))
     val refByBidder = byTime.map(_.bidderId).distinct.zipWithIndex.map { case (bidderId, i) => bidderId -> BidderRef(i + 1) }.toMap
     byTime.reverse.map(bid => BidHistoryEntry(bid.amount, currency, refByBidder(bid.bidderId), bid.createdAt))
   }
