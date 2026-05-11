@@ -80,7 +80,6 @@ private[repositories] final case class UserAuthRowFilter(
   )
 }
 
-/** Timestamps are owned by the caller — repository does not read the clock. */
 class UserAuthRepository {
   def save(userAuth: UserAuth, now: Instant): DB[UserAuth] = {
     val row = UserAuthRow(userAuth, now)

@@ -41,7 +41,6 @@ trait BaseRouteSpec
   override def performRequest(routes: HttpRoutes[IO], request: Request[IO]): HttpResponse =
     routes.orNotFound.run(request).unsafeRunSync()
 
-  // Shared auth helpers for route specs
   protected val bearer: HttpBearer           = HttpBearer(bearerFormat = "JWT")
   protected val bearerScheme: SecurityScheme = SecurityScheme("bearer", bearer)
 
