@@ -48,6 +48,16 @@ class AuctionRouter(
             }
           }
         }
+      } ~
+      (get & path("auctions" / JavaUUID.as[AuctionId] / "bids") & pathEndOrSingleSlash) { auctionId =>
+        rateLimited("auctions.bids", to = 120, within = 1.minute) {
+          complete {
+            auctionService.listBids(auctionId).map[ToResponseMarshallable] {
+              case Some(entries) => Ok -> entries.map(BidHistoryEntryDto(_))
+              case None          => error(NotFound, "auction-not-found", "Auction not found")
+            }
+          }
+        }
       }
   }
 

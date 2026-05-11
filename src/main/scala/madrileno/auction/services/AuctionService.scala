@@ -96,6 +96,20 @@ class AuctionService(
     }
   }
 
+  def listBids(auctionId: AuctionId): IO[Option[List[BidHistoryEntry]]] = {
+    transactor.inSession {
+      auctionRepository.find(auctionId).flatMap {
+        case None => IO.pure(None)
+        case Some(auction) =>
+          bidRepository.listByAuction(auctionId).map { bids =>
+            val byTime      = bids.sortBy(_.createdAt.toEpochMilli)
+            val refByBidder = byTime.map(_.bidderId).distinct.zipWithIndex.map { case (id, i) => id -> (i + 1) }.toMap
+            Some(byTime.reverse.map(bid => BidHistoryEntry(bid.amount, auction.currency, refByBidder(bid.bidderId), bid.createdAt)))
+          }
+      }
+    }
+  }
+
   def placeBid(command: PlaceBidCommand): IO[PlaceBidResult] = {
     transactor
       .inTransaction {

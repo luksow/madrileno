@@ -193,6 +193,52 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
       }
     }
 
+    "list bids newest-first with per-auction bidder pseudonyms" in {
+      for {
+        seller  <- seedUser()
+        bidderA <- seedUser()
+        bidderB <- seedUser()
+        auction <- createAuctionOrFail(createCommand(seller.id))
+        _ <- transactor.inSession {
+               bidRepo.save(
+                 TestData.bid(
+                   auctionId = auction.id,
+                   bidderId = bidderA.id,
+                   amount = Price(BigDecimal(110)),
+                   createdAt = Instant.parse("2026-01-01T00:00:01Z")
+                 )
+               ) *>
+                 bidRepo.save(
+                   TestData.bid(
+                     auctionId = auction.id,
+                     bidderId = bidderB.id,
+                     amount = Price(BigDecimal(120)),
+                     createdAt = Instant.parse("2026-01-01T00:00:02Z")
+                   )
+                 ) *>
+                 bidRepo.save(
+                   TestData.bid(
+                     auctionId = auction.id,
+                     bidderId = bidderA.id,
+                     amount = Price(BigDecimal(130)),
+                     createdAt = Instant.parse("2026-01-01T00:00:03Z")
+                   )
+                 )
+             }
+        bids <- service.listBids(auction.id)
+      } yield {
+        bids shouldBe defined
+        val entries = bids.get
+        entries.map(_.amount.unwrap) shouldBe List(BigDecimal(130), BigDecimal(120), BigDecimal(110))
+        entries.map(_.bidderRef) shouldBe List(1, 2, 1)
+        entries.map(_.currency).toSet shouldBe Set(eur)
+      }
+    }
+
+    "return None for listBids on a non-existent auction" in {
+      service.listBids(TestData.randomAuctionId()).map(_ shouldBe None)
+    }
+
     "place a bid on an open auction" in {
       for {
         seller  <- seedUser()
