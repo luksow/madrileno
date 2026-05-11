@@ -103,6 +103,30 @@ def routes(wsb): Route =
 
 Logging and tracing are layered on by middleware in `Main`, so individual routers don't have to call them.
 
+## CORS
+
+http4s' `CORS` middleware wraps the whole `HttpApp` in `Main` (so preflight `OPTIONS` is answered before routing). The `cors` config block:
+
+```hocon
+cors {
+  enabled = true                     // CORS_ENABLED=false drops the middleware entirely
+  allowed-origins = ""               // comma-separated origins; "*" = any; empty = derive (below) — CORS_ALLOWED_ORIGINS
+  max-age = 1h                       // how long browsers may cache the preflight — CORS_MAX_AGE
+}
+```
+
+`allowed-origins` resolution (in `Cors.policy`):
+
+- an explicit list (`https://app.example.com,https://www.example.com`) → exactly those origins
+- `*` → any origin
+- empty (the default) → **any origin in dev** (`app.environment = "dev"`), otherwise **the host of `http.base-url`** — a safe fallback that's zero-config when the SPA and the API share an origin behind one proxy, and never silently `*` in production
+
+Methods and request headers are allowed wildcard — what a typical SPA wants; lock them down in `Cors.policy` if you need to.
+
+**No credentials.** `Access-Control-Allow-Credentials` is not set: auth here is a client-set `Authorization: Bearer <jwt>`, which doesn't need it. If you add cookie-based auth, turn credentials on in `Cors.policy` **and** switch `allowed-origins` to a specific list — a `*` origin with credentials is rejected by browsers.
+
+**Production:** your frontend is usually a different origin from the API, so set `CORS_ALLOWED_ORIGINS` to your real frontend origin(s). The `base-url` fallback only covers the same-origin case.
+
 ## OpenAPI and Swagger UI
 
 baklava generates the OpenAPI spec by observing stir routes during the test suite. Each `RouterSpec` is a baklava DSL spec that describes the routes' inputs, outputs, and example bodies; running `sbt test` produces:
