@@ -12,7 +12,7 @@ case class AuctionCreatedDto(
   startingPrice: Price,
   currency: Currency,
   endsAt: Instant,
-  at: Instant)
+  createdAt: Instant)
     derives Encoder.AsObject,
       Decoder
 

@@ -102,7 +102,7 @@ def authedRoutes(authContext: AuthContext): Route = {
 
 5. **Server mints the internal JWT and a refresh token.** The JWT signs an `AuthContext` with `jwt.secret`, valid for `jwt.valid-for` (default 5 minutes). The refresh token is a row in `refresh_token` keyed by a UUID; the client gets back the row's UUID, the server keeps the rest (user-agent, IP, created-at, used-at).
 
-6. **Result:** `200 { jwt, refreshTokenId }` (returning user) or `201` (newly created). Subsequent requests carry `Authorization: Bearer <jwt>`.
+6. **Result:** `200 { jwt, refreshToken, userCreated }`. `userCreated` is `true` when this call provisioned a new `User` account (first-time login), `false` for a returning user — clients use it to branch their UX (show onboarding vs. just log in). The status code is `200` either way; the "was a user created" signal lives in the body so a typed client (ts-rest, OpenAPI codegen) sees one response shape, not two keyed on status. Subsequent requests carry `Authorization: Bearer <jwt>`.
 
 ## Refreshing
 

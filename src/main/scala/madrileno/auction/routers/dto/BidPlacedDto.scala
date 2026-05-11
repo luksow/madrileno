@@ -10,7 +10,7 @@ case class BidPlacedDto(
   auctionId: AuctionId,
   amount: Price,
   currency: Currency,
-  at: Instant)
+  createdAt: Instant)
     derives Encoder.AsObject,
       Decoder
 

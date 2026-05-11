@@ -91,7 +91,7 @@ object AuctionEventEnvelope {
 Two reasons to project this way:
 
 - **The wire shape is a public contract.** Consumers depend on it. Renaming an enum case shouldn't break the frontend.
-- **Internal events carry too much.** The domain enum knows about `AuctionEvent.BidPlaced(auctionId, amount, currency, at)` — the full audit trail. The DTO sends the bidder's display name, not their internal user id. Don't expose internals just because circe will serialize them.
+- **Internal events carry too much.** The domain enum knows about `AuctionEvent.BidPlaced(auctionId, amount, currency, createdAt)`. The DTO deliberately drops the bidder identity (auction privacy) and keeps `createdAt` consistent with the rest of the public API. Don't expose internals just because circe will serialize them.
 
 The `kind` discriminator is a flat string so naive clients can switch on it without a JSON-schema'd union type. The `data` payload is the per-case DTO, encoded with circe.
 

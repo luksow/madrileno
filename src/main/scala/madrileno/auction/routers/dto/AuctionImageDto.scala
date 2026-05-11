@@ -9,6 +9,7 @@ import org.http4s.headers.`Content-Type`
 import java.time.Instant
 
 case class VariantDto(
+  spec: String,
   url: String,
   width: Width,
   height: Height,
@@ -27,7 +28,7 @@ case class AuctionImageDto(
   uploadedAt: Instant,
   width: Option[Width],
   height: Option[Height],
-  variants: Map[String, VariantDto])
+  variants: List[VariantDto])
     derives Encoder.AsObject,
       Decoder
 
@@ -49,15 +50,16 @@ object AuctionImageDto {
       width = image.width,
       height = image.height,
       variants = variants
+        .sortBy(_.spec.ordinal)
         .map(variant =>
-          variant.spec.toString -> VariantDto(
+          VariantDto(
+            spec = variant.spec.toString,
             url = s"/$apiPrefix/auctions/${image.auctionId}/images/${image.id}/variants/${variant.spec}/content",
             width = variant.width,
             height = variant.height,
             format = variant.format.toString
           )
         )
-        .toMap
     )
 }
 

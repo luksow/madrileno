@@ -9,7 +9,7 @@ import java.util.Currency
 
 enum AuctionEvent derives EventCodec {
   def auctionId: AuctionId
-  def at: Instant
+  def createdAt: Instant
 
   case AuctionCreated(
     auctionId: AuctionId,
@@ -17,21 +17,21 @@ enum AuctionEvent derives EventCodec {
     startingPrice: Price,
     currency: Currency,
     endsAt: Instant,
-    at: Instant)
+    createdAt: Instant)
 
   case BidPlaced(
     auctionId: AuctionId,
     amount: Price,
     currency: Currency,
-    at: Instant)
+    createdAt: Instant)
 
-  case AuctionCancelled(auctionId: AuctionId, at: Instant)
+  case AuctionCancelled(auctionId: AuctionId, createdAt: Instant)
 
   case AuctionClosed(
     auctionId: AuctionId,
     winningBid: Option[Price],
     currency: Currency,
-    at: Instant)
+    createdAt: Instant)
 }
 
 object AuctionEvent {
@@ -41,13 +41,11 @@ object AuctionEvent {
       .into[AuctionCreated]
       .enableMethodAccessors
       .withFieldRenamed(_.id, _.auctionId)
-      .withFieldRenamed(_.createdAt, _.at)
       .transform
 
   def bidPlaced(bid: Bid, auction: Auction): BidPlaced =
     bid
       .into[BidPlaced]
-      .withFieldRenamed(_.createdAt, _.at)
       .withFieldConst(_.currency, auction.currency)
       .transform
 

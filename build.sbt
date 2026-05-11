@@ -130,7 +130,13 @@ inConfig(Test)(
           |  "openapi" : "3.0.1",
           |  "info" : {
           |    "title" : "${name.value}"
-          |  }
+          |  },
+          |  "servers" : [
+          |    {
+          |      "url" : "${sys.env.getOrElse("BASE_URL", "http://localhost:9000")}",
+          |      "description" : "Resolved from BASE_URL at generation time; override per deployment"
+          |    }
+          |  ]
           |}
           |""".stripMargin,
       "ts-rest-package-contract-json" ->

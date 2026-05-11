@@ -107,7 +107,7 @@ class AuctionRouter(
               case PlaceBidResult.CannotBidOnOwnAuction => error(Forbidden, "cannot-bid-on-own-auction", "Cannot bid on your own auction")
               case PlaceBidResult.AlreadyHighestBidder  => error(Conflict, "already-highest-bidder", "You already have the highest bid")
               case PlaceBidResult.BidTooLow(currentHighest) =>
-                error(Conflict, "bid-too-low", s"Bid must be strictly greater than $currentHighest")
+                error(Conflict, "bid-too-low", "Bid is below the current minimum", extension = Map("minAmount" -> currentHighest))
             }
           }
         }

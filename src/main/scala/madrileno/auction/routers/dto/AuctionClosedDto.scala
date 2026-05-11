@@ -10,7 +10,7 @@ case class AuctionClosedDto(
   auctionId: AuctionId,
   winningBid: Option[Price],
   currency: Currency,
-  at: Instant)
+  createdAt: Instant)
     derives Encoder.AsObject,
       Decoder
 

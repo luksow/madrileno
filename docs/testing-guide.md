@@ -130,11 +130,12 @@ supports(GET, securitySchemes = Seq(bearerScheme), ...)(
 
 **POST with request body:**
 ```scala
-onRequest(body = AuthWithFirebaseRequest(FirebaseJwt("test-token")), headers = "127.0.0.1")
-  .respondsWith[AuthenticatedResponse](Created, description = "Created new user")
+onRequest(body = AuthWithFirebaseRequest(FirebaseJwt("test-token")))
+  .respondsWith[AuthenticatedResponse](Ok, description = "Authenticated; a new user account was created")
   .assert { ctx ->
     val response = ctx.performRequest(allRoutes)
     response.body.jwt.toString should not be empty
+    response.body.userCreated shouldBe true
   }
 ```
 
@@ -221,7 +222,7 @@ withSetup {
 Baklava deserializes response bodies and serializes request bodies. DTOs used in `respondsWith[T]` need a circe `Decoder`. DTOs used in `onRequest(body = ...)` need an `Encoder`. Add `derives Decoder` or `derives Encoder.AsObject` alongside the existing derivations:
 
 ```scala
-case class AuthenticatedResponse(jwt: InternalJwt, refreshToken: RefreshTokenId) derives Encoder.AsObject, Decoder
+case class AuthenticatedResponse(jwt: InternalJwt, refreshToken: RefreshTokenId, userCreated: Boolean) derives Encoder.AsObject, Decoder
 case class AuthWithFirebaseRequest(firebaseJwtToken: FirebaseJwt) derives Decoder, Encoder.AsObject
 ```
 
