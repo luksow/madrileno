@@ -1,7 +1,7 @@
 package madrileno.utils.db.dsl
 
 import cats.effect.IO
-import madrileno.utils.pagination.{PageRequest, SortDirection}
+import madrileno.utils.pagination.{CursorRequest, Limit, PageRequest, SortDirection}
 import skunk.*
 import skunk.codec.all.*
 import skunk.implicits.*
@@ -77,6 +77,35 @@ trait PageableSqlFilter[SortField] extends SqlFilter {
     }
 
   override protected def offsetLimit: Option[(Long, Long)] = pageRequest.map(page => (page.offsetValue.toLong, page.limitValue.toLong))
+}
+
+trait KeysetSqlFilter[S, I] extends SqlFilter {
+  protected def keysetCursor: CursorRequest[(S, I)]
+  protected def keysetColumns: (Column[S], Column[I])
+  protected def keysetDirection: SortDirection = SortDirection.Desc
+  protected def baseFilterFragment: AppliedFragment
+
+  def keysetLimit: Limit = keysetCursor.limit
+
+  private def keysetAscending: Boolean = keysetDirection == SortDirection.Asc
+
+  final def filterFragment: AppliedFragment =
+    keysetCursor.after match {
+      case None => baseFilterFragment
+      case Some((sortAfter, idAfter)) =>
+        val (sortCol, idCol) = keysetColumns
+        val keyset =
+          if (keysetAscending) sql"(${sortCol.n}, ${idCol.n}) > (${sortCol.c}, ${idCol.c})" (sortAfter, idAfter)
+          else sql"(${sortCol.n}, ${idCol.n}) < (${sortCol.c}, ${idCol.c})" (sortAfter, idAfter)
+        sql"(" (Void) |+| baseFilterFragment |+| sql")" (Void) |+| AndFragment |+| keyset
+    }
+
+  override def orderByFragment: Fragment[Void] = {
+    val (sortCol, idCol) = keysetColumns
+    orderByColumns(sortCol -> keysetAscending, idCol -> keysetAscending)
+  }
+
+  override def offsetLimitFragment: AppliedFragment = sql"LIMIT $int8" ((keysetCursor.limit.unwrap + 1).toLong)
 }
 
 object SqlFilterDerivation {
@@ -234,6 +263,12 @@ trait FilteringRepository[A, F <: SqlFilter] extends BaseRepository[A] {
       rows  <- findByFilter(filter, lock)
       total <- countByFilter(filter)
     } yield (rows, total)
+
+  def findCursorPageByFilter(filter: F & KeysetSqlFilter[?, ?], lock: Lock = Lock.NoLock)(using session: Session[IO]): IO[(List[A], Boolean)] =
+    findByFilter(filter, lock).map { rows =>
+      val limit = filter.keysetLimit.unwrap
+      (rows.take(limit), rows.sizeIs > limit)
+    }
 
   def findOneByFilter(filter: F, lock: Lock = Lock.NoLock)(using session: Session[IO]): IO[Option[A]] = {
     val appliedFragment = filter.filterFragment

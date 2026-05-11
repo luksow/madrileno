@@ -101,7 +101,7 @@ Each trait gives you a vocabulary of operations.
 | `IdRepository[A, Id]`                   | `create`, `createAll`, `upsert`, `findById`, `findByIds`, `getById`, `existsById`, `update`, `updateById`, `deleteById` |
 | `SoftDeleteRepository[A, Id]`           | extends `IdRepository`. Adds `softDeleteById`, `softDeleteByIds`, `softDeleteAll`, `restoreById`, `findByIdWithDeleted`, `existsByIdWithDeleted`, `purgeDeletedBefore`. Also overrides `baseFilter` so all `find*` ignore soft-deleted rows automatically. |
 | `ForeignIdRepository[A, Id]`            | `findByForeignId`, `findByForeignIds`, `countByForeignId`, `existsByForeignId`, `deleteByForeignId`. Pulls children of a parent by FK. |
-| `FilteringRepository[A, F <: SqlFilter]`| `findByFilter`, `findOneByFilter`, `getByFilter`, `existsByFilter`, `countByFilter`. Scoped queries with a typed `RowFilter`. |
+| `FilteringRepository[A, F <: SqlFilter]`| `findByFilter`, `findOneByFilter`, `getByFilter`, `existsByFilter`, `countByFilter`, `deleteByFilter`. Scoped queries with a typed `RowFilter`. Plus `findPageByFilter` (offset pagination) and `findCursorPageByFilter` (keyset/cursor) — see [http.md](http.md). |
 
 Compose them as needed. `AuctionImageRepository`'s underlying `repository` extends all four:
 
@@ -138,11 +138,13 @@ private[repositories] final case class AuctionImageRowFilter(
       this,
       (AuctionImageRowTable.id, AuctionImageRowTable.auctionId, AuctionImageRowTable.deletedAt)
     )
-  override def orderByFragment: Fragment[Void] = sql"${AuctionImageRowTable.position.n} ASC"
+  override def orderByFragment: Fragment[Void] = orderByColumns(AuctionImageRowTable.position -> true)
 }
 ```
 
 Predicate constructors live on `p`: `p.equal(x)`, `p.in(xs)`, `p.greaterThan(x)`, `p.between(x, y)`, `p.like("%foo%")`, `p.notNull`, `p.isNull`, `p.any` (no constraint). Every field defaults to `p.any` so callers fill in only what they want.
+
+For a list endpoint that paginates, the row filter mixes in a sub-trait of `SqlFilter` instead of (or as well as) overriding `orderByFragment` by hand: `PageableSqlFilter[SortField]` for offset pagination (it derives `orderByFragment` + `offsetLimitFragment` from a `PageRequest` — you supply `pageRequest` / `sortColumnFor` / `tieBreakColumn`), or `KeysetSqlFilter[S, I]` for keyset/cursor (it ANDs `(sortColumn, pk) < (?, ?)` onto the filter and fetches `limit + 1` — you supply `keysetCursor` / `keysetColumns` / `baseFilterFragment`). [http.md](http.md) walks through both, with `GET /v1/auctions` as the offset worked example.
 
 Public list/find methods take typed parameters and build the filter internally:
 

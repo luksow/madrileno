@@ -3,11 +3,13 @@ package madrileno.auction.repositories
 import cats.effect.testing.scalatest.AsyncIOSpec
 import madrileno.auction.domain.*
 import madrileno.support.{TestData, TestTransactor}
+import madrileno.user.domain.UserId
 import madrileno.user.repositories.UserRepository
-import madrileno.utils.db.dsl.{FilteringRepository, p}
-import madrileno.utils.pagination.{Limit, Offset, PageRequest, SortDirection}
+import madrileno.utils.db.dsl.{Column, FilteringRepository, KeysetSqlFilter, p}
+import madrileno.utils.pagination.{CursorRequest, Limit, Offset, PageRequest, SortDirection}
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AsyncWordSpec
+import skunk.AppliedFragment
 
 import java.time.Instant
 
@@ -19,6 +21,21 @@ class AuctionRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matchers
 
   private lazy val auctionFilteringRepo: FilteringRepository[AuctionRow, AuctionRowFilter] =
     new FilteringRepository[AuctionRow, AuctionRowFilter] { override val table: AuctionRowTable.type = AuctionRowTable }
+
+  private final case class AuctionKeysetFilter(
+    sellerId: UserId,
+    cursor: CursorRequest[(Instant, AuctionId)],
+    direction: SortDirection = SortDirection.Desc)
+      extends KeysetSqlFilter[Instant, AuctionId] {
+    override protected def keysetCursor: CursorRequest[(Instant, AuctionId)]   = cursor
+    override protected def keysetColumns: (Column[Instant], Column[AuctionId]) = (AuctionRowTable.createdAt, AuctionRowTable.id)
+    override protected def keysetDirection: SortDirection                      = direction
+    override protected def baseFilterFragment: AppliedFragment =
+      fromPredicates((p.equal(sellerId) -> AuctionRowTable.sellerId, p.isNull[Instant] -> AuctionRowTable.deletedAt))
+  }
+
+  private lazy val auctionKeysetRepo: FilteringRepository[AuctionRow, AuctionKeysetFilter] =
+    new FilteringRepository[AuctionRow, AuctionKeysetFilter] { override val table: AuctionRowTable.type = AuctionRowTable }
 
   private def createAuctionWithSeller() = {
     val seller  = TestData.user()
@@ -124,6 +141,74 @@ class AuctionRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matchers
       } yield {
         asc._1.map(_.id).toSet shouldBe Set(a.id, b.id)
         desc._1.map(_.id) shouldBe asc._1.map(_.id).reverse
+      }
+    }
+
+    "findCursorPageByFilter walks the table in keyset order, flipping hasMore on the last page" in withRollback {
+      val seller = TestData.user()
+      val older  = TestData.auction(sellerId = seller.id, createdAt = Instant.parse("2026-01-01T00:00:00Z"))
+      val middle = TestData.auction(sellerId = seller.id, createdAt = Instant.parse("2026-02-01T00:00:00Z"))
+      val newer  = TestData.auction(sellerId = seller.id, createdAt = Instant.parse("2026-03-01T00:00:00Z"))
+      for {
+        _  <- userRepo.create(seller, Instant.now())
+        _  <- auctionRepo.save(older)
+        _  <- auctionRepo.save(middle)
+        _  <- auctionRepo.save(newer)
+        p1 <- auctionKeysetRepo.findCursorPageByFilter(AuctionKeysetFilter(seller.id, CursorRequest(Limit(2), None)))
+        last1 = p1._1.last
+        p2 <- auctionKeysetRepo.findCursorPageByFilter(AuctionKeysetFilter(seller.id, CursorRequest(Limit(2), Some((last1.createdAt, last1.id)))))
+      } yield {
+        p1._1.map(_.id) shouldBe List(newer.id, middle.id)
+        p1._2 shouldBe true
+        p2._1.map(_.id) shouldBe List(older.id)
+        p2._2 shouldBe false
+      }
+    }
+
+    "findCursorPageByFilter pages rows with the same sort key without skips or duplicates" in withRollback {
+      val seller = TestData.user()
+      val at     = Instant.parse("2026-02-01T00:00:00Z")
+      val a      = TestData.auction(sellerId = seller.id, createdAt = at)
+      val b      = TestData.auction(sellerId = seller.id, createdAt = at)
+      val c      = TestData.auction(sellerId = seller.id, createdAt = at)
+      for {
+        _  <- userRepo.create(seller, Instant.now())
+        _  <- auctionRepo.save(a)
+        _  <- auctionRepo.save(b)
+        _  <- auctionRepo.save(c)
+        p1 <- auctionKeysetRepo.findCursorPageByFilter(AuctionKeysetFilter(seller.id, CursorRequest(Limit(2), None)))
+        last1 = p1._1.last
+        p2 <- auctionKeysetRepo.findCursorPageByFilter(AuctionKeysetFilter(seller.id, CursorRequest(Limit(2), Some((last1.createdAt, last1.id)))))
+      } yield {
+        val seen = p1._1.map(_.id) ++ p2._1.map(_.id)
+        seen shouldBe seen.distinct
+        seen.toSet shouldBe Set(a.id, b.id, c.id)
+        p1._2 shouldBe true
+        p2._1.size shouldBe 1
+        p2._2 shouldBe false
+      }
+    }
+
+    "findCursorPageByFilter walks ascending when keysetDirection is Asc" in withRollback {
+      val seller = TestData.user()
+      val older  = TestData.auction(sellerId = seller.id, createdAt = Instant.parse("2026-01-01T00:00:00Z"))
+      val middle = TestData.auction(sellerId = seller.id, createdAt = Instant.parse("2026-02-01T00:00:00Z"))
+      val newer  = TestData.auction(sellerId = seller.id, createdAt = Instant.parse("2026-03-01T00:00:00Z"))
+      for {
+        _  <- userRepo.create(seller, Instant.now())
+        _  <- auctionRepo.save(older)
+        _  <- auctionRepo.save(middle)
+        _  <- auctionRepo.save(newer)
+        p1 <- auctionKeysetRepo.findCursorPageByFilter(AuctionKeysetFilter(seller.id, CursorRequest(Limit(2), None), SortDirection.Asc))
+        last1 = p1._1.last
+        p2 <- auctionKeysetRepo.findCursorPageByFilter(
+                AuctionKeysetFilter(seller.id, CursorRequest(Limit(2), Some((last1.createdAt, last1.id))), SortDirection.Asc)
+              )
+      } yield {
+        p1._1.map(_.id) shouldBe List(older.id, middle.id)
+        p1._2 shouldBe true
+        p2._1.map(_.id) shouldBe List(newer.id)
+        p2._2 shouldBe false
       }
     }
 
