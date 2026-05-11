@@ -18,11 +18,6 @@ final case class CorsConfig(
     derives ConfigReader
 
 object Cors extends LoggingSupport {
-
-  /** `allowed-origins` resolution: an explicit comma-separated list ⇒ exactly those origins; `*` ⇒ any origin; empty ⇒ any origin in dev, otherwise
-    * the host of `base-url` (a safe fallback that's zero-config for same-origin SPA+API deployments and never silently `*` in prod). Methods and
-    * request headers are allowed wildcard. No `Access-Control-Allow-Credentials` — auth here is a client-set Bearer token, not cookies.
-    */
   def policy(
     config: CorsConfig,
     environment: String,
