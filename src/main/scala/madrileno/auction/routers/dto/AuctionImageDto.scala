@@ -8,7 +8,7 @@ import org.http4s.headers.`Content-Type`
 
 import java.time.Instant
 
-case class VariantDto(
+final case class VariantDto(
   spec: String,
   url: String,
   width: Width,
@@ -17,7 +17,7 @@ case class VariantDto(
     derives Encoder.AsObject,
       Decoder
 
-case class AuctionImageDto(
+final case class AuctionImageDto(
   id: AuctionImageId,
   auctionId: AuctionId,
   url: String,
@@ -63,4 +63,4 @@ object AuctionImageDto {
     )
 }
 
-case class ReorderImagesRequest(orderedIds: List[AuctionImageId]) derives Encoder.AsObject, Decoder
+final case class ReorderImagesRequest(orderedIds: List[AuctionImageId]) derives Encoder.AsObject, Decoder

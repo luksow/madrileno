@@ -256,9 +256,9 @@ class AuctionService(
 
 }
 
-case class ListAuctionsFilter(status: Option[AuctionStatus] = None, sellerId: Option[UserId] = None)
+final case class ListAuctionsFilter(status: Option[AuctionStatus] = None, sellerId: Option[UserId] = None)
 
-case class CreateAuctionCommand(
+final case class CreateAuctionCommand(
   sellerId: UserId,
   wineName: WineName,
   vintage: Option[Vintage],
@@ -274,12 +274,12 @@ case class CreateAuctionCommand(
   startsAt: Instant,
   endsAt: Instant)
 
-case class PlaceBidCommand(
+final case class PlaceBidCommand(
   auctionId: AuctionId,
   bidderId: UserId,
   amount: Price)
 
-case class CancelAuctionCommand(auctionId: AuctionId, sellerId: UserId)
+final case class CancelAuctionCommand(auctionId: AuctionId, sellerId: UserId)
 
 enum PlaceBidResult {
   case BidPlaced(bid: Bid, auction: Auction)

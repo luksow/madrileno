@@ -3,7 +3,7 @@ package madrileno.auction.routers.dto
 import madrileno.auction.domain.AuctionImageId
 import madrileno.utils.json.JsonProtocol.*
 
-case class PresignedUploadDto(
+final case class PresignedUploadDto(
   imageId: AuctionImageId,
   url: String,
   signedHeaders: Map[String, String])

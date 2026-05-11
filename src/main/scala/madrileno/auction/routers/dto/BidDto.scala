@@ -6,7 +6,7 @@ import madrileno.utils.json.JsonProtocol.*
 
 import java.time.Instant
 
-case class BidDto(
+final case class BidDto(
   id: BidId,
   auctionId: AuctionId,
   bidderId: UserId,

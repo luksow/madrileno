@@ -67,21 +67,21 @@ object VivinoGateway {
   }
 
   // Outbound request keeps camelCase; Algolia rejects hits_per_page with a 400.
-  private[gateways] case class AlgoliaQuery(query: String, hitsPerPage: Int) derives Encoder.AsObject
+  private[gateways] final case class AlgoliaQuery(query: String, hitsPerPage: Int) derives Encoder.AsObject
 
   // Inbound response uses snake_case (ratings_count, ratings_average); scoped to decoders below.
   private[gateways] given Configuration = Configuration.default.withSnakeCaseMemberNames
 
-  private[gateways] case class AlgoliaResponse(hits: List[AlgoliaHit]) derives ConfiguredCodec
-  private[gateways] case class AlgoliaHit(
+  private[gateways] final case class AlgoliaResponse(hits: List[AlgoliaHit]) derives ConfiguredCodec
+  private[gateways] final case class AlgoliaHit(
     name: Option[String],
     winery: Option[AlgoliaWinery],
     statistics: Option[AlgoliaStatistics],
     vintages: Option[List[AlgoliaVintage]])
       derives ConfiguredCodec
-  private[gateways] case class AlgoliaWinery(name: Option[String]) derives ConfiguredCodec
-  private[gateways] case class AlgoliaVintage(year: Option[String], statistics: Option[AlgoliaStatistics]) derives ConfiguredCodec
-  private[gateways] case class AlgoliaStatistics(
+  private[gateways] final case class AlgoliaWinery(name: Option[String]) derives ConfiguredCodec
+  private[gateways] final case class AlgoliaVintage(year: Option[String], statistics: Option[AlgoliaStatistics]) derives ConfiguredCodec
+  private[gateways] final case class AlgoliaStatistics(
     ratingsCount: Option[Int],
     ratingsAverage: Option[BigDecimal],
     status: Option[String])

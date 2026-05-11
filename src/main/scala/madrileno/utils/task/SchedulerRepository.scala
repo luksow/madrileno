@@ -13,7 +13,7 @@ import skunk.{Codec, Session}
 
 import java.time.Instant
 
-private[task] case class TaskRow(
+private[task] final case class TaskRow(
   taskName: String,
   taskInstance: String,
   taskData: Json,

@@ -6,7 +6,7 @@ import madrileno.utils.json.JsonProtocol.*
 
 import java.net.URI
 
-case class UserDto(
+final case class UserDto(
   id: UserId,
   fullName: Option[FullName],
   emailAddress: Option[EmailAddress],

@@ -13,7 +13,7 @@ import skunk.implicits.*
 
 import java.time.{Instant, OffsetDateTime, ZoneOffset}
 
-case class Column[A](
+final case class Column[A](
   name: String,
   tableName: String,
   codec: Codec[A]) {

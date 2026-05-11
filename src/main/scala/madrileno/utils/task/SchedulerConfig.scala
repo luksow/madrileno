@@ -5,7 +5,7 @@ import pureconfig.generic.semiauto.deriveReader
 
 import scala.concurrent.duration.*
 
-case class SchedulerConfig(
+final case class SchedulerConfig(
   concurrency: Int = 10,
   pollingInterval: Duration = 10.seconds,
   heartbeatInterval: Duration = 5.minutes,

@@ -25,13 +25,13 @@ object Metadata extends Opaque[Metadata, Json] {
   def empty: Metadata = Json.obj()
 }
 
-case class ExternalProfile(
+final case class ExternalProfile(
   fullName: Option[FullName],
   emailAddress: Option[EmailAddress],
   emailVerified: Boolean,
   avatarUrl: Option[URI])
 
-case class VerifiedExternalToken(
+final case class VerifiedExternalToken(
   provider: Provider,
   providerUserId: ProviderUserId,
   credential: Credential,

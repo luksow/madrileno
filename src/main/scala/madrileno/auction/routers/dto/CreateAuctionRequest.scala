@@ -6,7 +6,7 @@ import madrileno.utils.json.JsonProtocol.*
 import java.time.Instant
 import java.util.Currency
 
-case class CreateAuctionRequest(
+final case class CreateAuctionRequest(
   wineName: WineName,
   vintage: Option[Vintage],
   color: WineColor,

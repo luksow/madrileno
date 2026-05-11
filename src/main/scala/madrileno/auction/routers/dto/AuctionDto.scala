@@ -7,7 +7,7 @@ import madrileno.utils.json.JsonProtocol.*
 import java.time.Instant
 import java.util.Currency
 
-case class AuctionDto(
+final case class AuctionDto(
   id: AuctionId,
   sellerId: UserId,
   wineName: WineName,
@@ -40,7 +40,7 @@ object AuctionDto {
   }
 }
 
-case class VivinoRatingDto(rating: Rating, ratingsCount: RatingsCount) derives Encoder.AsObject, Decoder
+final case class VivinoRatingDto(rating: Rating, ratingsCount: RatingsCount) derives Encoder.AsObject, Decoder
 
 object VivinoRatingDto {
   def apply(rating: VivinoRating): VivinoRatingDto = VivinoRatingDto(rating.rating, rating.ratingsCount)

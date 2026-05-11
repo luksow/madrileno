@@ -11,7 +11,7 @@ import skunk.implicits.*
 
 import java.time.Instant
 
-private[repositories] case class BidRow(
+private[repositories] final case class BidRow(
   id: BidId,
   auctionId: AuctionId,
   bidderId: UserId,
@@ -43,7 +43,7 @@ private[repositories] object BidRowTable extends Table[BidRow]("bid") with IdTab
     (id, auctionId, bidderId, amount, createdAt)
 }
 
-private[repositories] case class BidRowFilter(
+private[repositories] final case class BidRowFilter(
   id: SqlPredicate[BidId] = p.any,
   auctionId: SqlPredicate[AuctionId] = p.any,
   bidderId: SqlPredicate[UserId] = p.any)

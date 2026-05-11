@@ -10,7 +10,7 @@ import scala.concurrent.duration.*
 
 class EventBusSpec extends AsyncWordSpec with AsyncIOSpec with Matchers {
 
-  private case class Event(value: Int) derives EventCodec
+  private final case class Event(value: Int) derives EventCodec
 
   private val testTimeout: FiniteDuration = 5.seconds
 
