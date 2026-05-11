@@ -12,6 +12,6 @@ trait PaginationDirectives { self: BaseRouter =>
       "limit".as[Int].withDefault(Limit.Default.unwrap),
       "offset".as[Int].withDefault(Offset.Zero.unwrap)
     ).tmap { case (sortBy, sortDir, limit, offset) =>
-      Tuple1(PageRequest(Limit(limit.max(1).min(Limit.Max)), Offset(offset.max(0)), sortBy, sortDir))
+      Tuple1(PageRequest(Limit.clamp(limit), Offset.clamp(offset), sortBy, sortDir))
     }
 }

@@ -12,17 +12,6 @@ import scala.deriving.Mirror
 private val TrueFragment: AppliedFragment = sql"1=1" (Void)
 private val AndFragment: AppliedFragment  = sql" AND " (Void)
 
-def orderByColumns(columns: (Column[?], Boolean)*): Fragment[Void] = {
-  if (columns.isEmpty) {
-    AnyOrder.fragment
-  } else {
-    val parts = columns.map { case (col, ascending) => if (ascending) sql"${col.n} ASC" else sql"${col.n} DESC" }.reduce((a, b) => sql"$a, $b")
-    sql"ORDER BY $parts"
-  }
-}
-
-def offsetLimitClause(offset: Long, limit: Long): AppliedFragment = sql"OFFSET $int8 LIMIT $int8" (offset, limit)
-
 trait SqlFilter {
   protected given conv[A]: Conversion[(SqlPredicate[A], Column[A]), AppliedFragment] = (pair: (SqlPredicate[A], Column[A])) => {
     pair._1.toAppliedFragment(pair._2.copy(codec = pair._2.codec.opt))
@@ -53,6 +42,17 @@ trait SqlFilter {
 
   def filterFragment: AppliedFragment
 
+  protected def orderByColumns(columns: (Column[?], Boolean)*): Fragment[Void] = {
+    if (columns.isEmpty) {
+      AnyOrder.fragment
+    } else {
+      val parts = columns.map { case (col, ascending) => if (ascending) sql"${col.n} ASC" else sql"${col.n} DESC" }.reduce((a, b) => sql"$a, $b")
+      sql"ORDER BY $parts"
+    }
+  }
+
+  protected def offsetLimitClause(offset: Long, limit: Long): AppliedFragment = sql"OFFSET $int8 LIMIT $int8" (offset, limit)
+
   def orderByFragment: Fragment[Void] = AnyOrder.fragment
 
   protected def offsetLimit: Option[(Long, Long)] = None
@@ -66,7 +66,7 @@ trait SqlFilter {
 }
 
 trait PageableSqlFilter[SortField] extends SqlFilter {
-  protected def pageRequest: Option[PageRequest[SortField]] = None
+  protected def pageRequest: Option[PageRequest[SortField]]
   protected def sortColumnFor(field: SortField): Column[?]
   protected def tieBreakColumn: Column[?]
 

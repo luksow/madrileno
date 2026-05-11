@@ -176,6 +176,13 @@ class AuctionRouterSpec extends BaseRouteSpec with TestApplicationLoader {
           response.body.offset shouldBe 0
           response.body.items.size shouldBe 2
           response.body.items.map(_.sellerId).toSet shouldBe Set(seller.id)
+        },
+      onRequest(queryParameters = (None, None, Some(AuctionSortField.CreatedAt), Some(SortDirection.Desc), Some(999), Some(-3)))
+        .respondsWith[Page[AuctionDto]](Ok, description = "Out-of-range limit/offset are clamped, not rejected")
+        .assert { ctx =>
+          val response = ctx.performRequest(allRoutes)
+          response.body.limit shouldBe 100
+          response.body.offset shouldBe 0
         }
     )
   )

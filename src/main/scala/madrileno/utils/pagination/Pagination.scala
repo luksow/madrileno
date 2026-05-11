@@ -8,6 +8,7 @@ object Limit extends Opaque[Limit, Int] {
   val Default: Limit = Limit(20)
   override def validate(value: Int): Either[String, Limit] =
     if (value >= 1 && value <= Max) Right(value) else Left(s"limit must be between 1 and $Max")
+  def clamp(value: Int): Limit = Limit(value.max(1).min(Max))
 }
 
 opaque type Offset = Int
@@ -15,6 +16,7 @@ object Offset extends Opaque[Offset, Int] {
   val Zero: Offset = Offset(0)
   override def validate(value: Int): Either[String, Offset] =
     if (value >= 0) Right(value) else Left("offset must be >= 0")
+  def clamp(value: Int): Offset = Offset(value.max(0))
 }
 
 enum SortDirection {
