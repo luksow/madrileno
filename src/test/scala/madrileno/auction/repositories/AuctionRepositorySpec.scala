@@ -6,7 +6,7 @@ import madrileno.support.{TestData, TestTransactor}
 import madrileno.user.domain.UserId
 import madrileno.user.repositories.UserRepository
 import madrileno.utils.db.dsl.*
-import madrileno.utils.http.{Limit, Offset, PageRequest, SortDirection}
+import madrileno.utils.pagination.{Limit, Offset, PageRequest, SortDirection}
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AsyncWordSpec
 

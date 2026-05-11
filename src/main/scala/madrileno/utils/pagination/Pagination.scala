@@ -1,6 +1,5 @@
-package madrileno.utils.http
+package madrileno.utils.pagination
 
-import madrileno.utils.json.JsonProtocol.*
 import pl.iterators.kebs.opaque.Opaque
 
 opaque type Limit = Int
@@ -34,14 +33,4 @@ final case class PageRequest[F](
 object PageRequest {
   def firstPageBy[F](sortBy: F, sortDir: SortDirection = SortDirection.Desc): PageRequest[F] =
     PageRequest(Limit.Default, Offset.Zero, sortBy, sortDir)
-}
-
-final case class Page[A](
-  items: List[A],
-  total: Long,
-  limit: Int,
-  offset: Int)
-    derives Encoder.AsObject,
-      Decoder {
-  def map[B](f: A => B): Page[B] = Page(items.map(f), total, limit, offset)
 }

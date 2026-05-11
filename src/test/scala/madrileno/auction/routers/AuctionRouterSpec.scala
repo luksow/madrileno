@@ -8,8 +8,9 @@ import madrileno.auth.domain.AuthContext
 import madrileno.support.{BaseRouteSpec, TestApplicationLoader, TestData}
 import madrileno.user.domain.{User, UserId}
 import madrileno.utils.db.transactor.DB
-import madrileno.utils.http.{Error, Page, SortDirection}
+import madrileno.utils.http.{Error, Page}
 import madrileno.utils.json.JsonProtocol.*
+import madrileno.utils.pagination.SortDirection
 import org.http4s.EntityDecoder
 import org.http4s.Method.*
 import org.http4s.Status.*

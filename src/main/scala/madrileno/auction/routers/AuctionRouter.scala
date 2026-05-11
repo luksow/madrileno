@@ -8,8 +8,9 @@ import madrileno.auction.services.*
 import madrileno.auth.domain.AuthContext
 import madrileno.user.domain.UserId
 import madrileno.utils.events.EventBus
-import madrileno.utils.http.{BaseRouter, Limit, Offset, PageRequest, RateLimitDirectives, RateLimiter, RateLimiterRuntime, SortDirection}
+import madrileno.utils.http.{BaseRouter, RateLimitDirectives, RateLimiter, RateLimiterRuntime}
 import madrileno.utils.observability.TelemetryContext
+import madrileno.utils.pagination.{Limit, Offset, PageRequest, SortDirection}
 import org.http4s.Request
 import org.http4s.server.websocket.WebSocketBuilder2
 import org.http4s.websocket.WebSocketFrame

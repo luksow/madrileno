@@ -5,7 +5,7 @@ import madrileno.auction.domain.*
 import madrileno.user.domain.UserId
 import madrileno.utils.db.dsl.*
 import madrileno.utils.db.transactor.{DB, DBInTransaction}
-import madrileno.utils.http.{PageRequest, SortDirection}
+import madrileno.utils.pagination.PageRequest
 import skunk.*
 import skunk.codec.all.*
 import skunk.implicits.*
@@ -106,7 +106,7 @@ private[repositories] final case class AuctionRowFilter(
   endsAt: SqlPredicate[Instant] = p.any,
   deletedAt: SqlPredicate[Instant] = p.isNull,
   page: Option[PageRequest[AuctionSortField]] = None)
-    extends PageableSqlFilter {
+    extends PageableSqlFilter[AuctionSortField] {
   override def filterFragment: AppliedFragment = fromPredicates(
     (
       id        -> AuctionRowTable.id,
@@ -117,13 +117,10 @@ private[repositories] final case class AuctionRowFilter(
     )
   )
 
-  override protected def tieBreakColumn: Column[?] = AuctionRowTable.id
+  override protected def pageRequest: Option[PageRequest[AuctionSortField]] = page
+  override protected def tieBreakColumn: Column[?]                          = AuctionRowTable.id
 
-  override protected def pageWindow: Option[PageWindow] = page.map { p =>
-    PageWindow(p.offsetValue.toLong, p.limitValue.toLong, sortColumnFor(p.sortBy), p.sortDir == SortDirection.Asc)
-  }
-
-  private def sortColumnFor(field: AuctionSortField): Column[?] = field match {
+  override protected def sortColumnFor(field: AuctionSortField): Column[?] = field match {
     case AuctionSortField.CreatedAt     => AuctionRowTable.createdAt
     case AuctionSortField.EndsAt        => AuctionRowTable.endsAt
     case AuctionSortField.StartingPrice => AuctionRowTable.startingPrice

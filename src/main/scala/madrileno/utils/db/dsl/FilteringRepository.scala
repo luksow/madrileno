@@ -1,6 +1,7 @@
 package madrileno.utils.db.dsl
 
 import cats.effect.IO
+import madrileno.utils.pagination.{PageRequest, SortDirection}
 import skunk.*
 import skunk.codec.all.*
 import skunk.implicits.*
@@ -64,20 +65,18 @@ trait SqlFilter {
   }
 }
 
-final case class PageWindow(
-  offset: Long,
-  limit: Long,
-  sortColumn: Column[?],
-  ascending: Boolean)
-
-trait PageableSqlFilter extends SqlFilter {
-  protected def pageWindow: Option[PageWindow] = None
+trait PageableSqlFilter[SortField] extends SqlFilter {
+  protected def pageRequest: Option[PageRequest[SortField]] = None
+  protected def sortColumnFor(field: SortField): Column[?]
   protected def tieBreakColumn: Column[?]
 
   override def orderByFragment: Fragment[Void] =
-    pageWindow.fold(super.orderByFragment)(w => orderByColumns(w.sortColumn -> w.ascending, tieBreakColumn -> w.ascending))
+    pageRequest.fold(super.orderByFragment) { page =>
+      val ascending = page.sortDir == SortDirection.Asc
+      orderByColumns(sortColumnFor(page.sortBy) -> ascending, tieBreakColumn -> ascending)
+    }
 
-  override protected def offsetLimit: Option[(Long, Long)] = pageWindow.map(w => (w.offset, w.limit))
+  override protected def offsetLimit: Option[(Long, Long)] = pageRequest.map(page => (page.offsetValue.toLong, page.limitValue.toLong))
 }
 
 object SqlFilterDerivation {

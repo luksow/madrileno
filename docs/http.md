@@ -158,7 +158,7 @@ Routers that need request-rate caps mix in `RateLimitDirectives` and use `rateLi
 
 ## Pagination
 
-List endpoints are offset-paginated. The reusable pieces are in `madrileno.utils.http`: `Limit` / `Offset` (validated opaque types), `SortDirection` (`Asc` / `Desc`), `PageRequest[F]` (limit + offset + a `sortBy: F` field-enum + direction), and the response envelope `Page[A] { items, total, limit, offset }` (`derives Encoder.AsObject, Decoder` — generic, like `Error[T]`).
+List endpoints are offset-paginated. The request-side pieces live in `madrileno.utils.pagination` (layer-neutral — the DB DSL leans on them): `Limit` / `Offset` (validated opaque types), `SortDirection` (`Asc` / `Desc`), `PageRequest[F]` (limit + offset + a `sortBy: F` field-enum + direction). The response envelope `Page[A] { items, total, limit, offset }` is in `madrileno.utils.http` next to `Error[T]` — it's an HTTP-response shape (`derives Encoder.AsObject, Decoder`), and nothing below the router needs it.
 
 `GET /v1/auctions` is the worked example: `?limit=` (1–100, default 20, out-of-range values are clamped — not rejected), `?offset=` (default 0), `?sortBy=` (a per-endpoint enum — `CreatedAt | EndsAt | StartingPrice` here, default `CreatedAt`), `?sortDir=` (default `Desc`). An unknown `sortBy`/`sortDir` value is a 400 (kebs derives the param codec from the enum). The repository appends the primary key (same direction) as a tie-break to whatever sort the client picked — without it, paging silently skips or duplicates rows when the sort keys tie. The total is one extra `COUNT(*)` with the same `WHERE`; the client derives `totalPages` / `hasMore` from `total`, `limit`, `offset`.
 

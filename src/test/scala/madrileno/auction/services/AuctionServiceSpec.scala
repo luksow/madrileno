@@ -11,9 +11,9 @@ import madrileno.support.{TestData, TestGivens, TestMailpit, TestTransactor}
 import madrileno.user.domain.{User, UserId}
 import madrileno.user.repositories.UserRepository
 import madrileno.utils.events.{EventBus, EventBusRuntime}
-import madrileno.utils.http.{Limit, Offset, PageRequest, SortDirection}
 import madrileno.utils.mailer.*
 import madrileno.utils.observability.TelemetryContext
+import madrileno.utils.pagination.{Limit, Offset, PageRequest, SortDirection}
 import madrileno.utils.task.*
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AsyncWordSpec
