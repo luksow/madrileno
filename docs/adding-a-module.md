@@ -633,7 +633,7 @@ import madrileno.utils.events.EventCodec.given
 import java.time.Instant
 
 enum ProductEvent derives EventCodec {
-  case Registered(productId: ProductId, name: ProductName, at: Instant)
+  case Registered(productId: ProductId, name: ProductName, createdAt: Instant)
 }
 ```
 
@@ -682,7 +682,7 @@ Don't serialize domain events directly to WS clients: the `EventCodec` JSON shap
 
 ```scala
 // routers/dto/ProductRegisteredDto.scala
-final case class ProductRegisteredDto(productId: ProductId, name: ProductName, at: Instant)
+final case class ProductRegisteredDto(productId: ProductId, name: ProductName, createdAt: Instant)
     derives Encoder.AsObject, Decoder
 
 object ProductRegisteredDto {
