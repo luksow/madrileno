@@ -138,7 +138,7 @@ class ApplicationLoader(
 
   def routes(wsb: WebSocketBuilder2[IO]): Route = {
     val ws = wsb.withOnNonWebSocketRequest(
-      IO.pure(Response[IO](Status.UpgradeRequired).withEntity("Upgrade required for WebSocket communication.")(EntityEncoder.stringEncoder))
+      IO.pure(Response[IO](Status.UpgradeRequired).withEntity("Upgrade required for WebSocket communication.")(using EntityEncoder.stringEncoder))
     )
     onSuccess(telemetryContext.tracer.propagate(Map.empty)) { initialCtx =>
       logRequest(logAction = Some(logAction(initialCtx))) {
