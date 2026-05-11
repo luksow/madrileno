@@ -147,7 +147,7 @@ If you don't add `droppingBuffer`, a stalled client doesn't immediately break �
 
 ## Testing
 
-Service- and event-bus-level logic is testable without WebSockets at all. For end-to-end WS tests, http4s ships an in-memory client; integrate it in baklava router specs the same way HTTP request specs work. The auction module ships baklava specs for both WS routes (`/v1/auctions/stream` and `/v1/auctions/{auctionId}/stream`) — OpenAPI 3.x can't model WebSockets, so these are discoverability stubs: they record the path (and the `auctionId` param) and assert the 501 plain-GET fallback, while the frame format is documented in prose above. The send/receive streams themselves aren't exercised by an in-memory WS client in the suite yet.
+Service- and event-bus-level logic is testable without WebSockets at all. For end-to-end WS tests, http4s ships an in-memory client; integrate it in baklava router specs the same way HTTP request specs work. The auction module ships baklava specs for both WS routes (`/v1/auctions/stream` and `/v1/auctions/{auctionId}/stream`) — OpenAPI 3.x can't model WebSockets, so these are discoverability stubs: they record the path (and the `auctionId` param) and assert the 426 plain-GET fallback, while the frame format is documented in prose above. The send/receive streams themselves aren't exercised by an in-memory WS client in the suite yet.
 
 ## Where to look next
 
