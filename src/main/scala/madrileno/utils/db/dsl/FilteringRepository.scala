@@ -73,6 +73,14 @@ trait SqlFilter {
   }
 }
 
+trait PageableSqlFilter extends SqlFilter {
+  protected def sortColumn: Option[(Column[?], Boolean)] = None
+  protected def tieBreakColumn: Column[?]
+
+  override def orderByFragment: Fragment[Void] =
+    sortColumn.fold(super.orderByFragment) { case (column, ascending) => orderByColumns(column -> ascending, tieBreakColumn -> true) }
+}
+
 object SqlFilterDerivation {
   trait ColumnPairing[Pred, Col] {
     def toFragment(pred: Pred, col: Col): AppliedFragment

@@ -104,12 +104,31 @@ private[repositories] final case class AuctionRowFilter(
   sellerId: SqlPredicate[UserId] = p.any,
   status: SqlPredicate[AuctionStatus] = p.any,
   endsAt: SqlPredicate[Instant] = p.any,
-  deletedAt: SqlPredicate[Instant] = p.isNull)
-    extends SqlFilter {
-  override def filterFragment: AppliedFragment = SqlFilterDerivation.filterFragment(
-    this,
-    (AuctionRowTable.id, AuctionRowTable.sellerId, AuctionRowTable.status, AuctionRowTable.endsAt, AuctionRowTable.deletedAt)
+  deletedAt: SqlPredicate[Instant] = p.isNull,
+  page: Option[PageRequest[AuctionSortField]] = None)
+    extends PageableSqlFilter {
+  override def filterFragment: AppliedFragment = fromPredicates(
+    (
+      id        -> AuctionRowTable.id,
+      sellerId  -> AuctionRowTable.sellerId,
+      status    -> AuctionRowTable.status,
+      endsAt    -> AuctionRowTable.endsAt,
+      deletedAt -> AuctionRowTable.deletedAt
+    )
   )
+
+  override protected def tieBreakColumn: Column[?] = AuctionRowTable.id
+
+  override protected def sortColumn: Option[(Column[?], Boolean)] = page.map { p =>
+    val column = p.sortBy match {
+      case AuctionSortField.CreatedAt     => AuctionRowTable.createdAt
+      case AuctionSortField.EndsAt        => AuctionRowTable.endsAt
+      case AuctionSortField.StartingPrice => AuctionRowTable.startingPrice
+    }
+    (column, p.sortDir == SortDirection.Asc)
+  }
+
+  override protected def offsetLimit: Option[(Long, Long)] = page.map(p => (p.offsetValue.toLong, p.limitValue.toLong))
 }
 
 class AuctionRepository {
@@ -128,15 +147,11 @@ class AuctionRepository {
     page: PageRequest[AuctionSortField]
   ): DB[(List[(Auction, Price)], Long)] = {
     val session = summon[Session[IO]]
-    val filter  = AuctionRowFilter(status = status.fold(p.any[AuctionStatus])(p.equal), sellerId = sellerId.fold(p.any[UserId])(p.equal))
-    val applied = filter.filterFragment
-    val sortColumn: Column[?] = page.sortBy match {
-      case AuctionSortField.CreatedAt     => AuctionRowTable.createdAt
-      case AuctionSortField.EndsAt        => AuctionRowTable.endsAt
-      case AuctionSortField.StartingPrice => AuctionRowTable.startingPrice
-    }
-    val orderBy  = orderByColumns(sortColumn -> (page.sortDir == SortDirection.Asc), AuctionRowTable.id -> true)
-    val offLim   = offsetLimitClause(page.offsetValue.toLong, page.limitValue.toLong)
+    val filter =
+      AuctionRowFilter(status = status.fold(p.any[AuctionStatus])(p.equal), sellerId = sellerId.fold(p.any[UserId])(p.equal), page = Some(page))
+    val applied  = filter.filterFragment
+    val orderBy  = filter.orderByFragment
+    val offLim   = filter.offsetLimitFragment
     val rowCodec = AuctionRowTable.c ~ BidRowTable.amount.c
     val rowsQuery = sql"""
       SELECT ${AuctionRowTable.*("a")}, COALESCE(b.amount, a.${AuctionRowTable.startingPrice.n})
