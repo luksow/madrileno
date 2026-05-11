@@ -159,12 +159,14 @@ class AuctionRouterSpec extends BaseRouteSpec with TestApplicationLoader {
   path("/v1/auctions/stream")(
     supports(
       GET,
-      description = """Live auction event stream over WebSocket.
+      description = """Live auction event stream over WebSocket — the firehose (every auction).
           |
           |Connect with a WebSocket client to receive a JSON frame per event. Wire format:
           |`{"kind": "...", "data": {...}}` where `kind` is one of `AuctionCreated`, `BidPlaced`,
           |`AuctionCancelled`, `AuctionClosed` and `data` is the per-variant flat DTO. See
           |`docs/adding-a-module.md` for the wire shapes.
+          |
+          |For a single auction's events, connect to `/v1/auctions/{auctionId}/stream` instead.
           |
           |OpenAPI 3.x does not model WebSockets; this entry exists for discoverability only.
           |A WebSocket upgrade request returns 101 Switching Protocols and starts streaming.
@@ -175,6 +177,31 @@ class AuctionRouterSpec extends BaseRouteSpec with TestApplicationLoader {
     )(
       onRequest()
         // Override circe's String entity decoder so the plain-text 501 body decodes via http4s' text decoder.
+        .respondsWith[String](NotImplemented, description = "Plain GET fallback — default WebSocket handler response")(
+          using EntityDecoder.text[IO],
+          summon,
+          summon
+        )
+        .assert { ctx =>
+          val response = ctx.performRequest(allRoutes)
+          response.body shouldBe "This is a WebSocket route."
+        }
+    )
+  )
+
+  path("/v1/auctions/{auctionId}/stream")(
+    supports(
+      GET,
+      description = """Live event stream for a single auction over WebSocket — same wire format as `/v1/auctions/stream`,
+          |but only `AuctionCreated`/`BidPlaced`/`AuctionCancelled`/`AuctionClosed` events for this `auctionId`.
+          |
+          |OpenAPI 3.x does not model WebSockets; this entry exists for discoverability only. A plain GET falls
+          |through to http4s' default handler and returns 501 with the body `This is a WebSocket route.`""".stripMargin,
+      summary = "Live event stream for one auction (WebSocket)",
+      pathParameters = p[AuctionId]("auctionId"),
+      tags = Seq("Auctions")
+    )(
+      onRequest(pathParameters = AuctionId(UUID.randomUUID()))
         .respondsWith[String](NotImplemented, description = "Plain GET fallback — default WebSocket handler response")(
           using EntityDecoder.text[IO],
           summon,

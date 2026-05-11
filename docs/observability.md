@@ -7,7 +7,7 @@ The integration is wired once in `Main` and threaded through the rest of the app
 ## TelemetryContext
 
 ```scala
-case class TelemetryContext(
+final case class TelemetryContext(
   meter: Meter[IO],
   tracer: Tracer[IO],
   underlying: OpenTelemetry

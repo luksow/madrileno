@@ -125,11 +125,16 @@ class AuctionRouter(
   }
 
   def wsRoutes(wsb: WebSocketBuilder2[IO]): Route = {
-    (get & path("auctions" / "stream") & pathEndOrSingleSlash) {
+    def auctionEventStream(keep: AuctionEvent => Boolean): Route = {
       val send = Stream
         .resource(eventBus.subscribeAwait)
-        .flatMap(_.droppingBuffer(capacity = 256).map(e => WebSocketFrame.Text(AuctionEventEnvelope(e).noSpaces)))
+        .flatMap(_.filter(keep).droppingBuffer(capacity = 256).map(e => WebSocketFrame.Text(AuctionEventEnvelope(e).noSpaces)))
       handleWebSocketMessages(wsb, send, _.drain)
+    }
+    (get & path("auctions" / "stream") & pathEndOrSingleSlash) {
+      auctionEventStream(_ => true)
+    } ~ (get & path("auctions" / JavaUUID.as[AuctionId] / "stream") & pathEndOrSingleSlash) { auctionId =>
+      auctionEventStream(_.auctionId == auctionId)
     }
   }
 }

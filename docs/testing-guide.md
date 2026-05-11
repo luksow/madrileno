@@ -222,8 +222,8 @@ withSetup {
 Baklava deserializes response bodies and serializes request bodies. DTOs used in `respondsWith[T]` need a circe `Decoder`. DTOs used in `onRequest(body = ...)` need an `Encoder`. Add `derives Decoder` or `derives Encoder.AsObject` alongside the existing derivations:
 
 ```scala
-case class AuthenticatedResponse(jwt: InternalJwt, refreshToken: RefreshTokenId, userCreated: Boolean) derives Encoder.AsObject, Decoder
-case class AuthWithFirebaseRequest(firebaseJwtToken: FirebaseJwt) derives Decoder, Encoder.AsObject
+final case class AuthenticatedResponse(jwt: InternalJwt, refreshToken: RefreshTokenId, userCreated: Boolean) derives Encoder.AsObject, Decoder
+final case class AuthWithFirebaseRequest(firebaseJwtToken: FirebaseJwt) derives Decoder, Encoder.AsObject
 ```
 
 ### Layer 4: SMTP Tests

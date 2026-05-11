@@ -33,7 +33,7 @@ The `flatEncoder` / `flatDecoder` exports are kebs derivations for opaque types:
 Routers extend `BaseRouter`, which extends `JsonProtocol`, so codec derivations and entity directives are in scope:
 
 ```scala
-case class CreateAuctionRequest(
+final case class CreateAuctionRequest(
   wineName: WineName,
   vintage: Option[Vintage],
   startingPrice: Price,
@@ -48,7 +48,7 @@ Standalone files (e.g. `madrileno.auction.routers.dto`) need an explicit import:
 ```scala
 import madrileno.utils.json.JsonProtocol.*
 
-case class AuctionDto(…) derives Encoder.AsObject, Decoder
+final case class AuctionDto(…) derives Encoder.AsObject, Decoder
 ```
 
 `Encoder.AsObject` is required when the encoder needs to produce a JSON object rather than a primitive — circe distinguishes the two in its derivation. For DTOs with named fields, always use `AsObject`.
