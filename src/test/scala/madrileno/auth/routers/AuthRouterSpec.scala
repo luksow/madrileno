@@ -61,20 +61,22 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
       tags = Seq("Auth")
     )(
       onRequest(body = AuthWithFirebaseRequest(FirebaseJwt("test-token")))
-        .respondsWith[AuthenticatedResponse](Created, description = "Created new user and authenticated")
+        .respondsWith[AuthenticatedResponse](Ok, description = "Authenticated; a new user account was created (userCreated = true)")
         .assert { ctx =>
           val response = ctx.performRequest(allRoutes)
           response.body.jwt.toString should not be empty
           response.body.refreshToken.toString should not be empty
+          response.body.userCreated shouldBe true
         },
       withSetup {
         seedFirebaseUser()
       }.request(_ => onRequest(body = AuthWithFirebaseRequest(FirebaseJwt("test-token"))))
-        .respondsWith[AuthenticatedResponse](Ok, description = "Authenticated existing user")
+        .respondsWith[AuthenticatedResponse](Ok, description = "Authenticated; existing user (userCreated = false)")
         .assert { case (ctx, _) =>
           val response = ctx.performRequest(allRoutes)
           response.body.jwt.toString should not be empty
           response.body.refreshToken.toString should not be empty
+          response.body.userCreated shouldBe false
         },
       withSetup {
         seedFirebaseUser(blockedAt = Some(Instant.now()))
@@ -114,6 +116,7 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
           val response = ctx.performRequest(allRoutes)
           response.body.jwt.toString should not be empty
           response.body.refreshToken.toString should not be empty
+          response.body.userCreated shouldBe false
         },
       onRequest(body = AuthWithRefreshTokenRequest(TestData.randomRefreshTokenId()))
         .respondsWith[Error[Unit]](Unauthorized, description = "Invalid or expired refresh token")

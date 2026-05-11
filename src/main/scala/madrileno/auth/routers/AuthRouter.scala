@@ -31,8 +31,8 @@ class AuthRouter(authenticationService: AuthenticationService)(using TelemetryCo
           authenticationService
             .authenticateWithFirebase(command)
             .map[ToResponseMarshallable] {
-              case AuthenticationResult.Authenticated(jwt, rt) => Ok      -> AuthenticatedResponse(jwt, rt.id)
-              case AuthenticationResult.UserCreated(jwt, rt)   => Created -> AuthenticatedResponse(jwt, rt.id)
+              case AuthenticationResult.Authenticated(jwt, rt) => Ok -> AuthenticatedResponse(jwt, rt.id, userCreated = false)
+              case AuthenticationResult.UserCreated(jwt, rt)   => Ok -> AuthenticatedResponse(jwt, rt.id, userCreated = true)
               case AuthenticationResult.UserBlocked            => error(Locked, "user-blocked", "User is blocked")
               case AuthenticationResult.InvalidToken           => error(Unauthorized, "invalid-token", "Invalid Firebase token")
             }
@@ -56,8 +56,8 @@ class AuthRouter(authenticationService: AuthenticationService)(using TelemetryCo
             authenticationService
               .authenticateWithRefreshToken(command)
               .map[ToResponseMarshallable] {
-                case AuthenticationResult.Authenticated(jwt, rt) => Ok      -> AuthenticatedResponse(jwt, rt.id)
-                case AuthenticationResult.UserCreated(jwt, rt)   => Created -> AuthenticatedResponse(jwt, rt.id)
+                case AuthenticationResult.Authenticated(jwt, rt) => Ok -> AuthenticatedResponse(jwt, rt.id, userCreated = false)
+                case AuthenticationResult.UserCreated(jwt, rt)   => Ok -> AuthenticatedResponse(jwt, rt.id, userCreated = true)
                 case AuthenticationResult.UserBlocked            => error(Locked, "user-blocked", "User is blocked")
                 case AuthenticationResult.InvalidToken           => error(Unauthorized, "invalid-token", "Invalid refresh token")
               }
