@@ -190,7 +190,7 @@ class AuctionRepository {
   private def persist(auction: Auction): DB[Unit] =
     repository.update(AuctionRow(auction))
 
-  private[repositories] val repository: IdRepository[AuctionRow, AuctionId] & SoftDeleteRepository[AuctionRow, AuctionId] & ForeignIdRepository[
+  private val repository: IdRepository[AuctionRow, AuctionId] & SoftDeleteRepository[AuctionRow, AuctionId] & ForeignIdRepository[
     AuctionRow,
     UserId
   ] & FilteringRepository[AuctionRow, AuctionRowFilter] =

@@ -4,7 +4,7 @@ import cats.effect.testing.scalatest.AsyncIOSpec
 import madrileno.auction.domain.*
 import madrileno.support.{TestData, TestTransactor}
 import madrileno.user.repositories.UserRepository
-import madrileno.utils.db.dsl.p
+import madrileno.utils.db.dsl.{FilteringRepository, p}
 import madrileno.utils.pagination.{Limit, Offset, PageRequest, SortDirection}
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AsyncWordSpec
@@ -16,6 +16,9 @@ class AuctionRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matchers
   private lazy val auctionRepo = new AuctionRepository
   private lazy val bidRepo     = new BidRepository
   private lazy val userRepo    = new UserRepository
+
+  private lazy val auctionFilteringRepo: FilteringRepository[AuctionRow, AuctionRowFilter] =
+    new FilteringRepository[AuctionRow, AuctionRowFilter] { override val table: AuctionRowTable.type = AuctionRowTable }
 
   private def createAuctionWithSeller() = {
     val seller  = TestData.user()
@@ -97,7 +100,7 @@ class AuctionRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matchers
         _      <- auctionRepo.save(older)
         _      <- auctionRepo.save(middle)
         _      <- auctionRepo.save(newer)
-        result <- auctionRepo.repository.findPageByFilter(filter)
+        result <- auctionFilteringRepo.findPageByFilter(filter)
       } yield {
         val (rows, total) = result
         rows.map(_.id) shouldBe List(newer.id, middle.id)
