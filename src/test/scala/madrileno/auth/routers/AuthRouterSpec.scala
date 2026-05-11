@@ -58,10 +58,9 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
       POST,
       description = "Authenticate with Firebase JWT token",
       summary = "Exchange Firebase token for internal JWT and refresh token",
-      headers = h[String]("X-Forwarded-For", "Client IP address"),
       tags = Seq("Auth")
     )(
-      onRequest(body = AuthWithFirebaseRequest(FirebaseJwt("test-token")), headers = "127.0.0.1")
+      onRequest(body = AuthWithFirebaseRequest(FirebaseJwt("test-token")))
         .respondsWith[AuthenticatedResponse](Created, description = "Created new user and authenticated")
         .assert { ctx =>
           val response = ctx.performRequest(allRoutes)
@@ -70,7 +69,7 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
         },
       withSetup {
         seedFirebaseUser()
-      }.request(_ => onRequest(body = AuthWithFirebaseRequest(FirebaseJwt("test-token")), headers = "127.0.0.1"))
+      }.request(_ => onRequest(body = AuthWithFirebaseRequest(FirebaseJwt("test-token"))))
         .respondsWith[AuthenticatedResponse](Ok, description = "Authenticated existing user")
         .assert { case (ctx, _) =>
           val response = ctx.performRequest(allRoutes)
@@ -79,7 +78,7 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
         },
       withSetup {
         seedFirebaseUser(blockedAt = Some(Instant.now()))
-      }.request(_ => onRequest(body = AuthWithFirebaseRequest(FirebaseJwt("test-token")), headers = "127.0.0.1"))
+      }.request(_ => onRequest(body = AuthWithFirebaseRequest(FirebaseJwt("test-token"))))
         .respondsWith[Error[Unit]](Locked, description = "User is blocked")
         .assert { case (ctx, userId) =>
           val response = ctx.performRequest(allRoutes)
@@ -92,19 +91,11 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
             }
             .unsafeRunSync()
         },
-      onRequest(body = AuthWithFirebaseRequest(FirebaseJwt("invalid-token")), headers = "127.0.0.1")
+      onRequest(body = AuthWithFirebaseRequest(FirebaseJwt("invalid-token")))
         .respondsWith[Error[Unit]](Unauthorized, description = "Invalid Firebase token")
         .assert { ctx =>
           val response = ctx.performRequest(allRoutes)
           response.body.title shouldBe Some("Invalid Firebase token")
-        }
-    ),
-    supports(POST, description = "Authenticate with Firebase JWT token without IP", summary = "Missing client IP returns 400", tags = Seq("Auth"))(
-      onRequest(body = AuthWithFirebaseRequest(FirebaseJwt("test-token")))
-        .respondsWith[Error[Unit]](BadRequest, description = "Missing client IP address")
-        .assert { ctx =>
-          val response = ctx.performRequest(allRoutes)
-          response.body.title shouldBe Some("Could not establish request's IP address")
         }
     )
   )
@@ -114,18 +105,17 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
       POST,
       description = "Authenticate with a refresh token",
       summary = "Exchange refresh token for a new JWT and refresh token",
-      headers = h[String]("X-Forwarded-For", "Client IP address"),
       tags = Seq("Auth")
     )(
       withSetup(seedRefreshToken())
-        .request(tokenId => onRequest(body = AuthWithRefreshTokenRequest(tokenId), headers = "127.0.0.1"))
+        .request(tokenId => onRequest(body = AuthWithRefreshTokenRequest(tokenId)))
         .respondsWith[AuthenticatedResponse](Ok, description = "Authenticated with refresh token")
         .assert { case (ctx, _) =>
           val response = ctx.performRequest(allRoutes)
           response.body.jwt.toString should not be empty
           response.body.refreshToken.toString should not be empty
         },
-      onRequest(body = AuthWithRefreshTokenRequest(TestData.randomRefreshTokenId()), headers = "127.0.0.1")
+      onRequest(body = AuthWithRefreshTokenRequest(TestData.randomRefreshTokenId()))
         .respondsWith[Error[Unit]](Unauthorized, description = "Invalid or expired refresh token")
         .assert { ctx =>
           val response = ctx.performRequest(allRoutes)

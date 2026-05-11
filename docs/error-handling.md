@@ -35,7 +35,8 @@ auctionService.placeBid(command).map[ToResponseMarshallable] {
   case PlaceBidResult.AuctionEnded              => error(Conflict, "auction-ended", "Auction has already ended")
   case PlaceBidResult.CannotBidOnOwnAuction     => error(Forbidden, "cannot-bid-on-own-auction", "Cannot bid on your own auction")
   case PlaceBidResult.AlreadyHighestBidder      => error(Conflict, "already-highest-bidder", "You already have the highest bid")
-  case PlaceBidResult.BidTooLow(currentHighest) => error(Conflict, "bid-too-low", s"Bid must be strictly greater than $currentHighest")
+  case PlaceBidResult.BidTooLow(currentHighest) =>
+    error(Conflict, "bid-too-low", "Bid is below the current minimum", extension = Map("minAmount" -> currentHighest))
 }
 ```
 
@@ -66,11 +67,11 @@ The shape on the wire:
 
 ```json
 {
-  "type":     "result:bid-too-low",
-  "status":   409,
-  "title":    "Bid must be strictly greater than 350.00",
-  "instance": "trace-id:9f0c…",
-  "extension": { "currentHighest": "350.00" }
+  "type":      "result:bid-too-low",
+  "status":    409,
+  "title":     "Bid is below the current minimum",
+  "instance":  "trace-id:9f0c…",
+  "extension": { "minAmount": 350.00 }
 }
 ```
 
@@ -105,14 +106,14 @@ def error[E: Encoder](
 )(using tc: TelemetryContext): IO[ToResponseMarshallable]
 ```
 
-Use it from any router. The trace-id is filled in automatically; you supply the status, the type tag, and the human-facing title. For per-rejection structured data, pass an `extension`:
+Use it from any router. The trace-id is filled in automatically; you supply the status, the type tag, and the human-facing title. **Keep the title generic and put any data the client needs in `extension`** — never make a client parse the human `title`. This is the canonical pattern for rejections that carry a value:
 
 ```scala
-case PlaceBidResult.BidTooLow(highest) =>
-  error(Conflict, "bid-too-low", s"Bid must be strictly greater than $highest", extension = Map("currentHighest" -> highest))
+case PlaceBidResult.BidTooLow(currentHighest) =>
+  error(Conflict, "bid-too-low", "Bid is below the current minimum", extension = Map("minAmount" -> currentHighest))
 ```
 
-That `Map[String, Price]` (or whatever case class) gets encoded into the `extension` field. The frontend reads `extension.currentHighest` and renders the appropriate message.
+The `Map[String, Price]` encodes into the `extension` field as a JSON object (`{"minAmount": 350.00}`). The frontend reads `extension.minAmount` and renders/localizes the message itself. Use a small case class instead of a `Map` when the extension has several fields and you want it to show up in the OpenAPI/ts-rest schema (a `Map` serializes fine but doesn't carry field names into the generated types).
 
 ## Framework rejections
 
