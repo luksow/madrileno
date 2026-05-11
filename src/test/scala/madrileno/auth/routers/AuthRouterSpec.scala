@@ -1,7 +1,7 @@
 package madrileno.auth.routers
 
 import cats.effect.IO
-import madrileno.auth.domain.{FirebaseJwt, RefreshTokenId, UserAgent, UserAuth, UserAuthId}
+import madrileno.auth.domain.{AuthContext, FirebaseJwt, RefreshTokenId, UserAgent, UserAuth, UserAuthId}
 import madrileno.auth.repositories.{RefreshTokenRepository, UserAuthRepository}
 import madrileno.auth.routers.dto.{AuthWithFirebaseRequest, AuthWithRefreshTokenRequest, AuthenticatedResponse, RefreshTokenDto}
 import madrileno.support.{BaseRouteSpec, TestApplicationLoader, TestData}
@@ -130,15 +130,26 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
   path("/v1/auth/sessions")(
     supports(
       GET,
-      description = "List active sessions",
+      description =
+        "List active sessions. Each entry's `createdAt` is when that refresh token was issued — login time, or the timestamp of the last JWT refresh that rotated it (refresh tokens are single-use, so the live one is always the newest in its chain).",
       summary = "Returns active refresh tokens for the authenticated user",
       securitySchemes = Seq(bearerScheme),
       tags = Seq("Auth")
     )(
-      onRequest(security = bearer.apply(validJwt(TestData.authContext())))
-        .respondsWith[List[RefreshTokenDto]](Ok, description = "List of active sessions")
-        .assert { ctx =>
-          ctx.performRequest(allRoutes)
+      withSetup {
+        val user  = TestData.user()
+        val token = TestData.refreshToken(userId = user.id, userAgent = UserAgent("Firefox/142"), createdAt = Instant.parse("2026-05-01T10:00:00Z"))
+        val _ = application.transactor
+          .inTransaction(application.userRepository.create(user, Instant.now()) *> new RefreshTokenRepository().save(token))
+          .unsafeRunSync()
+        (user, token)
+      }.request { case (user, _) => onRequest(security = bearer.apply(validJwt(AuthContext(user)))) }
+        .respondsWith[List[RefreshTokenDto]](Ok, description = "Active (unused, unrevoked) refresh tokens for the authenticated user")
+        .assert { case (ctx, (_, token)) =>
+          val response = ctx.performRequest(allRoutes)
+          response.body.map(_.id) shouldBe List(token.id)
+          response.body.map(_.userAgent) shouldBe List(UserAgent("Firefox/142"))
+          response.body.map(_.createdAt) shouldBe List(Instant.parse("2026-05-01T10:00:00Z"))
         }
     ),
     supports(
