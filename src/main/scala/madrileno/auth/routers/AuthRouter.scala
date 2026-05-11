@@ -23,7 +23,11 @@ class AuthRouter(authenticationService: AuthenticationService)(using TelemetryCo
       ) =>
         complete {
           val command =
-            AuthenticateWithFirebaseCommand(request.firebaseJwtToken, UserAgent(userAgent.getOrElse("Unknown")), ipAddress.getOrElse(unknownIpAddress))
+            AuthenticateWithFirebaseCommand(
+              request.firebaseJwtToken,
+              UserAgent(userAgent.getOrElse("Unknown")),
+              ipAddress.getOrElse(unknownIpAddress)
+            )
           authenticationService
             .authenticateWithFirebase(command)
             .map[ToResponseMarshallable] {
@@ -44,7 +48,11 @@ class AuthRouter(authenticationService: AuthenticationService)(using TelemetryCo
         ) =>
           complete {
             val command =
-              AuthenticateWithRefreshTokenCommand(request.refreshToken, UserAgent(userAgent.getOrElse("Unknown")), ipAddress.getOrElse(unknownIpAddress))
+              AuthenticateWithRefreshTokenCommand(
+                request.refreshToken,
+                UserAgent(userAgent.getOrElse("Unknown")),
+                ipAddress.getOrElse(unknownIpAddress)
+              )
             authenticationService
               .authenticateWithRefreshToken(command)
               .map[ToResponseMarshallable] {
