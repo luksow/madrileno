@@ -6,6 +6,7 @@ import fs2.Stream
 import madrileno.utils.json.JsonProtocol
 import madrileno.utils.json.JsonProtocol.*
 import madrileno.utils.observability.TelemetryContext
+import madrileno.utils.pagination.Page
 import org.http4s.Status
 import pl.iterators.kebs.enums.KebsEnum
 import pl.iterators.kebs.http4sstir.matchers.KebsHttp4sStirMatchers
@@ -27,6 +28,9 @@ trait BaseRouter
     with KebsEnum
     with PaginationDirectives {
   export Status.*
+
+  given [A: Encoder]: Encoder.AsObject[Page[A]] = Encoder.AsObject.derived
+  given [A: Decoder]: Decoder[Page[A]]          = Decoder.derived
 
   def error[E: Encoder](
     status: Status,

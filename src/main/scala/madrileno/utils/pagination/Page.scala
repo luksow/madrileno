@@ -1,13 +1,9 @@
 package madrileno.utils.pagination
 
-import madrileno.utils.json.JsonProtocol.*
-
 final case class Page[A](
   items: List[A],
   total: Long,
   limit: Int,
-  offset: Int)
-    derives Encoder.AsObject,
-      Decoder {
+  offset: Int) {
   def map[B](f: A => B): Page[B] = Page(items.map(f), total, limit, offset)
 }
