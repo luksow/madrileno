@@ -13,12 +13,12 @@ sealed trait Once      extends Schedule
 sealed trait Recurring extends Schedule
 sealed trait Custom    extends Schedule
 object Schedule {
-  case object Once                                                                        extends Once
-  case class OnceAt(at: Instant)                                                          extends Once
-  case class RecurringWithFixedRate(every: Duration, initialDelay: Duration = 0.seconds)  extends Recurring
-  case class RecurringWithFixedDelay(after: Duration, initialDelay: Duration = 0.seconds) extends Recurring
-  case class Cron(expression: CronExpression)                                             extends Recurring
-  case class NextAt[A](at: Instant, payload: A)                                           extends Custom
+  case object Once                                                                              extends Once
+  final case class OnceAt(at: Instant)                                                          extends Once
+  final case class RecurringWithFixedRate(every: Duration, initialDelay: Duration = 0.seconds)  extends Recurring
+  final case class RecurringWithFixedDelay(after: Duration, initialDelay: Duration = 0.seconds) extends Recurring
+  final case class Cron(expression: CronExpression)                                             extends Recurring
+  final case class NextAt[A](at: Instant, payload: A)                                           extends Custom
 }
 
 final case class Task[A] private[task] (

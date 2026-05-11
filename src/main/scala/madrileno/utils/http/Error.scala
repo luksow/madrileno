@@ -7,7 +7,7 @@ import org.http4s.Status
 import java.net.URI
 
 // https://www.rfc-editor.org/rfc/rfc9457.html
-case class Error[T: Encoder](
+final case class Error[T: Encoder](
   `type`: Option[URI] = Some(URI.create("about:blank")),
   status: Option[Status] = None,
   title: Option[String] = None,

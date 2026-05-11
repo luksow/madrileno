@@ -12,7 +12,7 @@ enum PgConfigSSL {
   case System
 }
 
-case class PgConfig(
+final case class PgConfig(
   host: String,
   port: Int = 5432,
   user: String,

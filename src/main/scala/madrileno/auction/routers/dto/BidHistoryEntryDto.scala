@@ -6,7 +6,7 @@ import madrileno.utils.json.JsonProtocol.*
 import java.time.Instant
 import java.util.Currency
 
-case class BidHistoryEntryDto(
+final case class BidHistoryEntryDto(
   amount: Price,
   currency: Currency,
   bidderRef: BidderRef,

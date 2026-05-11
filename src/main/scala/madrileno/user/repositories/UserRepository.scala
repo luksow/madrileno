@@ -9,7 +9,7 @@ import skunk.codec.all.*
 import java.net.URI
 import java.time.Instant
 
-private[repositories] case class UserRow(
+private[repositories] final case class UserRow(
   id: UserId,
   fullName: Option[FullName],
   emailAddress: Option[EmailAddress],
@@ -57,7 +57,7 @@ private[repositories] object UserRowTable extends Table[UserRow]("\"user\"") wit
     (id, fullName, emailAddress, emailVerified, avatarUrl, createdAt, updatedAt, deletedAt, blockedAt)
 }
 
-private[repositories] case class UserRowFilter(
+private[repositories] final case class UserRowFilter(
   id: SqlPredicate[UserId] = p.any,
   emailAddress: SqlPredicate[Option[EmailAddress]] = p.any,
   emailVerified: SqlPredicate[Boolean] = p.any,
@@ -67,7 +67,6 @@ private[repositories] case class UserRowFilter(
     SqlFilterDerivation.filterFragment(this, (UserRowTable.id, UserRowTable.emailAddress, UserRowTable.emailVerified, UserRowTable.deletedAt))
 }
 
-/** Timestamps are owned by the caller — repository does not read the clock. */
 class UserRepository {
   def create(user: User, now: Instant): DB[User] = {
     val row = UserRow(user, now)

@@ -12,7 +12,7 @@ import skunk.implicits.*
 import java.time.Instant
 import java.util.Currency
 
-private[repositories] case class AuctionRow(
+private[repositories] final case class AuctionRow(
   id: AuctionId,
   sellerId: UserId,
   wineName: WineName,
@@ -98,7 +98,7 @@ private[repositories] object AuctionRowTable
     )
 }
 
-private[repositories] case class AuctionRowFilter(
+private[repositories] final case class AuctionRowFilter(
   id: SqlPredicate[AuctionId] = p.any,
   sellerId: SqlPredicate[UserId] = p.any,
   status: SqlPredicate[AuctionStatus] = p.any,

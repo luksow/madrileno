@@ -12,7 +12,7 @@ import skunk.implicits.*
 
 import java.time.Instant
 
-private[repositories] case class RefreshTokenRow(
+private[repositories] final case class RefreshTokenRow(
   id: RefreshTokenId,
   userId: UserId,
   userAgent: UserAgent,
@@ -56,7 +56,7 @@ private[repositories] object RefreshTokenRowTable
   override def mapping: (List[Column[?]], Codec[RefreshTokenRow]) = (id, userId, userAgent, ipAddress, createdAt, usedAt, deletedAt)
 }
 
-private[repositories] case class RefreshTokenRowFilter(
+private[repositories] final case class RefreshTokenRowFilter(
   id: SqlPredicate[RefreshTokenId] = p.any,
   userId: SqlPredicate[UserId] = p.any,
   userAgent: SqlPredicate[UserAgent] = p.any,

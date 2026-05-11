@@ -18,7 +18,7 @@ class PostgresEventBusSpec extends AsyncWordSpec with AsyncIOSpec with Matchers 
 
   private given TelemetryContext = TelemetryContext(Meter.noop[IO], Tracer.noop[IO], io.opentelemetry.api.OpenTelemetry.noop())
 
-  private case class Sample(id: Int, name: String) derives EventCodec
+  private final case class Sample(id: Int, name: String) derives EventCodec
 
   // Unique per-test channel names so concurrent test runs against the same Postgres can't cross-talk.
   private def channel(prefix: String): String = s"${prefix}_${UUID.randomUUID().toString.replace("-", "_")}"

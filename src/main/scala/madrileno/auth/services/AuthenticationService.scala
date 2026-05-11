@@ -173,12 +173,12 @@ class AuthenticationService(
   }
 }
 
-case class AuthenticateWithFirebaseCommand(
+final case class AuthenticateWithFirebaseCommand(
   firebaseJwt: FirebaseJwt,
   userAgent: UserAgent,
   ipAddress: IpAddress)
 
-case class AuthenticateWithRefreshTokenCommand(
+final case class AuthenticateWithRefreshTokenCommand(
   refreshToken: RefreshTokenId,
   userAgent: UserAgent,
   ipAddress: IpAddress)
@@ -190,8 +190,8 @@ enum AuthenticationResult {
   case InvalidToken
 }
 
-case class ListRefreshTokensCommand(userId: UserId)
+final case class ListRefreshTokensCommand(userId: UserId)
 
-case class RevokeRefreshTokenCommand(userId: UserId, refreshTokenId: RefreshTokenId)
+final case class RevokeRefreshTokenCommand(userId: UserId, refreshTokenId: RefreshTokenId)
 
-case class RevokeRefreshTokensCommand(userId: UserId, userAgent: UserAgent)
+final case class RevokeRefreshTokensCommand(userId: UserId, userAgent: UserAgent)

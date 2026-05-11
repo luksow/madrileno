@@ -15,7 +15,7 @@ import skunk.implicits.*
 
 import java.time.Instant
 
-private[repositories] case class AuctionImageRow(
+private[repositories] final case class AuctionImageRow(
   id: AuctionImageId,
   auctionId: AuctionId,
   storageKey: StorageKey,
@@ -71,7 +71,7 @@ private[repositories] object AuctionImageRowTable
     (id, auctionId, storageKey, fileName, contentType, sizeBytes, position, uploadedAt, deletedAt, width, height, format, analyzedAt)
 }
 
-private[repositories] case class AuctionImageVariantRow(
+private[repositories] final case class AuctionImageVariantRow(
   id: AuctionImageVariantId,
   auctionImageId: AuctionImageId,
   spec: VariantSpec,
@@ -112,7 +112,7 @@ private[repositories] object AuctionImageVariantRowTable
     (id, auctionImageId, spec, storageKey, width, height, format, generatedAt)
 }
 
-private[repositories] case class AuctionImageVariantRowFilter(
+private[repositories] final case class AuctionImageVariantRowFilter(
   auctionImageId: SqlPredicate[AuctionImageId] = p.any,
   spec: SqlPredicate[VariantSpec] = p.any)
     extends SqlFilter {
@@ -120,7 +120,7 @@ private[repositories] case class AuctionImageVariantRowFilter(
     SqlFilterDerivation.filterFragment(this, (AuctionImageVariantRowTable.auctionImageId, AuctionImageVariantRowTable.spec))
 }
 
-private[repositories] case class AuctionImageRowFilter(
+private[repositories] final case class AuctionImageRowFilter(
   id: SqlPredicate[AuctionImageId] = p.any,
   auctionId: SqlPredicate[AuctionId] = p.any,
   deletedAt: SqlPredicate[Instant] = p.isNull)

@@ -10,7 +10,7 @@ import skunk.codec.all.*
 
 import java.time.Instant
 
-private[repositories] case class UserAuthRow(
+private[repositories] final case class UserAuthRow(
   id: UserAuthId,
   userId: UserId,
   provider: Provider,
@@ -59,7 +59,7 @@ private[repositories] object UserAuthRowTable
     (id, userId, provider, providerUserId, credential, metadata, createdAt, updatedAt, deletedAt)
 }
 
-private[repositories] case class UserAuthRowFilter(
+private[repositories] final case class UserAuthRowFilter(
   id: SqlPredicate[UserAuthId] = p.any,
   userId: SqlPredicate[UserId] = p.any,
   provider: SqlPredicate[Provider] = p.any,

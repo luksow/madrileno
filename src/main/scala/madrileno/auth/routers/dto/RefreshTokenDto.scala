@@ -4,7 +4,7 @@ import io.scalaland.chimney.dsl.*
 import madrileno.auth.domain.*
 import madrileno.utils.json.JsonProtocol.*
 
-case class RefreshTokenDto(
+final case class RefreshTokenDto(
   id: RefreshTokenId,
   userAgent: UserAgent,
   ipAddress: String)

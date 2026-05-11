@@ -18,7 +18,7 @@ object UserAgent extends Opaque[UserAgent, String] {
   }
 }
 
-case class RefreshToken(
+final case class RefreshToken(
   id: RefreshTokenId,
   userId: UserId,
   userAgent: UserAgent,

@@ -2,7 +2,7 @@ package madrileno.utils.mailer
 
 import pureconfig.*
 
-case class MailerConfig(
+final case class MailerConfig(
   host: String,
   port: Int = 587,
   username: Option[String] = None,

@@ -10,8 +10,8 @@ import sttp.client4.quick.*
 
 import scala.concurrent.duration.*
 
-case class MailpitAddress(name: String, address: String)
-case class MailpitMessage(
+final case class MailpitAddress(name: String, address: String)
+final case class MailpitMessage(
   id: String,
   subject: String,
   from: Option[MailpitAddress],
@@ -21,7 +21,7 @@ case class MailpitMessage(
   snippet: String,
   size: Long,
   attachmentCount: Int)
-case class MailpitMessageDetail(
+final case class MailpitMessageDetail(
   subject: String,
   text: String,
   html: String,

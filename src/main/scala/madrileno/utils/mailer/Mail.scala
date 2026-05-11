@@ -8,7 +8,7 @@ enum Language {
   case En
 }
 
-case class MailContext(baseUrl: URI)
+final case class MailContext(baseUrl: URI)
 
 trait EmailTemplate {
   def render(ctx: MailContext, lang: Language): RenderedMail
@@ -32,23 +32,23 @@ enum SerializedMailBody {
   case Both(text: String, html: String)
 }
 
-case class RenderedMail(
+final case class RenderedMail(
   subject: String,
   body: MailBody,
   inlineAttachments: List[InlineAttachment] = Nil)
 
-case class Attachment(
+final case class Attachment(
   filename: String,
   contentType: String,
   data: Array[Byte])
 
-case class InlineAttachment(
+final case class InlineAttachment(
   contentId: String,
   filename: String,
   contentType: String,
   data: Array[Byte])
 
-case class SerializedMail(
+final case class SerializedMail(
   to: List[String],
   subject: String,
   body: SerializedMailBody,

@@ -59,7 +59,7 @@ class JwtService(config: JwtService.Config) {
 }
 
 object JwtService {
-  case class Config(secret: String, validFor: Duration) derives ConfigReader
+  final case class Config(secret: String, validFor: Duration) derives ConfigReader
 
   enum DecodingResult[A] {
     case Decoded(payload: A)
