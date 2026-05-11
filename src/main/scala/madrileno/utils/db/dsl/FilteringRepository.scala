@@ -82,10 +82,12 @@ trait PageableSqlFilter[SortField] extends SqlFilter {
 trait KeysetSqlFilter[S, I] extends SqlFilter {
   protected def keysetCursor: CursorRequest[(S, I)]
   protected def keysetColumns: (Column[S], Column[I])
-  protected def keysetDescending: Boolean = true
+  protected def keysetDirection: SortDirection = SortDirection.Desc
   protected def baseFilterFragment: AppliedFragment
 
   def keysetLimit: Limit = keysetCursor.limit
+
+  private def keysetAscending: Boolean = keysetDirection == SortDirection.Asc
 
   final def filterFragment: AppliedFragment =
     keysetCursor.after match {
@@ -93,15 +95,14 @@ trait KeysetSqlFilter[S, I] extends SqlFilter {
       case Some((sortAfter, idAfter)) =>
         val (sortCol, idCol) = keysetColumns
         val keyset =
-          if (keysetDescending) sql"(${sortCol.n}, ${idCol.n}) < (${sortCol.c}, ${idCol.c})" (sortAfter, idAfter)
-          else sql"(${sortCol.n}, ${idCol.n}) > (${sortCol.c}, ${idCol.c})" (sortAfter, idAfter)
-        baseFilterFragment |+| AndFragment |+| keyset
+          if (keysetAscending) sql"(${sortCol.n}, ${idCol.n}) > (${sortCol.c}, ${idCol.c})" (sortAfter, idAfter)
+          else sql"(${sortCol.n}, ${idCol.n}) < (${sortCol.c}, ${idCol.c})" (sortAfter, idAfter)
+        sql"(" (Void) |+| baseFilterFragment |+| sql")" (Void) |+| AndFragment |+| keyset
     }
 
   override def orderByFragment: Fragment[Void] = {
     val (sortCol, idCol) = keysetColumns
-    val ascending        = !keysetDescending
-    orderByColumns(sortCol -> ascending, idCol -> ascending)
+    orderByColumns(sortCol -> keysetAscending, idCol -> keysetAscending)
   }
 
   override def offsetLimitFragment: AppliedFragment = sql"LIMIT $int8" ((keysetCursor.limit.unwrap + 1).toLong)
