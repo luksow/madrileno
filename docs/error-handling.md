@@ -53,7 +53,7 @@ See [domain-modeling.md](domain-modeling.md) for the ADT side and [sealed-monad.
 All error responses (rejections, validation failures, internal errors) use the same `Error[T]` envelope, modeled on [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457.html) (the current problem-details standard, obsoleting RFC 7807):
 
 ```scala
-case class Error[T: Encoder](
+final case class Error[T: Encoder](
   `type`: Option[URI] = Some(URI.create("about:blank")),
   status: Option[Status] = None,
   title: Option[String] = None,

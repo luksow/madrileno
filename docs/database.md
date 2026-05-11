@@ -52,7 +52,7 @@ A repo method that always must be in a transaction (e.g., `bulkSetPositions`'s t
 A `Table[Row]` is a singleton object describing the table's columns and codecs. The `Row` is a private case class that mirrors the row layout exactly. The domain type lives elsewhere; converting between the two is the row's responsibility.
 
 ```scala
-private[repositories] case class AuctionImageRow(
+private[repositories] final case class AuctionImageRow(
   id: AuctionImageId,
   auctionId: AuctionId,
   storageKey: StorageKey,
@@ -128,7 +128,7 @@ This separation keeps the public surface in domain vocabulary, not SQL. Callers 
 `SqlFilter` is the contract for a filter object that knows its `filterFragment`, an optional `orderByFragment`, and pagination. A row-filter is a private case class keyed by typed predicates:
 
 ```scala
-private[repositories] case class AuctionImageRowFilter(
+private[repositories] final case class AuctionImageRowFilter(
   id: SqlPredicate[AuctionImageId] = p.any,
   auctionId: SqlPredicate[AuctionId] = p.any,
   deletedAt: SqlPredicate[Instant] = p.isNull

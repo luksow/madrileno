@@ -90,9 +90,9 @@ object VivinoGateway {
   // pure helpers and on-the-wire shapes — package-private so the spec can use them
   private[gateways] def pickBestMatch(...): Option[VivinoRating] = …
 
-  private[gateways] case class AlgoliaQuery(query: String, hitsPerPage: Int) derives Encoder.AsObject
+  private[gateways] final case class AlgoliaQuery(query: String, hitsPerPage: Int) derives Encoder.AsObject
   private[gateways] given Configuration = Configuration.default.withSnakeCaseMemberNames
-  private[gateways] case class AlgoliaResponse(hits: List[AlgoliaHit]) derives ConfiguredCodec
+  private[gateways] final case class AlgoliaResponse(hits: List[AlgoliaHit]) derives ConfiguredCodec
   // …
 }
 ```
@@ -158,7 +158,7 @@ some-api {
 }
 ```
 
-Add a `case class SomeApiConfig(...)` derived from `ConfigReader`, load it in `Main` or your module, and pass it to the gateway factory. Keep secrets out of code; load them from environment variables only.
+Add a `final case class SomeApiConfig(...)` derived from `ConfigReader`, load it in `Main` or your module, and pass it to the gateway factory. Keep secrets out of code; load them from environment variables only.
 
 ## Adding a new gateway
 

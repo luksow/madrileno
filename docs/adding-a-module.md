@@ -161,7 +161,7 @@ import skunk.codec.all.*
 
 import java.time.Instant
 
-private[repositories] case class ProductRow(
+private[repositories] final case class ProductRow(
   id: ProductId,
   name: ProductName,
   price: Price,
@@ -195,7 +195,7 @@ private[repositories] object ProductRowTable
   def mapping: (List[Column[?]], Codec[ProductRow]) = (id, name, price, createdAt, updatedAt, deletedAt)
 }
 
-private[repositories] case class ProductRowFilter(
+private[repositories] final case class ProductRowFilter(
   id: SqlPredicate[ProductId] = p.any,
   name: SqlPredicate[ProductName] = p.any,
   deletedAt: SqlPredicate[Instant] = p.isNull)
@@ -333,10 +333,10 @@ class ProductService(
   }
 }
 
-case class CreateProductCommand(name: ProductName, price: Price)
-case class RenameProductCommand(id: ProductId, newName: ProductName)
-case class RepriceProductCommand(id: ProductId, newPrice: Price)
-case class DeleteProductCommand(id: ProductId)
+final case class CreateProductCommand(name: ProductName, price: Price)
+final case class RenameProductCommand(id: ProductId, newName: ProductName)
+final case class RepriceProductCommand(id: ProductId, newPrice: Price)
+final case class DeleteProductCommand(id: ProductId)
 
 enum RenameProductResult { case Renamed, NotFound, NameUnchanged }
 enum RepriceProductResult { case Repriced, NotFound, PriceUnchanged }
@@ -364,7 +364,7 @@ package madrileno.product.routers.dto
 import madrileno.product.domain.*
 import madrileno.utils.json.JsonProtocol.*
 
-case class ProductDto(id: ProductId, name: ProductName, price: Price) derives Encoder.AsObject, Decoder
+final case class ProductDto(id: ProductId, name: ProductName, price: Price) derives Encoder.AsObject, Decoder
 
 object ProductDto {
   def apply(product: Product): ProductDto = {
@@ -382,9 +382,9 @@ package madrileno.product.routers.dto
 import madrileno.product.domain.{Price, ProductName}
 import madrileno.utils.json.JsonProtocol.*
 
-case class CreateProductRequest(name: ProductName, price: Price) derives Decoder, Encoder.AsObject
-case class RenameProductRequest(name: ProductName)                derives Decoder, Encoder.AsObject
-case class RepriceProductRequest(price: Price)                    derives Decoder, Encoder.AsObject
+final case class CreateProductRequest(name: ProductName, price: Price) derives Decoder, Encoder.AsObject
+final case class RenameProductRequest(name: ProductName)                derives Decoder, Encoder.AsObject
+final case class RepriceProductRequest(price: Price)                    derives Decoder, Encoder.AsObject
 ```
 
 Using opaque types directly in request DTOs is intentional: kebs derives a `Decoder` that calls `Opaque.validate` and emits a Circe decoding failure on `Left`. A `{"name": ""}` request becomes a 400 at the HTTP boundary — you don't need to re-validate in the router.
@@ -682,7 +682,7 @@ Don't serialize domain events directly to WS clients: the `EventCodec` JSON shap
 
 ```scala
 // routers/dto/ProductRegisteredDto.scala
-case class ProductRegisteredDto(productId: ProductId, name: ProductName, at: Instant)
+final case class ProductRegisteredDto(productId: ProductId, name: ProductName, at: Instant)
     derives Encoder.AsObject, Decoder
 
 object ProductRegisteredDto {
