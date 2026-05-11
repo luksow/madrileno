@@ -3,8 +3,10 @@ package madrileno.auction.repositories
 import cats.effect.testing.scalatest.AsyncIOSpec
 import madrileno.auction.domain.*
 import madrileno.support.{TestData, TestTransactor}
+import madrileno.user.domain.UserId
 import madrileno.user.repositories.UserRepository
-import madrileno.utils.http.PageRequest
+import madrileno.utils.db.dsl.*
+import madrileno.utils.http.{Limit, Offset, PageRequest, SortDirection}
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AsyncWordSpec
 
@@ -15,6 +17,14 @@ class AuctionRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matchers
   private lazy val auctionRepo = new AuctionRepository
   private lazy val bidRepo     = new BidRepository
   private lazy val userRepo    = new UserRepository
+
+  private lazy val filteringRepo: FilteringRepository[AuctionRow, AuctionRowFilter] =
+    new IdRepository[AuctionRow, AuctionId](_.id)
+      with SoftDeleteRepository[AuctionRow, AuctionId]
+      with ForeignIdRepository[AuctionRow, UserId]
+      with FilteringRepository[AuctionRow, AuctionRowFilter] {
+      override val table: AuctionRowTable.type = AuctionRowTable
+    }
 
   private def createAuctionWithSeller() = {
     val seller  = TestData.user()
@@ -81,6 +91,26 @@ class AuctionRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matchers
         rows.map(_._1.id) should contain only a1.id
         rows.map(_._2) should contain only Price(BigDecimal(225))
         total shouldBe 1L
+      }
+    }
+
+    "findPageByFilter returns the page (ordered, with the id tie-break) plus the matching total" in withRollback {
+      val seller = TestData.user()
+      val older  = TestData.auction(sellerId = seller.id, createdAt = Instant.parse("2026-01-01T00:00:00Z"))
+      val middle = TestData.auction(sellerId = seller.id, createdAt = Instant.parse("2026-02-01T00:00:00Z"))
+      val newer  = TestData.auction(sellerId = seller.id, createdAt = Instant.parse("2026-03-01T00:00:00Z"))
+      val filter =
+        AuctionRowFilter(sellerId = p.equal(seller.id), page = Some(PageRequest(Limit(2), Offset(0), AuctionSortField.CreatedAt, SortDirection.Desc)))
+      for {
+        _      <- userRepo.create(seller, Instant.now())
+        _      <- auctionRepo.save(older)
+        _      <- auctionRepo.save(middle)
+        _      <- auctionRepo.save(newer)
+        result <- filteringRepo.findPageByFilter(filter)
+      } yield {
+        val (rows, total) = result
+        rows.map(_.id) shouldBe List(newer.id, middle.id)
+        total shouldBe 3L
       }
     }
 

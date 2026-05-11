@@ -52,15 +52,6 @@ trait SqlFilter {
 
   def filterFragment: AppliedFragment
 
-  protected def fromSqlOrderBy(orderBy: SqlOrderBy*): Fragment[Void] = {
-    if (orderBy.isEmpty) {
-      AnyOrder.fragment
-    } else {
-      val fragment = orderBy.map(_.fragment).reduce((acc, frag) => sql"$acc, $frag")
-      sql"ORDER BY $fragment"
-    }
-  }
-
   def orderByFragment: Fragment[Void] = AnyOrder.fragment
 
   protected def offsetLimit: Option[(Long, Long)] = None
@@ -73,12 +64,20 @@ trait SqlFilter {
   }
 }
 
+final case class PageWindow(
+  offset: Long,
+  limit: Long,
+  sortColumn: Column[?],
+  ascending: Boolean)
+
 trait PageableSqlFilter extends SqlFilter {
-  protected def sortColumn: Option[(Column[?], Boolean)] = None
+  protected def pageWindow: Option[PageWindow] = None
   protected def tieBreakColumn: Column[?]
 
   override def orderByFragment: Fragment[Void] =
-    sortColumn.fold(super.orderByFragment) { case (column, ascending) => orderByColumns(column -> ascending, tieBreakColumn -> true) }
+    pageWindow.fold(super.orderByFragment)(w => orderByColumns(w.sortColumn -> w.ascending, tieBreakColumn -> w.ascending))
+
+  override protected def offsetLimit: Option[(Long, Long)] = pageWindow.map(w => (w.offset, w.limit))
 }
 
 object SqlFilterDerivation {
@@ -113,25 +112,8 @@ trait SqlPredicate[A] {
   def toAppliedFragment(column: Column[Option[A]]): AppliedFragment
 }
 
-trait SqlOrderBy {
-  val fragment: Fragment[Void]
-}
-
-object AnyOrder extends SqlOrderBy {
-  override val fragment: Fragment[Void] = sql""
-}
-
-trait SqlOrderByColumn extends SqlOrderBy {
-  val column: Column[?]
-  val ascending: Boolean
-
-  override val fragment: Fragment[Void] = {
-    if (ascending) {
-      sql"${column.n} ASC"
-    } else {
-      sql"${column.n} DESC"
-    }
-  }
+object AnyOrder {
+  val fragment: Fragment[Void] = sql""
 }
 
 object p {
@@ -240,12 +222,12 @@ object p {
 
 trait FilteringRepository[A, F <: SqlFilter] extends BaseRepository[A] {
   def findByFilter(filter: F, lock: Lock = Lock.NoLock)(using session: Session[IO]): IO[List[A]] = {
-    val appliedFragment          = filter.filterFragment
-    val pageLimitAppliedFragment = filter.offsetLimitFragment
+    val appliedFragment            = filter.filterFragment
+    val offsetLimitAppliedFragment = filter.offsetLimitFragment
     session.execute(
-      sql"SELECT ${table.*} FROM ${table.n} WHERE ${appliedFragment.fragment} ${filter.orderByFragment} ${pageLimitAppliedFragment.fragment} ${lock.fragment}"
+      sql"SELECT ${table.*} FROM ${table.n} WHERE ${appliedFragment.fragment} ${filter.orderByFragment} ${offsetLimitAppliedFragment.fragment} ${lock.fragment}"
         .query(table.c)
-    )(appliedFragment.argument, pageLimitAppliedFragment.argument)
+    )(appliedFragment.argument, offsetLimitAppliedFragment.argument)
   }
 
   def findPageByFilter(filter: F, lock: Lock = Lock.NoLock)(using session: Session[IO]): IO[(List[A], Long)] =

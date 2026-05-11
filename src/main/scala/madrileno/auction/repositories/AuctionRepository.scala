@@ -119,16 +119,15 @@ private[repositories] final case class AuctionRowFilter(
 
   override protected def tieBreakColumn: Column[?] = AuctionRowTable.id
 
-  override protected def sortColumn: Option[(Column[?], Boolean)] = page.map { p =>
-    val column = p.sortBy match {
-      case AuctionSortField.CreatedAt     => AuctionRowTable.createdAt
-      case AuctionSortField.EndsAt        => AuctionRowTable.endsAt
-      case AuctionSortField.StartingPrice => AuctionRowTable.startingPrice
-    }
-    (column, p.sortDir == SortDirection.Asc)
+  override protected def pageWindow: Option[PageWindow] = page.map { p =>
+    PageWindow(p.offsetValue.toLong, p.limitValue.toLong, sortColumnFor(p.sortBy), p.sortDir == SortDirection.Asc)
   }
 
-  override protected def offsetLimit: Option[(Long, Long)] = page.map(p => (p.offsetValue.toLong, p.limitValue.toLong))
+  private def sortColumnFor(field: AuctionSortField): Column[?] = field match {
+    case AuctionSortField.CreatedAt     => AuctionRowTable.createdAt
+    case AuctionSortField.EndsAt        => AuctionRowTable.endsAt
+    case AuctionSortField.StartingPrice => AuctionRowTable.startingPrice
+  }
 }
 
 class AuctionRepository {
