@@ -95,7 +95,7 @@ object Main extends IOApp.Simple {
                val httpApp = serverMiddleware.wrapHttpApp(
                  EntityLimiter.httpApp(Metrics(metricsOps)(application.routes(wsb).toHttpRoutes).orNotFound, application.httpConfig.maxRequestSize)
                )
-               if (corsConfig.enabled) corsPolicy(httpApp) else httpApp
+               corsPolicy.fold(httpApp)(_(httpApp))
              }
              .build
     } yield application).use { _ =>

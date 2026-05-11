@@ -22,13 +22,18 @@ object Cors extends LoggingSupport {
     config: CorsConfig,
     environment: String,
     baseUrl: URI
-  ): IO[CORSPolicy] = {
-    val base       = CORS.policy.withAllowMethodsAll.withAllowHeadersAll.withMaxAge(config.maxAge)
-    val configured = config.allowedOrigins.split(',').iterator.map(_.trim).filter(_.nonEmpty).toList
-    if (configured.contains("*")) IO.pure(base.withAllowOriginAll)
-    else if (configured.nonEmpty) parseHosts(configured).map(base.withAllowOriginHost)
-    else if (environment == "dev") IO.pure(base.withAllowOriginAll)
-    else parseHosts(List(baseUrl.toString)).map(base.withAllowOriginHost)
+  ): IO[Option[CORSPolicy]] = {
+    if (!config.enabled) IO.pure(None)
+    else {
+      val base       = CORS.policy.withAllowMethodsAll.withAllowHeadersAll.withMaxAge(config.maxAge)
+      val configured = config.allowedOrigins.split(',').iterator.map(_.trim).filter(_.nonEmpty).toList
+      val built =
+        if (configured.contains("*")) IO.pure(base.withAllowOriginAll)
+        else if (configured.nonEmpty) parseHosts(configured).map(base.withAllowOriginHost)
+        else if (environment == "dev") IO.pure(base.withAllowOriginAll)
+        else parseHosts(List(baseUrl.toString)).map(base.withAllowOriginHost)
+      built.map(Some(_))
+    }
   }
 
   private def parseHosts(values: List[String]): IO[Set[Origin.Host]] =

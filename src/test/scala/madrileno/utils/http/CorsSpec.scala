@@ -21,10 +21,10 @@ class CorsSpec extends AnyWordSpec with Matchers {
     baseUrl: URI,
     origin: String
   ): Option[String] = {
-    val policy = Cors.policy(config, environment, baseUrl).unsafeRunSync()
+    val app = Cors.policy(config, environment, baseUrl).unsafeRunSync().fold(ok)(_(ok))
     val request = Request[IO](Method.OPTIONS, uri"/v1/auctions")
       .putHeaders(Header.Raw(ci"Origin", origin), Header.Raw(ci"Access-Control-Request-Method", "GET"))
-    val response = policy(ok).run(request).unsafeRunSync()
+    val response = app.run(request).unsafeRunSync()
     response.headers.get(ci"Access-Control-Allow-Origin").map(_.head.value)
   }
 
@@ -69,6 +69,16 @@ class CorsSpec extends AnyWordSpec with Matchers {
         "https://anything.example.com"
       ) shouldBe
         Some("*")
+    }
+
+    "emit no CORS headers when disabled" in {
+      Cors.policy(CorsConfig(enabled = false, allowedOrigins = "*", maxAge = 1.hour), "dev", localBaseUrl).unsafeRunSync() shouldBe None
+      allowOriginHeader(
+        CorsConfig(enabled = false, allowedOrigins = "*", maxAge = 1.hour),
+        "dev",
+        localBaseUrl,
+        "http://localhost:5173"
+      ) shouldBe None
     }
   }
 }
