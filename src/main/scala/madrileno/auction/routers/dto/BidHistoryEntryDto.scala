@@ -9,7 +9,7 @@ import java.util.Currency
 case class BidHistoryEntryDto(
   amount: Price,
   currency: Currency,
-  bidderRef: Int,
+  bidderRef: BidderRef,
   createdAt: Instant)
     derives Encoder.AsObject,
       Decoder

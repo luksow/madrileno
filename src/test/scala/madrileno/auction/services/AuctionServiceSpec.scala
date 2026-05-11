@@ -230,7 +230,7 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
         bids shouldBe defined
         val entries = bids.get
         entries.map(_.amount.unwrap) shouldBe List(BigDecimal(130), BigDecimal(120), BigDecimal(110))
-        entries.map(_.bidderRef) shouldBe List(1, 2, 1)
+        entries.map(_.bidderRef.unwrap) shouldBe List(1, 2, 1)
         entries.map(_.currency).toSet shouldBe Set(eur)
       }
     }
