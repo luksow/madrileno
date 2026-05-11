@@ -36,3 +36,11 @@ object PageRequest {
   def firstPageBy[F](sortBy: F, sortDir: SortDirection = SortDirection.Desc): PageRequest[F] =
     PageRequest(Limit.Default, Offset.Zero, sortBy, sortDir)
 }
+
+final case class CursorRequest[K](limit: Limit, after: Option[K]) {
+  def limitValue: Int = limit.unwrap
+}
+
+object CursorRequest {
+  def first[K](limit: Limit = Limit.Default): CursorRequest[K] = CursorRequest(limit, None)
+}

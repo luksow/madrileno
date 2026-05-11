@@ -4,7 +4,7 @@ import cats.effect.IO
 import cats.effect.unsafe.IORuntime
 import io.circe.Decoder
 import madrileno.utils.http.Error
-import madrileno.utils.pagination.Page
+import madrileno.utils.pagination.{Cursor, Page}
 import org.http4s.server.websocket.WebSocketBuilder2
 import org.http4s.{HttpRoutes, Request}
 import org.scalatest.funspec.AnyFunSpec
@@ -46,7 +46,8 @@ trait BaseRouteSpec
   protected val bearer: HttpBearer           = HttpBearer(bearerFormat = "JWT")
   protected val bearerScheme: SecurityScheme = SecurityScheme("bearer", bearer)
 
-  given [A: Decoder]: Decoder[Page[A]] = Decoder.derived
+  given [A: Decoder]: Decoder[Page[A]]   = Decoder.derived
+  given [A: Decoder]: Decoder[Cursor[A]] = Decoder.derived
 
   // RFC 9457 error schema
   given Schema[Error[Unit]] = new Schema[Error[Unit]] {
