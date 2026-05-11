@@ -6,7 +6,7 @@ import io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppen
 import madrileno.utils.cache.CacheRuntime
 import madrileno.utils.db.transactor.{PgConfig, PgTransactor}
 import madrileno.utils.events.EventBusRuntime
-import madrileno.utils.http.RateLimiterRuntime
+import madrileno.utils.http.{Cors, CorsConfig, RateLimiterRuntime}
 import madrileno.utils.observability.TelemetryContext
 import madrileno.utils.storage.{ObjectStoreRuntime, StorageConfig}
 import madrileno.utils.task.{Scheduler, SchedulerConfig}
@@ -85,14 +85,17 @@ object Main extends IOApp.Simple {
                             )
                             .build
                             .toResource
+      corsConfig <- Resource.eval(IO.delay(config.at("cors").loadOrThrow[CorsConfig]))
+      corsPolicy <- Resource.eval(Cors.policy(corsConfig, appConfig.environment, application.httpConfig.baseUrl))
       _ <- EmberServerBuilder
              .default[IO]
              .withHost(application.httpConfig.host)
              .withPort(application.httpConfig.port)
              .withHttpWebSocketApp { wsb =>
-               serverMiddleware.wrapHttpApp(
+               val httpApp = serverMiddleware.wrapHttpApp(
                  EntityLimiter.httpApp(Metrics(metricsOps)(application.routes(wsb).toHttpRoutes).orNotFound, application.httpConfig.maxRequestSize)
                )
+               corsPolicy.fold(httpApp)(_(httpApp))
              }
              .build
     } yield application).use { _ =>
