@@ -5,6 +5,7 @@ import madrileno.auction.domain.*
 import madrileno.user.domain.UserId
 import madrileno.utils.db.dsl.*
 import madrileno.utils.db.transactor.{DB, DBInTransaction}
+import madrileno.utils.pagination.PageRequest
 import skunk.*
 import skunk.codec.all.*
 import skunk.implicits.*
@@ -103,12 +104,27 @@ private[repositories] final case class AuctionRowFilter(
   sellerId: SqlPredicate[UserId] = p.any,
   status: SqlPredicate[AuctionStatus] = p.any,
   endsAt: SqlPredicate[Instant] = p.any,
-  deletedAt: SqlPredicate[Instant] = p.isNull)
-    extends SqlFilter {
-  override def filterFragment: AppliedFragment = SqlFilterDerivation.filterFragment(
-    this,
-    (AuctionRowTable.id, AuctionRowTable.sellerId, AuctionRowTable.status, AuctionRowTable.endsAt, AuctionRowTable.deletedAt)
+  deletedAt: SqlPredicate[Instant] = p.isNull,
+  page: Option[PageRequest[AuctionSortField]] = None)
+    extends PageableSqlFilter[AuctionSortField] {
+  override def filterFragment: AppliedFragment = fromPredicates(
+    (
+      id        -> AuctionRowTable.id,
+      sellerId  -> AuctionRowTable.sellerId,
+      status    -> AuctionRowTable.status,
+      endsAt    -> AuctionRowTable.endsAt,
+      deletedAt -> AuctionRowTable.deletedAt
+    )
   )
+
+  override protected def pageRequest: Option[PageRequest[AuctionSortField]] = page
+  override protected def tieBreakColumn: Column[?]                          = AuctionRowTable.id
+
+  override protected def sortColumnFor(field: AuctionSortField): Column[?] = field match {
+    case AuctionSortField.CreatedAt     => AuctionRowTable.createdAt
+    case AuctionSortField.EndsAt        => AuctionRowTable.endsAt
+    case AuctionSortField.StartingPrice => AuctionRowTable.startingPrice
+  }
 }
 
 class AuctionRepository {
@@ -121,14 +137,19 @@ class AuctionRepository {
   def findForUpdate(id: AuctionId): DBInTransaction[Option[Auction]] =
     repository.findById(id, Lock.ForUpdate).map(_.map(_.toAuction))
 
-  def list(status: Option[AuctionStatus], sellerId: Option[UserId]): DB[List[(Auction, Price)]] = {
-    val session  = summon[Session[IO]]
-    val filter   = AuctionRowFilter(status = status.fold(p.any[AuctionStatus])(p.equal), sellerId = sellerId.fold(p.any[UserId])(p.equal))
+  def list(
+    status: Option[AuctionStatus],
+    sellerId: Option[UserId],
+    page: PageRequest[AuctionSortField]
+  ): DB[(List[(Auction, Price)], Long)] = {
+    val session = summon[Session[IO]]
+    val filter =
+      AuctionRowFilter(status = status.fold(p.any[AuctionStatus])(p.equal), sellerId = sellerId.fold(p.any[UserId])(p.equal), page = Some(page))
     val applied  = filter.filterFragment
     val orderBy  = filter.orderByFragment
     val offLim   = filter.offsetLimitFragment
     val rowCodec = AuctionRowTable.c ~ BidRowTable.amount.c
-    val query = sql"""
+    val rowsQuery = sql"""
       SELECT ${AuctionRowTable.*("a")}, COALESCE(b.amount, a.${AuctionRowTable.startingPrice.n})
       FROM ${AuctionRowTable.n} a
       LEFT JOIN LATERAL (
@@ -142,7 +163,10 @@ class AuctionRepository {
       $orderBy
       ${offLim.fragment}
     """.query(rowCodec)
-    session.execute(query)(applied.argument, offLim.argument).map(_.map { case (row, price) => (row.toAuction, price) })
+    for {
+      rows  <- session.execute(rowsQuery)(applied.argument, offLim.argument)
+      total <- repository.countByFilter(filter)
+    } yield (rows.map { case (row, price) => (row.toAuction, price) }, total)
   }
 
   def listExpired(now: Instant): DB[List[AuctionId]] = {

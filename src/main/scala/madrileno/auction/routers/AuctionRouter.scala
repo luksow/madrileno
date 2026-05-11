@@ -29,15 +29,22 @@ class AuctionRouter(
   override protected val rateLimiter: RateLimiter = rateLimiterRuntime.rateLimiter
 
   val routes: Route = {
-    (get & path("auctions") & pathEndOrSingleSlash & parameters("status".as[AuctionStatus].?, "seller-id".as[UserId].?)) { (status, sellerId) =>
-      rateLimited("auctions.list", to = 60, within = 1.minute) {
-        complete {
-          val filter = ListAuctionsFilter(status = status, sellerId = sellerId)
-          auctionService.listAuctions(filter).map[ToResponseMarshallable] { views =>
-            Ok -> views.map(AuctionDto(_))
+    (get & path("auctions") & pathEndOrSingleSlash & parameters("status".as[AuctionStatus].?, "seller-id".as[UserId].?) & paginated(
+      AuctionSortField.CreatedAt
+    )) {
+      (
+        status,
+        sellerId,
+        page
+      ) =>
+        rateLimited("auctions.list", to = 60, within = 1.minute) {
+          complete {
+            val filter = ListAuctionsFilter(status = status, sellerId = sellerId, page = page)
+            auctionService.listAuctions(filter).map[ToResponseMarshallable] { result =>
+              Ok -> result.map(AuctionDto(_))
+            }
           }
         }
-      }
     } ~
       (get & path("auctions" / JavaUUID.as[AuctionId]) & pathEndOrSingleSlash) { auctionId =>
         rateLimited("auctions.get", to = 120, within = 1.minute) {

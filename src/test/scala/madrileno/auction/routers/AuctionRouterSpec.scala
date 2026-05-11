@@ -10,6 +10,7 @@ import madrileno.user.domain.{User, UserId}
 import madrileno.utils.db.transactor.DB
 import madrileno.utils.http.Error
 import madrileno.utils.json.JsonProtocol.*
+import madrileno.utils.pagination.{Page, SortDirection}
 import org.http4s.EntityDecoder
 import org.http4s.Method.*
 import org.http4s.Status.*
@@ -143,15 +144,45 @@ class AuctionRouterSpec extends BaseRouteSpec with TestApplicationLoader {
     ),
     supports(
       GET,
-      description = "List auctions",
-      summary = "Unauthenticated: returns auctions optionally filtered by status or seller",
-      queryParameters = (q[Option[AuctionStatus]]("status", "Filter by auction status"), q[Option[UserId]]("seller-id", "Filter by seller id")),
+      description =
+        "List auctions (paginated). Filter by status / seller; page with `limit` (1–100, default 20) + `offset`; sort by `CreatedAt` / `EndsAt` / `StartingPrice`, `Asc` / `Desc` (default `CreatedAt` `Desc`), with `id` as a stable tie-break.",
+      summary = "Unauthenticated: a page of auctions, optionally filtered and sorted",
+      queryParameters = (
+        q[Option[AuctionStatus]]("status", "Filter by auction status"),
+        q[Option[UserId]]("seller-id", "Filter by seller id"),
+        q[Option[AuctionSortField]]("sort-by", "Sort field — CreatedAt | EndsAt | StartingPrice (default CreatedAt)"),
+        q[Option[SortDirection]]("sort-dir", "Sort direction — Asc | Desc (default Desc)"),
+        q[Option[Int]]("limit", "Page size, 1–100 (default 20; out-of-range values are clamped)"),
+        q[Option[Int]]("offset", "Rows to skip (default 0)")
+      ),
       tags = Seq("Auctions")
     )(
-      onRequest(queryParameters = (Some(AuctionStatus.Open), None))
-        .respondsWith[List[AuctionDto]](Ok, description = "Auctions list")
+      withSetup {
+        val seller = TestData.user()
+        val _ = application.transactor
+          .inSession(
+            seedUser(seller) *> seedAuction(TestData.randomAuctionId(), seller.id) *> seedAuction(TestData.randomAuctionId(), seller.id) *>
+              seedAuction(TestData.randomAuctionId(), seller.id)
+          )
+          .unsafeRunSync()
+        seller
+      }.request(seller =>
+        onRequest(queryParameters = (None, Some(seller.id), Some(AuctionSortField.CreatedAt), Some(SortDirection.Desc), Some(2), Some(0)))
+      ).respondsWith[Page[AuctionDto]](Ok, description = "A page of auctions")
+        .assert { case (ctx, seller) =>
+          val response = ctx.performRequest(allRoutes)
+          response.body.total shouldBe 3L
+          response.body.limit shouldBe 2
+          response.body.offset shouldBe 0
+          response.body.items.size shouldBe 2
+          response.body.items.map(_.sellerId).toSet shouldBe Set(seller.id)
+        },
+      onRequest(queryParameters = (None, None, Some(AuctionSortField.CreatedAt), Some(SortDirection.Desc), Some(999), Some(-3)))
+        .respondsWith[Page[AuctionDto]](Ok, description = "Out-of-range limit/offset are clamped, not rejected")
         .assert { ctx =>
-          ctx.performRequest(allRoutes)
+          val response = ctx.performRequest(allRoutes)
+          response.body.limit shouldBe 100
+          response.body.offset shouldBe 0
         }
     )
   )
