@@ -4,10 +4,13 @@ import io.scalaland.chimney.dsl.*
 import madrileno.auth.domain.*
 import madrileno.utils.json.JsonProtocol.*
 
+import java.time.Instant
+
 final case class RefreshTokenDto(
   id: RefreshTokenId,
   userAgent: UserAgent,
-  ipAddress: String)
+  ipAddress: String,
+  createdAt: Instant)
     derives Encoder.AsObject,
       Decoder
 
