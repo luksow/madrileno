@@ -227,19 +227,19 @@ Don't use views just to add one method — put the method on the aggregate. View
 ```scala
 enum AuctionEvent derives EventCodec {
   def auctionId: AuctionId
-  def at: Instant
+  def createdAt: Instant
 
-  case AuctionCreated(auctionId: AuctionId, wineName: WineName, …, at: Instant)
-  case BidPlaced(auctionId: AuctionId, amount: Price, currency: Currency, at: Instant)
-  case AuctionCancelled(auctionId: AuctionId, at: Instant)
+  case AuctionCreated(auctionId: AuctionId, wineName: WineName, …, createdAt: Instant)
+  case BidPlaced(auctionId: AuctionId, amount: Price, currency: Currency, createdAt: Instant)
+  case AuctionCancelled(auctionId: AuctionId, createdAt: Instant)
   case AuctionClosed(auctionId: AuctionId, winningBid: Option[Price], …)
 }
 ```
 
 Three things:
 
-- **Common abstract members.** Every case has `auctionId` and `at`; declaring them on the enum forces every variant to provide them, and lets subscribers read them without pattern-matching. (See [event-bus.md](event-bus.md) for the broader pattern.)
-- **Mapped from domain values.** `AuctionEvent.bidPlaced(bid, auction)` is a pure function from the domain types to the event. Chimney handles the structural transform; you write the field renames and the constants. Keeps event construction terse and refactor-safe.
+- **Common abstract members.** Every case has `auctionId` and `createdAt`; declaring them on the enum forces every variant to provide them, and lets subscribers read them without pattern-matching. (See [event-bus.md](event-bus.md) for the broader pattern.)
+- **Mapped from domain values.** `AuctionEvent.bidPlaced(bid, auction)` is a pure function from the domain types to the event. Chimney handles the structural transform; you write any constants/renames. Keeps event construction terse and refactor-safe.
 - **Internal, not the public wire format.** The DTO projection happens at the WebSocket / HTTP boundary. Don't ship the internal event shape to clients — see [websockets.md](websockets.md) for the projection pattern.
 
 ## Cross-module domain references

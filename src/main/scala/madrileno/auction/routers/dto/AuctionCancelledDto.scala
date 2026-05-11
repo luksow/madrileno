@@ -5,7 +5,7 @@ import madrileno.utils.json.JsonProtocol.*
 
 import java.time.Instant
 
-case class AuctionCancelledDto(auctionId: AuctionId, at: Instant) derives Encoder.AsObject, Decoder
+case class AuctionCancelledDto(auctionId: AuctionId, createdAt: Instant) derives Encoder.AsObject, Decoder
 
 object AuctionCancelledDto {
   def apply(event: AuctionEvent.AuctionCancelled): AuctionCancelledDto = {

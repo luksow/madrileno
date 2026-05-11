@@ -36,11 +36,11 @@ Events are Scala 3 enums (or sealed traits) with `derives EventCodec`. The deriv
 ```scala
 enum AuctionEvent derives EventCodec {
   def auctionId: AuctionId
-  def at: Instant
+  def createdAt: Instant
 
   case AuctionCreated(auctionId: AuctionId, wineName: WineName, …)
   case BidPlaced(auctionId: AuctionId, amount: Price, …)
-  case AuctionCancelled(auctionId: AuctionId, at: Instant)
+  case AuctionCancelled(auctionId: AuctionId, createdAt: Instant)
   case AuctionClosed(auctionId: AuctionId, winningBid: Option[Price], …)
 }
 ```
@@ -48,7 +48,7 @@ enum AuctionEvent derives EventCodec {
 Two conventions:
 
 - **The enum is internal.** Don't ship this shape to clients. Project to a public DTO in the router. See "WebSocket projection" in [websockets.md](websockets.md). The internal NOTIFY format is yours to evolve; the public contract isn't.
-- **All cases share the abstract members** (`auctionId`, `at`). Keeps subscribers from having to pattern-match just to log a correlation field. Add fields to the trait, not to individual cases, when every variant should carry them.
+- **All cases share the abstract members** (`auctionId`, `createdAt`). Keeps subscribers from having to pattern-match just to log a correlation field. Add fields to the trait, not to individual cases, when every variant should carry them.
 
 ## Wiring a topic into a module
 
