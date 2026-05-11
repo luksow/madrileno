@@ -96,6 +96,15 @@ class AuctionService(
     }
   }
 
+  def listBids(auctionId: AuctionId): IO[Option[List[BidHistoryEntry]]] = {
+    transactor.inSession {
+      (for {
+        auction <- auctionRepository.find(auctionId).valueOr[Option[List[BidHistoryEntry]]](None)
+        bids    <- bidRepository.listByAuction(auctionId).seal
+      } yield Some(BidHistoryEntry.fromBids(bids, auction.currency))).run
+    }
+  }
+
   def placeBid(command: PlaceBidCommand): IO[PlaceBidResult] = {
     transactor
       .inTransaction {

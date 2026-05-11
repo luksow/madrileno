@@ -249,6 +249,29 @@ class AuctionRouterSpec extends BaseRouteSpec with TestApplicationLoader {
 
   path("/v1/auctions/{auctionId}/bids")(
     supports(
+      GET,
+      description = "List the bid history for an auction",
+      summary = "Unauthenticated: bids newest-first; bidder identity is a per-auction pseudonym (bidderRef)",
+      pathParameters = p[AuctionId]("auctionId"),
+      tags = Seq("Auctions")
+    )(
+      withSetup(setupAuctionWithExistingBid(Price(BigDecimal(200))))
+        .request(auction => onRequest(pathParameters = auction.id))
+        .respondsWith[List[BidHistoryEntryDto]](Ok, description = "Bid history (newest first)")
+        .assert { case (ctx, _) =>
+          val response = ctx.performRequest(allRoutes)
+          response.body.map(_.amount) shouldBe List(Price(BigDecimal(200)))
+          response.body.map(_.bidderRef.unwrap) shouldBe List(1)
+          response.body.map(_.currency).toSet shouldBe Set(Currency.getInstance("EUR"))
+        },
+      onRequest(pathParameters = AuctionId(UUID.randomUUID()))
+        .respondsWith[Error[Unit]](NotFound, description = "Auction not found")
+        .assert { ctx =>
+          val response = ctx.performRequest(allRoutes)
+          response.body.title shouldBe Some("Auction not found")
+        }
+    ),
+    supports(
       POST,
       description = "Place a bid on an auction",
       summary = "Authenticated: places a bid above the current highest",
