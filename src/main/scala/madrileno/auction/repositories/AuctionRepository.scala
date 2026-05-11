@@ -127,12 +127,17 @@ class AuctionRepository {
     sellerId: Option[UserId],
     page: PageRequest[AuctionSortField]
   ): DB[(List[(Auction, Price)], Long)] = {
-    val session   = summon[Session[IO]]
-    val filter    = AuctionRowFilter(status = status.fold(p.any[AuctionStatus])(p.equal), sellerId = sellerId.fold(p.any[UserId])(p.equal))
-    val applied   = filter.filterFragment
-    val orderBy   = orderByFragment(page.sortBy, page.sortDir)
-    val offsetLim = sql"OFFSET $int8 LIMIT $int8" (page.offsetValue.toLong, page.limitValue.toLong)
-    val rowCodec  = AuctionRowTable.c ~ BidRowTable.amount.c
+    val session = summon[Session[IO]]
+    val filter  = AuctionRowFilter(status = status.fold(p.any[AuctionStatus])(p.equal), sellerId = sellerId.fold(p.any[UserId])(p.equal))
+    val applied = filter.filterFragment
+    val sortColumn: Column[?] = page.sortBy match {
+      case AuctionSortField.CreatedAt     => AuctionRowTable.createdAt
+      case AuctionSortField.EndsAt        => AuctionRowTable.endsAt
+      case AuctionSortField.StartingPrice => AuctionRowTable.startingPrice
+    }
+    val orderBy  = orderByColumns(sortColumn -> (page.sortDir == SortDirection.Asc), AuctionRowTable.id -> true)
+    val offLim   = offsetLimitClause(page.offsetValue.toLong, page.limitValue.toLong)
+    val rowCodec = AuctionRowTable.c ~ BidRowTable.amount.c
     val rowsQuery = sql"""
       SELECT ${AuctionRowTable.*("a")}, COALESCE(b.amount, a.${AuctionRowTable.startingPrice.n})
       FROM ${AuctionRowTable.n} a
@@ -145,26 +150,12 @@ class AuctionRepository {
       ) b ON TRUE
       WHERE ${applied.fragment}
       $orderBy
-      ${offsetLim.fragment}
+      ${offLim.fragment}
     """.query(rowCodec)
-    val countQuery = sql"SELECT COUNT(*) FROM ${AuctionRowTable.n} WHERE ${applied.fragment}".query(int8)
     for {
-      rows  <- session.execute(rowsQuery)(applied.argument, offsetLim.argument)
-      total <- session.unique(countQuery)(applied.argument)
+      rows  <- session.execute(rowsQuery)(applied.argument, offLim.argument)
+      total <- repository.countByFilter(filter)
     } yield (rows.map { case (row, price) => (row.toAuction, price) }, total)
-  }
-
-  private def orderByFragment(sortBy: AuctionSortField, sortDir: SortDirection): Fragment[Void] = {
-    val column = sortBy match {
-      case AuctionSortField.CreatedAt     => AuctionRowTable.createdAt
-      case AuctionSortField.EndsAt        => AuctionRowTable.endsAt
-      case AuctionSortField.StartingPrice => AuctionRowTable.startingPrice
-    }
-    val direction = sortDir match {
-      case SortDirection.Asc  => sql"ASC"
-      case SortDirection.Desc => sql"DESC"
-    }
-    sql"ORDER BY ${column.n} $direction, ${AuctionRowTable.id.n} ASC"
   }
 
   def listExpired(now: Instant): DB[List[AuctionId]] = {

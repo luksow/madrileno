@@ -128,9 +128,7 @@ private[repositories] final case class AuctionImageRowFilter(
   override def filterFragment: AppliedFragment =
     SqlFilterDerivation.filterFragment(this, (AuctionImageRowTable.id, AuctionImageRowTable.auctionId, AuctionImageRowTable.deletedAt))
 
-  override def orderByFragment: Fragment[Void] = fromSqlOrderBy(new SqlOrderBy {
-    override val fragment: Fragment[Void] = sql"${AuctionImageRowTable.position.n} ASC"
-  })
+  override def orderByFragment: Fragment[Void] = orderByColumns(AuctionImageRowTable.position -> true)
 }
 
 class AuctionImageRepository {
