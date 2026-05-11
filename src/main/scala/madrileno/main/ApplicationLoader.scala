@@ -16,7 +16,7 @@ import madrileno.utils.storage.{ObjectStore, ObjectStoreRuntime}
 import madrileno.utils.task.{ApplicationTaskProvider, OneTimeTask, SchedulerAdminRouter, SchedulerClient}
 import org.http4s.otel4s.middleware.instances.all.*
 import org.http4s.server.websocket.WebSocketBuilder2
-import org.http4s.{Headers, HttpRoutes, Response, Status}
+import org.http4s.{EntityEncoder, Headers, HttpRoutes, Response, Status}
 import org.typelevel.otel4s.Attribute
 import pl.iterators.baklava.http4s.routes.BaklavaRoutes
 import pl.iterators.stir.server.directives.{CredentialsHelper, RouteDirectives}
@@ -136,7 +136,10 @@ class ApplicationLoader(
   private val apiVersion: String                   = appConfig.apiVersion
   private val pathPrefixMatcher: PathMatcher[Unit] = Slash ~ apiVersion
 
-  def routes(wsb: WebSocketBuilder2[IO]): Route =
+  def routes(wsb: WebSocketBuilder2[IO]): Route = {
+    val ws = wsb.withOnNonWebSocketRequest(
+      IO.pure(Response[IO](Status.UpgradeRequired).withEntity("Upgrade required for WebSocket communication.")(EntityEncoder.stringEncoder))
+    )
     onSuccess(telemetryContext.tracer.propagate(Map.empty)) { initialCtx =>
       logRequest(logAction = Some(logAction(initialCtx))) {
         handleExceptions(exceptionHandler(logResult(logAction = Some(logAction(initialCtx))))) {
@@ -149,7 +152,7 @@ class ApplicationLoader(
                       logResult(logAction = Some(logAction(initialCtx))) {
                         onSuccess(telemetryContext.tracer.propagate(Headers.empty)) { newHeaders =>
                           mapResponseHeaders(_ ++ newHeaders) {
-                            route(auth) ~ route ~ wsRoutes(auth, wsb) ~ wsRoutes(wsb)
+                            route(auth) ~ route ~ wsRoutes(auth, ws) ~ wsRoutes(ws)
                           }
                         }
                       }
@@ -160,7 +163,7 @@ class ApplicationLoader(
                 logResult(logAction = Some(logAction(initialCtx))) {
                   onSuccess(telemetryContext.tracer.propagate(Headers.empty)) { newHeaders =>
                     mapResponseHeaders(_ ++ newHeaders) {
-                      route ~ wsRoutes(wsb)
+                      route ~ wsRoutes(ws)
                     }
                   }
                 }
@@ -170,4 +173,5 @@ class ApplicationLoader(
         }
       }
     }
+  }
 }

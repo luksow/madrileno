@@ -201,21 +201,21 @@ class AuctionRouterSpec extends BaseRouteSpec with TestApplicationLoader {
           |
           |OpenAPI 3.x does not model WebSockets; this entry exists for discoverability only.
           |A WebSocket upgrade request returns 101 Switching Protocols and starts streaming.
-          |A plain GET falls through to http4s' default `onNonWebSocketRequest` and returns
-          |501 Not Implemented with the body `This is a WebSocket route.` — documented below.""".stripMargin,
+          |A plain GET (no `Upgrade` header) returns 426 Upgrade Required with the body
+          |`Upgrade required for WebSocket communication.` — documented below.""".stripMargin,
       summary = "Live auction event stream (WebSocket)",
       tags = Seq("Auctions")
     )(
       onRequest()
-        // Override circe's String entity decoder so the plain-text 501 body decodes via http4s' text decoder.
-        .respondsWith[String](NotImplemented, description = "Plain GET fallback — default WebSocket handler response")(
+        // Override circe's String entity decoder so the plain-text 426 body decodes via http4s' text decoder.
+        .respondsWith[String](UpgradeRequired, description = "Plain GET fallback — non-upgrade response")(
           using EntityDecoder.text[IO],
           summon,
           summon
         )
         .assert { ctx =>
           val response = ctx.performRequest(allRoutes)
-          response.body shouldBe "This is a WebSocket route."
+          response.body shouldBe "Upgrade required for WebSocket communication."
         }
     )
   )
@@ -226,21 +226,21 @@ class AuctionRouterSpec extends BaseRouteSpec with TestApplicationLoader {
       description = """Live event stream for a single auction over WebSocket — same wire format as `/v1/auctions/stream`,
           |but only `AuctionCreated`/`BidPlaced`/`AuctionCancelled`/`AuctionClosed` events for this `auctionId`.
           |
-          |OpenAPI 3.x does not model WebSockets; this entry exists for discoverability only. A plain GET falls
-          |through to http4s' default handler and returns 501 with the body `This is a WebSocket route.`""".stripMargin,
+          |OpenAPI 3.x does not model WebSockets; this entry exists for discoverability only. A plain GET
+          |(no `Upgrade` header) returns 426 Upgrade Required with the body `Upgrade required for WebSocket communication.`""".stripMargin,
       summary = "Live event stream for one auction (WebSocket)",
       pathParameters = p[AuctionId]("auctionId"),
       tags = Seq("Auctions")
     )(
       onRequest(pathParameters = AuctionId(UUID.randomUUID()))
-        .respondsWith[String](NotImplemented, description = "Plain GET fallback — default WebSocket handler response")(
+        .respondsWith[String](UpgradeRequired, description = "Plain GET fallback — non-upgrade response")(
           using EntityDecoder.text[IO],
           summon,
           summon
         )
         .assert { ctx =>
           val response = ctx.performRequest(allRoutes)
-          response.body shouldBe "This is a WebSocket route."
+          response.body shouldBe "Upgrade required for WebSocket communication."
         }
     )
   )
