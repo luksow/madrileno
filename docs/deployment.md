@@ -71,25 +71,7 @@ The app does **not** auto-migrate on startup. Run them as a discrete deploy step
 build image → push image → run migrations → roll out new pods
 ```
 
-The Docker image ships a second launcher, `bin/madrileno-migrate`, that runs Flyway against the same `PG_*` env vars the app reads. Same image, same Git SHA, same config — schema and code can't drift apart. As a Kubernetes `Job` (or Helm `pre-install` / `pre-upgrade` hook, or Argo step):
-
-```yaml
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: madrileno-migrate
-spec:
-  template:
-    spec:
-      restartPolicy: Never
-      containers:
-        - name: migrate
-          image: madrileno:<sha>
-          command: ["/opt/docker/bin/madrileno-migrate"]
-          envFrom: [{ secretRef: { name: madrileno-env } }]
-```
-
-Gate the rollout on `kubectl wait --for=condition=Complete job/madrileno-migrate` or your platform's equivalent.
+The Docker image ships a second launcher, `bin/migrate-main`, that runs Flyway against the same `PG_*` env vars the app reads. Same image, same Git SHA, same config — schema and code can't drift apart. Run it as a one-shot container (or whatever your platform's equivalent is) gated before the new pods roll out.
 
 Two reasons this is the right separation:
 

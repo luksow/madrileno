@@ -104,7 +104,7 @@ The auto-memory has a note about this — `werror_in_ci` — because it's bitten
 > flywayClean                              // DROP every table; only on a dev DB
 ```
 
-Flyway reads connection details from `PG_HOST` / `PG_PORT` / `PG_DATABASE` / `PG_USER` / `PG_PASSWORD`. **Heads-up:** the `flywayMigrate` task evaluates `sys.env` at build-load time, *before* sbt-dotenv injects `.env` — so it only sees vars already in the shell. If `.env` is your only source, prefer **`sbt "runMain madrileno.main.MigrateMain"`** — the same `IOApp` the Docker image ships as `bin/madrileno-migrate`, reading `application.conf` with `.env` already injected. Production deploys run that image entrypoint as a `Job` ([deployment.md](deployment.md)).
+Flyway reads connection details from `PG_HOST` / `PG_PORT` / `PG_DATABASE` / `PG_USER` / `PG_PASSWORD`. **Heads-up:** the `flywayMigrate` task evaluates `sys.env` at build-load time, *before* sbt-dotenv injects `.env` — so it only sees vars already in the shell. If `.env` is your only source, prefer **`sbt "runMain madrileno.main.MigrateMain"`** — the same `IOApp` the Docker image ships as `bin/migrate-main`, reading `application.conf` with `.env` already injected. Production deploys run that image entrypoint as a `Job` ([deployment.md](deployment.md)).
 
 Run a migration after:
 - Adding a migration under `src/main/resources/db/migration/`.

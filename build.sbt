@@ -108,6 +108,8 @@ javaOptions += "-Dotel.java.global-autoconfigure.enabled=true"
 
 Compile / run / fork := true
 
+Compile / mainClass := Some("madrileno.main.Main")
+
 // native-packager
 enablePlugins(JavaServerAppPackaging, BaklavaSbtPlugin)
 import com.typesafe.sbt.packager.docker.Cmd
@@ -119,8 +121,6 @@ dockerBaseImage := "azul/zulu-openjdk:21"
 Docker / daemonUser := "noroot"
 dockerUpdateLatest := true
 
-// Skip Scaladoc — this is a service, not a library, and `Docker/stage` pulls in
-// `Compile/doc` which currently fails on cron4s' Scala.js TASTy annotations.
 Compile / doc / sources := Seq.empty
 
 // baklava
