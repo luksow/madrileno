@@ -25,7 +25,9 @@ final case class PgConfig(
   commandCache: Int = 1024,
   queryCache: Int = 1024,
   parseCache: Int = 1024,
-  readTimeout: Duration = Duration.Inf)
+  readTimeout: Duration = Duration.Inf) {
+  def jdbcUrl: String = s"jdbc:postgresql://$host:$port/$database"
+}
 
 object PgConfig {
   given ConfigReader[PgConfig] = deriveReader[PgConfig]

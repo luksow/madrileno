@@ -14,9 +14,10 @@ import madrileno.utils.mailer.{MailContext, MailPreviewProvider, MailPreviewRout
 import madrileno.utils.observability.*
 import madrileno.utils.storage.{ObjectStore, ObjectStoreRuntime}
 import madrileno.utils.task.{ApplicationTaskProvider, OneTimeTask, SchedulerAdminRouter, SchedulerClient}
+import org.http4s.headers.`Content-Type`
 import org.http4s.otel4s.middleware.instances.all.*
 import org.http4s.server.websocket.WebSocketBuilder2
-import org.http4s.{EntityEncoder, Headers, HttpRoutes, Response, Status}
+import org.http4s.{EntityEncoder, Headers, HttpRoutes, MediaType, Response, Status}
 import org.typelevel.otel4s.Attribute
 import pl.iterators.baklava.http4s.routes.BaklavaRoutes
 import pl.iterators.stir.server.directives.{CredentialsHelper, RouteDirectives}
@@ -28,6 +29,7 @@ import sttp.client4.logging.{LogConfig, LogLevel, Logger, LoggingBackend}
 import sttp.client4.opentelemetry.OpenTelemetryMetricsBackend
 import sttp.client4.{WebSocketStreamBackend, logging}
 
+import java.io.File
 import java.net.URI
 
 final case class HttpConfig(
@@ -77,11 +79,25 @@ class ApplicationLoader(
 
   private lazy val baklavaHttpRoutes: HttpRoutes[IO] = BaklavaRoutes.routes()
   private val baklavaPathSegments: Set[String]       = Set("openapi", "swagger", "swagger-ui", "docs")
+  private val openApiSpecFile: File                  = new File("target/baklava/openapi/openapi.yml")
 
   lazy val baklavaDocs: Route = httpRoutesOf {
+    case req if req.uri.path.segments.headOption.exists(_.encoded == "swagger") && !openApiSpecFile.exists() =>
+      IO.pure(
+        Response[IO](Status.Ok)
+          .withEntity(specNotGeneratedHtml)(using EntityEncoder.stringEncoder[IO].withContentType(`Content-Type`(MediaType.text.html)))
+      )
     case req if baklavaPathSegments.contains(req.uri.path.segments.headOption.fold("")(_.encoded)) =>
       baklavaHttpRoutes.run(req).getOrElseF(IO.pure(Response[IO](Status.NotFound)))
   }
+
+  private val specNotGeneratedHtml: String =
+    """<!doctype html><meta charset="utf-8"><title>Swagger UI — not generated yet</title>
+      |<body style="font-family:system-ui,sans-serif;max-width:40rem;margin:4rem auto;line-height:1.6">
+      |<h1>OpenAPI spec not generated yet</h1>
+      |<p>The OpenAPI document is produced by the baklava router specs. Run <code>sbt test</code> once
+      |(or just the router specs: <code>sbt &quot;testOnly *RouterSpec&quot;</code>), then refresh this page.</p>
+      |</body>""".stripMargin
 
   private val adminAuthenticator: CredentialsHelper => Option[Unit] = {
     case p @ CredentialsHelper.Provided(id) if id == adminConfig.user && p.verify(adminConfig.password) => Some(())
