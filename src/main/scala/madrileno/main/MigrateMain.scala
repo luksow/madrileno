@@ -1,7 +1,8 @@
 package madrileno.main
 
 import cats.effect.{ExitCode, IO, IOApp}
-import madrileno.utils.db.transactor.{Migrations, PgConfig}
+import madrileno.utils.db.Migrations
+import madrileno.utils.db.transactor.PgConfig
 import pureconfig.*
 
 object MigrateMain extends IOApp {

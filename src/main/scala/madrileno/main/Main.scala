@@ -4,7 +4,8 @@ import cats.effect.std.Supervisor
 import cats.effect.{Clock, IO, IOApp, Resource}
 import io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppender
 import madrileno.utils.cache.CacheRuntime
-import madrileno.utils.db.transactor.{Migrations, PgConfig, PgTransactor}
+import madrileno.utils.db.Migrations
+import madrileno.utils.db.transactor.{PgConfig, PgTransactor}
 import madrileno.utils.events.EventBusRuntime
 import madrileno.utils.http.{Cors, CorsConfig, RateLimiterRuntime}
 import madrileno.utils.observability.TelemetryContext

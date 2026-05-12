@@ -1,6 +1,7 @@
-package madrileno.utils.db.transactor
+package madrileno.utils.db
 
 import cats.effect.IO
+import madrileno.utils.db.transactor.PgConfig
 import madrileno.utils.observability.LoggingSupport
 import org.flywaydb.core.Flyway
 

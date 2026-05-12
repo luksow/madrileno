@@ -80,6 +80,13 @@ class ApplicationLoader(
   private lazy val baklavaHttpRoutes: HttpRoutes[IO] = BaklavaRoutes.routes()
   private val baklavaPathSegments: Set[String]       = Set("openapi", "swagger", "swagger-ui", "docs")
   private val openApiSpecFile: File                  = new File("target/baklava/openapi/openapi.yml")
+  private val specNotGeneratedHtml: String =
+    """<!doctype html><meta charset="utf-8"><title>Swagger UI — not generated yet</title>
+      |<body style="font-family:system-ui,sans-serif;max-width:40rem;margin:4rem auto;line-height:1.6">
+      |<h1>OpenAPI spec not generated yet</h1>
+      |<p>The OpenAPI document is produced by the baklava router specs. Run <code>sbt test</code> once
+      |(or just the router specs: <code>sbt &quot;testOnly *RouterSpec&quot;</code>), then refresh this page.</p>
+      |</body>""".stripMargin
 
   lazy val baklavaDocs: Route = httpRoutesOf {
     case req if req.uri.path.segments.headOption.exists(_.encoded == "swagger") && !openApiSpecFile.exists() =>
@@ -90,14 +97,6 @@ class ApplicationLoader(
     case req if baklavaPathSegments.contains(req.uri.path.segments.headOption.fold("")(_.encoded)) =>
       baklavaHttpRoutes.run(req).getOrElseF(IO.pure(Response[IO](Status.NotFound)))
   }
-
-  private val specNotGeneratedHtml: String =
-    """<!doctype html><meta charset="utf-8"><title>Swagger UI — not generated yet</title>
-      |<body style="font-family:system-ui,sans-serif;max-width:40rem;margin:4rem auto;line-height:1.6">
-      |<h1>OpenAPI spec not generated yet</h1>
-      |<p>The OpenAPI document is produced by the baklava router specs. Run <code>sbt test</code> once
-      |(or just the router specs: <code>sbt &quot;testOnly *RouterSpec&quot;</code>), then refresh this page.</p>
-      |</body>""".stripMargin
 
   private val adminAuthenticator: CredentialsHelper => Option[Unit] = {
     case p @ CredentialsHelper.Provided(id) if id == adminConfig.user && p.verify(adminConfig.password) => Some(())
