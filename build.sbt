@@ -95,8 +95,8 @@ libraryDependencies ++= {
     "pl.iterators"                    %% "kebs-baklava"                              % kebsV              % "test",
     "com.dimafeng"                    %% "testcontainers-scala-scalatest"            % testcontainersV    % "test",
     "com.dimafeng"                    %% "testcontainers-scala-postgresql"           % testcontainersV    % "test",
-    "org.flywaydb"                     % "flyway-core"                               % flywayV            % "test",
-    "org.flywaydb"                     % "flyway-database-postgresql"                % flywayV            % "test",
+    "org.flywaydb"                     % "flyway-core"                               % flywayV,
+    "org.flywaydb"                     % "flyway-database-postgresql"                % flywayV,
     "org.scalatest"                   %% "scalatest"                                 % scalatestV         % "test",
     "org.typelevel"                   %% "cats-effect-testkit"                       % catsEffectV        % "test",
     "org.typelevel"                   %% "cats-effect-testing-scalatest"             % catsEffectTestingV % "test"
@@ -108,6 +108,8 @@ javaOptions += "-Dotel.java.global-autoconfigure.enabled=true"
 
 Compile / run / fork := true
 
+Compile / mainClass := Some("madrileno.main.Main")
+
 // native-packager
 enablePlugins(JavaServerAppPackaging, BaklavaSbtPlugin)
 import com.typesafe.sbt.packager.docker.Cmd
@@ -118,6 +120,8 @@ packageName := "madrileno"
 dockerBaseImage := "azul/zulu-openjdk:21"
 Docker / daemonUser := "noroot"
 dockerUpdateLatest := true
+
+Compile / doc / sources := Seq.empty
 
 // baklava
 inConfig(Test)(

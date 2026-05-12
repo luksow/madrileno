@@ -65,18 +65,18 @@ The dev-stack `.env` is *not* a production template; it's a local-development co
 
 ## Migrations are a separate step
 
-The app does **not** auto-migrate on startup. Run `sbt flywayMigrate` (or the underlying `flyway migrate` command) as a deploy step, before the new image rolls out:
+The app does **not** auto-migrate on startup. Run them as a discrete deploy step before rolling out the new image:
 
 ```
 build image → push image → run migrations → roll out new pods
 ```
 
+The Docker image ships a second launcher, `bin/migrate-main`, that runs Flyway against the same `PG_*` env vars the app reads. Same image, same Git SHA, same config — schema and code can't drift apart. Run it as a one-shot container (or whatever your platform's equivalent is) gated before the new pods roll out.
+
 Two reasons this is the right separation:
 
 - **Migrations are slow and rare.** Running them on every pod start would slow rollouts and make crash-loop debugging painful.
 - **Migrations are dangerous.** Locking, long-running, can fail mid-way. They want a single owner per deploy, not N pods racing.
-
-The flyway-sbt task reads the same `PG_*` env vars the app does. Run it from a CI job or a one-shot container; just make sure exactly one of those runs per deploy.
 
 For zero-downtime rollouts, follow the standard expand/contract dance:
 
@@ -107,4 +107,4 @@ The image and the env-var contract are stable; the rest is yours to assemble.
 - [configuration.md](configuration.md) — the full env-var contract.
 - [observability.md](observability.md) — what to point `OTEL_*` at; what shows up where.
 - [database.md](database.md) — migration mechanics.
-- [dev-workflow.md](dev-workflow.md) — `sbt flywayMigrate` and friends, also useful from a one-shot deploy job.
+- [dev-workflow.md](dev-workflow.md) — running migrations locally (`runMain madrileno.main.MigrateMain`) and the `flyway*` inspection tasks.

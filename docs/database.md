@@ -11,7 +11,7 @@ You wrote SQL when you need it — for joins, aggregations, custom updates — b
 | Driver       | skunk                           | Pure-Scala async Postgres client. No JDBC, no blocking.       |
 | Pool         | `PgTransactor.resource`         | Built on skunk's session pool. `Main` constructs it as a `Resource`. |
 | Sessions     | `Transactor.{inSession, inTransaction}` | Acquires a session from the pool and runs `DB[A]` / `DBInTransaction[A]` blocks. |
-| Migrations   | Flyway                          | One-shot via `sbt flywayMigrate`. Migrations live under `src/main/resources/db/migration/`. |
+| Migrations   | Flyway                          | One-shot via `runMain madrileno.main.MigrateMain` (or the `flyway*` sbt tasks). Migrations live under `src/main/resources/db/migration/`. |
 | DSL          | `madrileno.utils.db.dsl`        | `Table`, `Column`, the four `*Repository` traits, codec helpers. |
 
 ## Sessions vs transactions
@@ -190,7 +190,7 @@ The `ImagePosition` opaque type still rejects negatives in the domain — the ne
 
 ## Migrations
 
-Migrations are SQL files under `src/main/resources/db/migration/`, named `V<n>__<description>.sql`. Flyway runs them in order on startup (in tests via Testcontainers; in dev via `sbt flywayMigrate`). The application **does not auto-migrate at boot** — production deploys run migrations as a separate step.
+Migrations are SQL files under `src/main/resources/db/migration/`, named `V<n>__<description>.sql`. Flyway runs them in order (in tests via Testcontainers at container start; in dev via `runMain madrileno.main.MigrateMain`; in prod via the image's `bin/migrate-main`). The application **does not auto-migrate at boot** — running migrations is always an explicit step.
 
 Three rules:
 
@@ -198,7 +198,7 @@ Three rules:
 2. **Migrations are forward-only.** The template doesn't ship a "down" migration mechanism. If you need to undo something, write a new migration that does the undoing.
 3. **Schema changes are domain changes.** Adding a column means updating `Row`, `RowTable.mapping`, and the domain class together. Don't ship one without the others.
 
-For the rare case where you need to back out a bad migration in dev: `docker compose down -v` wipes the volume; `sbt flywayMigrate` reapplies from scratch.
+For the rare case where you need to back out a bad migration in dev: `docker compose down -v` wipes the volume; `runMain madrileno.main.MigrateMain` reapplies from scratch.
 
 ## Connection pool and config
 

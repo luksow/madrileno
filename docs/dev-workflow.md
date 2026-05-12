@@ -97,16 +97,25 @@ The auto-memory has a note about this — `werror_in_ci` — because it's bitten
 
 ## Database tasks
 
+Apply pending migrations:
+
 ```
-> flywayMigrate                            // apply pending migrations
+> runMain madrileno.main.MigrateMain
+```
+
+That's the app's own `IOApp` — the same one the Docker image ships as `bin/migrate-main` for production deploys ([deployment.md](deployment.md)) — so it reads `application.conf` with `.env` already injected (`PG_HOST` / `PG_PORT` / `PG_DATABASE` / `PG_USER` / `PG_PASSWORD`).
+
+The `flyway-sbt` tasks are also there for inspection / cleanup:
+
+```
 > flywayInfo                               // list applied / pending / out-of-order
 > flywayValidate                           // verify checksums match the files
 > flywayClean                              // DROP every table; only on a dev DB
 ```
 
-Flyway reads connection details from `PG_HOST` / `PG_PORT` / `PG_DATABASE` / `PG_USER` / `PG_PASSWORD` — same env vars the app uses, populated from `.env` by the dotenv plugin.
+There's a `flywayMigrate` too, but it evaluates `sys.env` at build-load time — *before* sbt-dotenv injects `.env` — so it only sees `PG_*` if your shell already has them. Use `runMain madrileno.main.MigrateMain` unless you have a reason not to.
 
-Run `flywayMigrate` after:
+Run a migration after:
 - Adding a migration under `src/main/resources/db/migration/`.
 - `docker compose down -v` (which wipes the volume).
 
@@ -133,7 +142,7 @@ The dotenv plugin reads `.env` once at JVM startup. Restart sbt.
 **A test that passes locally fails in CI on a warning.**
 You're hitting the dev-mode tpolecat issue above. Reproduce with `SBT_TPOLECAT_DEV= sbt --client compile`.
 
-**`flywayMigrate` complains about checksum mismatches.**
+**A migration fails with a checksum mismatch.**
 You edited a migration that's already been applied. Either roll back the file change or `flywayClean` your dev DB and re-migrate (only on dev — never on shared environments).
 
 **OpenObserve traces tab is empty.**
@@ -158,7 +167,7 @@ sbt --client "testOnly *AuctionServiceSpec -- -z 'closes auction'"
 sbt --client "testOnly *RouterSpec"
 
 # wipe dev DB and start over
-docker compose down -v && docker compose up -d && sleep 2 && sbt --client flywayMigrate
+docker compose down -v && docker compose up -d && sleep 2 && sbt --client "runMain madrileno.main.MigrateMain"
 ```
 
 ## Adding a dependency
