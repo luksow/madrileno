@@ -4,6 +4,7 @@ import cats.effect.std.Supervisor
 import cats.effect.{Clock, IO, IOApp, Resource}
 import io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppender
 import madrileno.utils.cache.CacheRuntime
+import madrileno.utils.db.Migrations
 import madrileno.utils.db.transactor.{PgConfig, PgTransactor}
 import madrileno.utils.events.EventBusRuntime
 import madrileno.utils.http.{Cors, CorsConfig, RateLimiterRuntime}
@@ -39,6 +40,7 @@ object Main extends IOApp.Simple {
       httpClient <- HttpClientFs2Backend.resource[IO]()
       pgConfig   <- Resource.eval(IO.delay(config.at("pg").loadOrThrow[PgConfig]))
       transactor <- PgTransactor.resource(pgConfig)
+      _          <- Resource.eval(IO.whenA(appConfig.environment == "dev")(Migrations.warnIfPending(pgConfig)))
       clock = Clock[IO]
       schedulerConfig <- Resource.eval(IO.delay(config.at("scheduler").loadOrThrow[SchedulerConfig]))
       scheduler          = Scheduler(transactor, schedulerConfig)

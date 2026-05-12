@@ -25,7 +25,16 @@ final case class PgConfig(
   commandCache: Int = 1024,
   queryCache: Int = 1024,
   parseCache: Int = 1024,
-  readTimeout: Duration = Duration.Inf)
+  readTimeout: Duration = Duration.Inf) {
+  def jdbcUrl: String = {
+    val sslMode = ssl match {
+      case PgConfigSSL.None    => "disable"
+      case PgConfigSSL.Trusted => "require"
+      case PgConfigSSL.System  => "verify-full"
+    }
+    s"jdbc:postgresql://$host:$port/$database?sslmode=$sslMode"
+  }
+}
 
 object PgConfig {
   given ConfigReader[PgConfig] = deriveReader[PgConfig]
