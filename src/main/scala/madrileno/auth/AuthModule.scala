@@ -4,7 +4,7 @@ import com.google.auth.oauth2.GoogleCredentials
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.{FirebaseApp, FirebaseOptions}
 import com.softwaremill.macwire.*
-import madrileno.auth.domain.AuthContext
+import madrileno.auth.domain.{AuthContext, Provider}
 import madrileno.auth.emails.WelcomeEmailTemplate
 import madrileno.auth.repositories.*
 import madrileno.auth.routers.{AuthRouter, UserAuthenticator}
@@ -32,7 +32,7 @@ trait AuthModule extends RouteProvider with AuthRouteProvider with RecurringTask
 
   val userAuthenticator: UserAuthenticator = wire[UserAuthenticator]
 
-  protected lazy val externalAuthVerifier: ExternalAuthVerifier = {
+  protected lazy val externalAuthVerifiers: AuthVerifiers = {
     val firebaseKey = config.at("firebase.key").loadOrThrow[String]
     val firebaseApp = Try {
       val serviceAccount = new ByteArrayInputStream(firebaseKey.getBytes())
@@ -45,8 +45,7 @@ trait AuthModule extends RouteProvider with AuthRouteProvider with RecurringTask
     }.recover { case _: IllegalStateException =>
       FirebaseApp.getInstance()
     }.fold(e => throw new RuntimeException("Failed to initialize Firebase", e), identity)
-    val firebaseAuth = FirebaseAuth.getInstance(firebaseApp)
-    new FirebaseService(firebaseAuth)
+    AuthVerifiers(Map(Provider.Firebase -> new FirebaseService(FirebaseAuth.getInstance(firebaseApp))))
   }
 
   private val userAuthRepository     = wire[UserAuthRepository]

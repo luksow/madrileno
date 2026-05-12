@@ -43,18 +43,18 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
   private def freshVerifiedToken() = TestData.verifiedExternalToken()
 
   private def serviceWithFreshAuth() = {
-    val token = freshVerifiedToken()
-    val auth  = new FakeAuthVerifier(token)
-    val svc   = new AuthenticationService(userAuthRepo, refreshTokenRepo, userRepo, auth, jwtService, transactor, mailer)
+    val token     = freshVerifiedToken()
+    val verifiers = AuthVerifiers(Map(Provider.Firebase -> new FakeAuthVerifier(token)))
+    val svc       = new AuthenticationService(userAuthRepo, refreshTokenRepo, userRepo, verifiers, jwtService, transactor, mailer)
     (svc, token)
   }
 
-  private val command = AuthenticateWithFirebaseCommand(FirebaseJwt("fake-token"), UserAgent("test-agent"), TestData.defaultIpAddress)
+  private val command = AuthenticateWithExternalTokenCommand("fake-token", UserAgent("test-agent"), TestData.defaultIpAddress)
 
-  "authenticateWithFirebase" should {
+  "authenticateWithProvider" should {
     "create a new user on first login" in {
       val (service, _) = serviceWithFreshAuth()
-      service.authenticateWithFirebase(command).map {
+      service.authenticateWithProvider(Provider.Firebase, command).map {
         case AuthenticationResult.UserCreated(jwt, refreshToken) =>
           jwt.toString should not be empty
           refreshToken.id.toString should not be empty
@@ -62,11 +62,16 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
       }
     }
 
+    "return ProviderUnavailable for an unknown provider" in {
+      val (service, _) = serviceWithFreshAuth()
+      service.authenticateWithProvider(Provider("nope"), command).map(_ shouldBe AuthenticationResult.ProviderUnavailable)
+    }
+
     "return Authenticated on subsequent login" in {
       val (service, _) = serviceWithFreshAuth()
       for {
-        first  <- service.authenticateWithFirebase(command)
-        second <- service.authenticateWithFirebase(command)
+        first  <- service.authenticateWithProvider(Provider.Firebase, command)
+        second <- service.authenticateWithProvider(Provider.Firebase, command)
       } yield {
         first shouldBe a[AuthenticationResult.UserCreated]
         second shouldBe a[AuthenticationResult.Authenticated]
@@ -75,15 +80,15 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
 
     "return InvalidToken for failed Firebase verification" in {
       val (service, _)        = serviceWithFreshAuth()
-      val invalidTokenCommand = command.copy(firebaseJwt = FirebaseJwt("invalid-token"))
-      service.authenticateWithFirebase(invalidTokenCommand).map { result =>
+      val invalidTokenCommand = command.copy(token = "invalid-token")
+      service.authenticateWithProvider(Provider.Firebase, invalidTokenCommand).map { result =>
         result shouldBe AuthenticationResult.InvalidToken
       }
     }
 
     "issue a JWT that can be decoded" in {
       val (service, token) = serviceWithFreshAuth()
-      service.authenticateWithFirebase(command).map {
+      service.authenticateWithProvider(Provider.Firebase, command).map {
         case AuthenticationResult.UserCreated(jwt, _) =>
           jwtService.decode[AuthContext](jwt.toString) match {
             case JwtService.DecodingResult.Decoded(ctx) =>
@@ -101,7 +106,7 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
         .use { _ =>
           for {
             _        <- clearMailpit()
-            _        <- service.authenticateWithFirebase(command)
+            _        <- service.authenticateWithProvider(Provider.Firebase, command)
             messages <- waitForMail(_.exists(_.subject.contains("Welcome")))
           } yield messages
         }
@@ -115,7 +120,7 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
     "authenticate with a valid refresh token" in {
       val (service, _) = serviceWithFreshAuth()
       for {
-        created <- service.authenticateWithFirebase(command)
+        created <- service.authenticateWithProvider(Provider.Firebase, command)
         refreshTokenId = created match {
                            case AuthenticationResult.UserCreated(_, rt) => rt.id
                            case other                                   => fail(s"Expected UserCreated, got $other")
@@ -129,7 +134,7 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
     "reject an already-used refresh token" in {
       val (service, _) = serviceWithFreshAuth()
       for {
-        created <- service.authenticateWithFirebase(command)
+        created <- service.authenticateWithProvider(Provider.Firebase, command)
         refreshTokenId = created match {
                            case AuthenticationResult.UserCreated(_, rt)   => rt.id
                            case AuthenticationResult.Authenticated(_, rt) => rt.id
