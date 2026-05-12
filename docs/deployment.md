@@ -107,4 +107,4 @@ The image and the env-var contract are stable; the rest is yours to assemble.
 - [configuration.md](configuration.md) — the full env-var contract.
 - [observability.md](observability.md) — what to point `OTEL_*` at; what shows up where.
 - [database.md](database.md) — migration mechanics.
-- [dev-workflow.md](dev-workflow.md) — `sbt flywayMigrate` and friends, also useful from a one-shot deploy job.
+- [dev-workflow.md](dev-workflow.md) — running migrations locally (`runMain madrileno.main.MigrateMain`) and the `flyway*` inspection tasks.

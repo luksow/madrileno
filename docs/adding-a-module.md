@@ -40,7 +40,7 @@ sbt --client scalafixAll                                     # lint
 
 Migration timing is split:
 - **In tests**, `TestTransactor` runs Flyway against each suite's Testcontainers Postgres at container start — drop the SQL file in `src/main/resources/db/migration/` and it's picked up automatically.
-- **When running the app**, the app does **not** auto-migrate. Run `sbt --client flywayMigrate` against your dev DB after adding a migration (and after `docker compose down -v`). See [dev-workflow.md](dev-workflow.md).
+- **When running the app**, the app does **not** auto-migrate. Run `sbt --client "runMain madrileno.main.MigrateMain"` against your dev DB after adding a migration (and after `docker compose down -v`). See [dev-workflow.md](dev-workflow.md).
 
 ## The order matters
 
