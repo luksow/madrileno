@@ -68,6 +68,31 @@ class AuthRouter(authenticationService: AuthenticationService)(using TelemetryCo
       }
   }
 
+  def devRoutes: Route = {
+    (post & path("auth" / "dev") & entity(as[AuthWithEmailRequest]) & pathEndOrSingleSlash & optionalHeaderValueByName(
+      "User-Agent"
+    ) & extractClientIP) {
+      (
+        request,
+        userAgent,
+        ipAddress
+      ) =>
+        complete {
+          val command =
+            AuthenticateWithExternalTokenCommand(request.email, UserAgent(userAgent.getOrElse("Unknown")), ipAddress.getOrElse(unknownIpAddress))
+          authenticationService
+            .authenticateWithProvider(Provider.Dev, command)
+            .map[ToResponseMarshallable] {
+              case AuthenticationResult.Authenticated(jwt, rt) => Ok -> AuthenticatedResponse(jwt, rt.id, userCreated = false)
+              case AuthenticationResult.UserCreated(jwt, rt)   => Ok -> AuthenticatedResponse(jwt, rt.id, userCreated = true)
+              case AuthenticationResult.UserBlocked            => error(Locked, "user-blocked", "User is blocked")
+              case AuthenticationResult.InvalidToken           => error(Unauthorized, "invalid-token", "dev auth requires an email address")
+              case AuthenticationResult.ProviderUnavailable    => error(NotFound, "unknown-provider", "dev auth is not enabled")
+            }
+        }
+    }
+  }
+
   def authedRoutes(authContext: AuthContext): Route = {
     (get & path("auth" / "sessions") & pathEndOrSingleSlash) {
       complete {

@@ -7,6 +7,7 @@ import madrileno.auth.emails.WelcomeEmailTemplate
 import madrileno.auth.repositories.*
 import madrileno.auth.routers.{AuthRouter, UserAuthenticator}
 import madrileno.auth.services.*
+import madrileno.main.AppConfig
 import madrileno.user.repositories.UserRepository
 import madrileno.utils.cache.CacheRuntime
 import madrileno.utils.db.transactor.Transactor
@@ -29,18 +30,21 @@ trait AuthModule extends RouteProvider with AuthRouteProvider with RecurringTask
   lazy val httpClient: WebSocketStreamBackend[IO, Fs2Streams[IO]]
   lazy val userRepository: UserRepository
   lazy val mailer: Mailer
+  lazy val appConfig: AppConfig
 
   val userAuthenticator: UserAuthenticator = wire[UserAuthenticator]
 
   protected lazy val firebaseConfig: FirebaseConfig = config.at("firebase").loadOrThrow[FirebaseConfig]
 
-  protected lazy val externalAuthVerifiers: AuthVerifiers =
-    AuthVerifiers(
+  protected lazy val externalAuthVerifiers: AuthVerifiers = {
+    val firebase: Option[(Provider, ExternalAuthVerifier)] =
       firebaseConfig.projectId
         .filter(_.nonEmpty)
         .map(projectId => Provider.Firebase -> new FirebaseService(projectId, new FirebaseKeyProvider(httpClient, cacheRuntime)))
-        .toMap
-    )
+    val dev: Option[(Provider, ExternalAuthVerifier)] =
+      Option.when(appConfig.environment == "dev")(Provider.Dev -> DevAuthVerifier)
+    AuthVerifiers(List(firebase, dev).flatten.toMap)
+  }
 
   private val userAuthRepository     = wire[UserAuthRepository]
   private val refreshTokenRepository = wire[RefreshTokenRepository]
@@ -52,7 +56,8 @@ trait AuthModule extends RouteProvider with AuthRouteProvider with RecurringTask
   }
 
   override abstract def route: Route = {
-    super.route ~ authRouter.routes
+    val authRoutes = if (appConfig.environment == "dev") authRouter.routes ~ authRouter.devRoutes else authRouter.routes
+    super.route ~ authRoutes
   }
 
   override abstract def recurringTasks: List[Task[?]] = {
