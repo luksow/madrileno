@@ -134,8 +134,8 @@ No upload-then-cleanup pattern here — the bucket is authoritative; if the clie
 Persisting a row enqueues `analyzeImageTask` (a one-time scheduler task) in the same transaction. The analyzer:
 
 1. `fetchBytes` from storage (`storage.max-fetch-bytes` cap applies — see the storage utils).
-2. `Imaging.info` to extract format/dimensions/orientation.
-3. If EXIF orientation isn't `Normal`, `Imaging.applyOrientation` and write the upright bytes back. Re-runs `Imaging.info` on the upright bytes so `markAnalyzed` records post-rotation dimensions.
+2. `Imaging.info` to extract format/dimensions and whether the upload carries EXIF.
+3. If it carries EXIF, `Imaging.convert` it — decoding applies the EXIF Orientation, so the re-encode bakes the rotation into the pixels and drops all camera/GPS metadata — and write those canonical bytes back. Re-runs `Imaging.info` so `markAnalyzed` records the upright dimensions. EXIF-free uploads are left byte-for-byte.
 4. `markAnalyzed(id, sizeBytes, width, height, format, now)` and enqueues one `generateVariantTask` per `VariantSpec` — all in one transaction, so a scheduler outage between mark + enqueue rolls back and the retry replays cleanly.
 
 Each variant task renders its spec (`VariantSpec.Thumb` → `Imaging.cover(256, 256)`, `VariantSpec.Medium` → `Imaging.resize(1024)`), `put`s the bytes, and inserts the variant row via `INSERT … ON CONFLICT (auction_image_id, spec) DO NOTHING` so concurrent retries can't violate the unique constraint. On insert failure the task best-effort-deletes the rendered blob and re-raises so the scheduler retries.

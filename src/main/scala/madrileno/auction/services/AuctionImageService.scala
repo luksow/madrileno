@@ -10,7 +10,7 @@ import madrileno.auction.repositories.{AuctionImageRepository, AuctionRepository
 import madrileno.user.domain.UserId
 import madrileno.utils.crypto.IdGenerator
 import madrileno.utils.db.transactor.Transactor
-import madrileno.utils.imaging.{Height, ImageFormat, Imaging, Orientation, Width}
+import madrileno.utils.imaging.{Height, ImageFormat, Imaging, Width}
 import madrileno.utils.json.JsonProtocol.given
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
 import madrileno.utils.storage.{ObjectStat, ObjectStore, PresignedPut, SignedUrlTtl, StorageKey}
@@ -54,20 +54,26 @@ class AuctionImageService(
     info <- Imaging
               .info(bytes)
               .valueOrF[Unit](logger.warn(s"analyze: $imageId at ${image.storageKey.render} is not a recognized image, skipping"))
-    needsRotation = info.orientation != Orientation.Normal
-    upright <- (if (needsRotation) Imaging.applyOrientation(bytes, info.format) else IO.pure(bytes)).seal
-    _ <- (if (needsRotation)
-            objectStore.put(image.storageKey, contentTypeFor(info.format), Stream.chunk(fs2.Chunk.byteVector(upright))).void
+    // has EXIF ⇒ re-encode: bakes in the orientation scrimage applied on decode, strips camera/GPS metadata
+    canonical <- (if (info.hasExif) Imaging.convert(bytes, info.format) else IO.pure(bytes)).seal
+    _ <- (if (info.hasExif)
+            objectStore.put(image.storageKey, contentTypeFor(info.format), Stream.chunk(fs2.Chunk.byteVector(canonical))).void
           else IO.unit).seal
-    uprightInfo <- Imaging
-                     .info(upright)
-                     .valueOrF[Unit](logger.warn(s"analyze: upright bytes for $imageId no longer recognizable, skipping"))
+    canonicalInfo <- Imaging
+                       .info(canonical)
+                       .valueOrF[Unit](logger.warn(s"analyze: canonical bytes for $imageId no longer recognizable, skipping"))
     now <- Clock[IO].realTimeInstant.seal
     _ <- transactor.inTransaction {
            for {
-             _ <-
-               auctionImageRepository
-                 .markAnalyzed(imageId, SizeBytes(upright.size), uprightInfo.dimensions.width, uprightInfo.dimensions.height, uprightInfo.format, now)
+             _ <- auctionImageRepository
+                    .markAnalyzed(
+                      imageId,
+                      SizeBytes(canonical.size),
+                      canonicalInfo.dimensions.width,
+                      canonicalInfo.dimensions.height,
+                      canonicalInfo.format,
+                      now
+                    )
              _ <- VariantSpec.All.traverse_(spec => schedulerClient.scheduleTransactionally(variantTaskInstance(imageId, spec)))
            } yield ()
          }.seal

@@ -3,7 +3,7 @@ package madrileno.utils.imaging
 import cats.effect.IO
 import com.drew.imaging.ImageMetadataReader
 import com.drew.metadata.Metadata
-import com.drew.metadata.exif.{ExifDirectoryBase, ExifIFD0Directory}
+import com.drew.metadata.exif.ExifDirectoryBase
 import com.drew.metadata.file.FileTypeDirectory
 import com.sksamuel.scrimage.ImmutableImage
 import com.sksamuel.scrimage.angles.Degrees
@@ -75,19 +75,6 @@ object Imaging {
     }
   }
 
-  def applyOrientation(bytes: ByteVector, output: ImageFormat): IO[ByteVector] = transform(bytes, output) { image =>
-    readOrientationFromBytes(bytes) match {
-      case Orientation.Normal           => image
-      case Orientation.MirrorH          => image.flipX()
-      case Orientation.Rotate180        => image.rotateRight().rotateRight()
-      case Orientation.MirrorV          => image.flipY()
-      case Orientation.MirrorHRotate270 => image.flipX().rotateLeft()
-      case Orientation.Rotate90         => image.rotateRight()
-      case Orientation.MirrorHRotate90  => image.flipX().rotateRight()
-      case Orientation.Rotate270        => image.rotateLeft()
-    }
-  }
-
   def stripMetadata(bytes: ByteVector, output: ImageFormat): IO[ByteVector] = convert(bytes, output)
 
   private def transform(bytes: ByteVector, output: ImageFormat)(f: ImmutableImage => ImmutableImage): IO[ByteVector] = IO.blocking {
@@ -108,16 +95,9 @@ object Imaging {
       val metadata = ImageMetadataReader.readMetadata(new ByteArrayInputStream(bytes.toArray))
       val format   = formatFrom(metadata)
       format.map { fmt =>
-        val image       = ImmutableImage.loader().fromBytes(bytes.toArray)
-        val orientation = orientationFrom(metadata)
-        val hasExif     = !metadata.getDirectoriesOfType(classOf[ExifDirectoryBase]).isEmpty
-        ImageInfo(
-          dimensions = ImageDimensions(Width(image.width), Height(image.height)),
-          format = fmt,
-          orientation = orientation,
-          hasExif = hasExif,
-          sizeBytes = bytes.size
-        )
+        val image   = ImmutableImage.loader().fromBytes(bytes.toArray)
+        val hasExif = !metadata.getDirectoriesOfType(classOf[ExifDirectoryBase]).isEmpty
+        ImageInfo(dimensions = ImageDimensions(Width(image.width), Height(image.height)), format = fmt, hasExif = hasExif, sizeBytes = bytes.size)
       }
     }.toOption.flatten
 
@@ -130,13 +110,4 @@ object Imaging {
         case "GIF"  => Some(ImageFormat.Gif)
         case _      => None
       }
-
-  private def orientationFrom(metadata: Metadata): Orientation =
-    Option(metadata.getFirstDirectoryOfType(classOf[ExifIFD0Directory]))
-      .flatMap(d => Option(d.getInteger(ExifDirectoryBase.TAG_ORIENTATION)))
-      .flatMap(tag => Orientation.fromTag(tag.intValue))
-      .getOrElse(Orientation.Normal)
-
-  private def readOrientationFromBytes(bytes: ByteVector): Orientation =
-    Try(ImageMetadataReader.readMetadata(new ByteArrayInputStream(bytes.toArray))).map(orientationFrom).getOrElse(Orientation.Normal)
 }

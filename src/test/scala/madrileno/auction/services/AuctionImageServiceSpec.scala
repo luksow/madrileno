@@ -24,6 +24,7 @@ import org.typelevel.otel4s.metrics.Meter
 import org.typelevel.otel4s.trace.Tracer
 
 import java.awt.Color
+import java.nio.file.{Files, Paths}
 import java.time.Instant
 import scala.concurrent.duration.DurationInt
 
@@ -62,6 +63,9 @@ class AuctionImageServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matche
     bytes: Array[Byte] = "data".getBytes("UTF-8")
   ): IO[AttachImageResult] =
     service.attachImage(auctionId, sellerId, "wine.jpg", jpeg, Stream.emits(bytes))
+
+  private def resourceBytes(name: String): Array[Byte] =
+    Files.readAllBytes(Paths.get(getClass.getResource(name).toURI))
 
   "AuctionImageService.attachImage" should {
     "attach an image and return Attached with computed size" in {
@@ -360,6 +364,34 @@ class AuctionImageServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matche
         refresh.flatMap(_.height) shouldBe Some(Height(80))
         refresh.flatMap(_.format) shouldBe Some(ImageFormat.Jpeg)
         refresh.flatMap(_.analyzedAt) shouldBe defined
+      }
+    }
+
+    "bake EXIF orientation into the stored original so variants come out upright" in {
+      val (service, _) = freshService
+      // 1200x600 sensor pixels, EXIF Orientation 6 ⇒ displays 600x1200
+      val rotated = resourceBytes("/exif-orientation-6.jpg")
+      for {
+        seller  <- seedUser()
+        auction <- seedAuction(seller.id)
+        attached <- service.attachImage(auction.id, seller.id, "wine.jpg", jpeg, Stream.emits(rotated)).flatMap {
+                      case AttachImageResult.Attached(img) => IO.pure(img)
+                      case other                           => IO.raiseError(new AssertionError(s"setup: $other"))
+                    }
+        _        <- service.analyzeImageTask.execution(service.analyzeImageTask.instance(s"analyze-${attached.id}", attached.id))
+        analyzed <- service.listImages(auction.id).map(_.find(_.id == attached.id))
+        _ <- service.generateVariantTask
+               .execution(service.generateVariantTask.instance(s"v-${attached.id}-medium", GenerateVariantPayload(attached.id, VariantSpec.Medium)))
+        variants <- service.listImagesWithVariants(auction.id).map(_.find(_._1.id == attached.id).map(_._2).getOrElse(Nil))
+      } yield {
+        analyzed.flatMap(_.width) shouldBe Some(Width(600))
+        analyzed.flatMap(_.height) shouldBe Some(Height(1200))
+        variants.find(_.spec == VariantSpec.Medium) match {
+          case Some(medium) =>
+            medium.width shouldBe Width(512)
+            medium.height shouldBe Height(1024)
+          case None => fail(s"expected a Medium variant, got: $variants")
+        }
       }
     }
 
