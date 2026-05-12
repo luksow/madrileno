@@ -26,7 +26,14 @@ final case class PgConfig(
   queryCache: Int = 1024,
   parseCache: Int = 1024,
   readTimeout: Duration = Duration.Inf) {
-  def jdbcUrl: String = s"jdbc:postgresql://$host:$port/$database"
+  def jdbcUrl: String = {
+    val sslMode = ssl match {
+      case PgConfigSSL.None    => "disable"
+      case PgConfigSSL.Trusted => "require"
+      case PgConfigSSL.System  => "verify-full"
+    }
+    s"jdbc:postgresql://$host:$port/$database?sslmode=$sslMode"
+  }
 }
 
 object PgConfig {
