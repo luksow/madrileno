@@ -89,11 +89,15 @@ class ApplicationLoader(
       |</body>""".stripMargin
 
   lazy val baklavaDocs: Route = httpRoutesOf {
-    case req if req.uri.path.segments.headOption.exists(_.encoded == "swagger") && !openApiSpecFile.exists() =>
-      IO.pure(
-        Response[IO](Status.Ok)
-          .withEntity(specNotGeneratedHtml)(using EntityEncoder.stringEncoder[IO].withContentType(`Content-Type`(MediaType.text.html)))
-      )
+    case req if req.uri.path.segments.headOption.exists(_.encoded == "swagger") =>
+      IO.blocking(openApiSpecFile.exists()).flatMap {
+        case true => baklavaHttpRoutes.run(req).getOrElseF(IO.pure(Response[IO](Status.NotFound)))
+        case false =>
+          IO.pure(
+            Response[IO](Status.Ok)
+              .withEntity(specNotGeneratedHtml)(using EntityEncoder.stringEncoder[IO].withContentType(`Content-Type`(MediaType.text.html)))
+          )
+      }
     case req if baklavaPathSegments.contains(req.uri.path.segments.headOption.fold("")(_.encoded)) =>
       baklavaHttpRoutes.run(req).getOrElseF(IO.pure(Response[IO](Status.NotFound)))
   }
