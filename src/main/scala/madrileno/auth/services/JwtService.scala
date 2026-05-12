@@ -1,32 +1,38 @@
 package madrileno.auth.services
 
+import com.auth0.jwt.JWT
+import com.auth0.jwt.algorithms.Algorithm
+import com.auth0.jwt.exceptions.TokenExpiredException
 import io.circe.*
 import madrileno.auth.domain.InternalJwt
-import pdi.jwt.exceptions.JwtExpirationException
-import pdi.jwt.{Jwt, JwtAlgorithm, JwtClaim}
 import pureconfig.*
 
+import java.nio.charset.StandardCharsets.UTF_8
 import java.time.{Duration, Instant}
-import scala.util.{Failure, Success}
+import java.util.Base64
+import scala.jdk.CollectionConverters.*
+import scala.util.{Failure, Success, Try}
 
 import JwtService.*
 
 class JwtService(config: JwtService.Config) {
-  private val algorithm = JwtAlgorithm.HS256
+  private val algorithm           = Algorithm.HMAC256(config.secret)
+  private val leewaySeconds: Long = 30L
+  private val verifier            = JWT.require(algorithm).acceptLeeway(leewaySeconds).build()
 
   def decode[A](jwt: String)(using decoder: Decoder[A]): DecodingResult[A] =
-    Jwt.decode(jwt, config.secret, Seq(algorithm)) match {
-      case Success(payload) =>
-        parser.parse(payload.content) match {
-          case Right(jsObject) =>
-            decoder.decodeJson(jsObject) match {
+    Try(verifier.verify(jwt)) match {
+      case Success(decoded) =>
+        parser.parse(new String(Base64.getUrlDecoder.decode(decoded.getPayload), UTF_8)) match {
+          case Right(json) =>
+            decoder.decodeJson(json) match {
               case Right(value) => DecodingResult.Decoded(value)
               case Left(t)      => DecodingResult.ParsingFailure(t)
             }
           case Left(t) => DecodingResult.ParsingFailure(t)
         }
-      case Failure(t: JwtExpirationException) => DecodingResult.Expired(t)
-      case Failure(t)                         => DecodingResult.InvalidToken(t)
+      case Failure(t: TokenExpiredException) => DecodingResult.Expired(t)
+      case Failure(t)                        => DecodingResult.InvalidToken(t)
     }
 
   def encode[A](
@@ -39,23 +45,31 @@ class JwtService(config: JwtService.Config) {
     jti: Option[String] = None
   )(using encoder: Encoder[A]
   ): InternalJwt = {
-    InternalJwt(
-      Jwt.encode(
-        JwtClaim(
-          encoder.apply(payload).toString,
-          issuer = issuer,
-          subject = subject,
-          audience = audience,
-          expiration = Some(now.plus(config.validFor).getEpochSecond),
-          notBefore = notBefore.map(_.getEpochSecond),
-          issuedAt = Some(now.getEpochSecond),
-          jwtId = jti
-        ),
-        config.secret,
-        algorithm
-      )
-    )
+    val builder = JWT
+      .create()
+      .withPayload(encoder(payload).asObject.fold(java.util.Collections.emptyMap[String, AnyRef]())(jsonObjectToJava))
+      .withIssuedAt(now)
+      .withExpiresAt(now.plus(config.validFor))
+    issuer.foreach(builder.withIssuer)
+    subject.foreach(builder.withSubject)
+    audience.foreach(a => builder.withAudience(a.toSeq*))
+    notBefore.foreach(builder.withNotBefore)
+    jti.foreach(builder.withJWTId)
+    InternalJwt(builder.sign(algorithm))
   }
+
+  private def jsonObjectToJava(obj: JsonObject): java.util.Map[String, AnyRef] =
+    obj.toMap.flatMap((key, value) => jsonToJava(value).map(key -> _)).asJava
+
+  private def jsonToJava(json: Json): Option[AnyRef] =
+    json.fold[Option[AnyRef]](
+      jsonNull = None,
+      jsonBoolean = b => Some(java.lang.Boolean.valueOf(b)),
+      jsonNumber = n => Some(n.toLong.map(java.lang.Long.valueOf(_)).getOrElse(java.lang.Double.valueOf(n.toDouble))),
+      jsonString = Some(_),
+      jsonArray = arr => Some(arr.flatMap(jsonToJava).asJava),
+      jsonObject = obj => Some(jsonObjectToJava(obj))
+    )
 }
 
 object JwtService {
