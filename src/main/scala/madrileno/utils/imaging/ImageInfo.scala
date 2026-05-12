@@ -20,25 +20,10 @@ enum ImageFormat {
   case Jpeg, Png, Gif
 }
 
-enum Orientation(val tag: Int) {
-  case Normal           extends Orientation(1)
-  case MirrorH          extends Orientation(2)
-  case Rotate180        extends Orientation(3)
-  case MirrorV          extends Orientation(4)
-  case MirrorHRotate270 extends Orientation(5)
-  case Rotate90         extends Orientation(6)
-  case MirrorHRotate90  extends Orientation(7)
-  case Rotate270        extends Orientation(8)
-}
-
-object Orientation {
-  def fromTag(tag: Int): Option[Orientation] = values.find(_.tag == tag)
-}
-
+// `dimensions` are display dims — scrimage applies the EXIF Orientation when it decodes a JPEG.
 final case class ImageInfo(
   dimensions: ImageDimensions,
   format: ImageFormat,
-  orientation: Orientation,
   hasExif: Boolean,
   sizeBytes: Long)
 

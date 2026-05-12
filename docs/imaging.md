@@ -6,7 +6,7 @@
 
 ```
 src/main/scala/madrileno/utils/imaging/
-  ImageInfo.scala   # Width, Height, ImageDimensions, ImageFormat, Orientation, ImageInfo, Exif
+  ImageInfo.scala   # Width, Height, ImageDimensions, ImageFormat, ImageInfo, Exif
   Imaging.scala     # the operations
 ```
 
@@ -22,8 +22,6 @@ object Imaging {
   def cover(bytes: ByteVector, width: Width, height: Height, output: ImageFormat): IO[ByteVector]
   def crop(bytes: ByteVector, x: Int, y: Int, width: Width, height: Height, output: ImageFormat): IO[ByteVector]
   def rotate(bytes: ByteVector, degrees: Int, output: ImageFormat): IO[ByteVector]
-
-  def applyOrientation(bytes: ByteVector, output: ImageFormat): IO[ByteVector]
   def stripMetadata(bytes: ByteVector, output: ImageFormat): IO[ByteVector]
 }
 
@@ -33,12 +31,9 @@ opaque type Width  = Int   // > 0
 opaque type Height = Int   // > 0
 final case class ImageDimensions(width: Width, height: Height)
 
-enum Orientation(val tag: Int) { /* 1..8 per EXIF spec */ }
-
 final case class ImageInfo(
-  dimensions: ImageDimensions,
+  dimensions: ImageDimensions,   // display dims — scrimage applies EXIF orientation on decode
   format: ImageFormat,
-  orientation: Orientation,
   hasExif: Boolean,
   sizeBytes: Long
 )
@@ -55,13 +50,13 @@ All operations are wrapped in `IO.blocking` (CPU-heavy under the hood). Pure obj
 ## Operations
 
 ### `info(bytes)`
-Decodes format / dimensions / EXIF presence / orientation. Returns `None` for non-images and for any input format outside the supported three (JPEG / PNG / GIF). Format detection uses metadata-extractor's `FileTypeDirectory`; dimensions come from scrimage's image loader.
+Decodes format / dimensions / EXIF presence. Returns `None` for non-images and for any input format outside the supported three (JPEG / PNG / GIF). Format detection uses metadata-extractor's `FileTypeDirectory`; dimensions come from scrimage's image loader — which **applies the EXIF Orientation tag when it decodes a JPEG**, so the dimensions (and the pixels every operation below sees) are the *display*, upright orientation, not the sensor-native one. If you need the raw tag itself, read it from `readExif` (`"Orientation" → "Rotate 90 CW"` etc.).
 
 ### `readExif(bytes)`
 Returns an `Exif` wrapper around the flat `tag-name → human-readable-value` map, scoped to EXIF-related directories only (so PNG IHDR / JPEG segment metadata don't leak in). `Exif.Empty` when there's no EXIF block / unsupported format / parse failure.
 
 ### `convert(bytes, output)`
-Re-encode in the requested output format. Functionally identical to `stripMetadata` — both decode to pixels and re-encode, dropping all EXIF / IPTC / XMP as a side effect.
+Decode and re-encode in the requested output format. Side effects of the round-trip: the EXIF Orientation is baked into the pixels (scrimage applied it on decode) and all EXIF / IPTC / XMP is dropped. So `convert` is also the "normalize an uploaded photo to upright, metadata-free bytes" operation — functionally identical to `stripMetadata`.
 
 ### `resize(bytes, maxDimension, output)`
 Scale so the longest edge is at most `maxDimension`, preserving aspect ratio. For a 200×100 input with `maxDimension=100`, outputs 100×50.
@@ -73,10 +68,7 @@ Center-crop fill to exact `width × height`. Scales-and-crops so the result fill
 Explicit pixel-coordinate crop. Useful for user-driven cropping (avatar editor sends `x/y/w/h`).
 
 ### `rotate(bytes, degrees, output)`
-Rotate clockwise by `degrees`. Quarter-turns (`0`, `90`, `180`, `270`) and any normalized multiple thereof use scrimage's lossless `rotateLeft` / `rotateRight`. Other angles re-sample with a white background. `Int` because real-world rotation is always integer degrees (EXIF orientation, user "rotate 90°" buttons).
-
-### `applyOrientation(bytes, output)`
-Read the EXIF Orientation tag (1–8) and apply the matching combination of flips and rotations so the pixels are in upright `Normal` form. Most phones write photos with sensor-native orientation + an EXIF tag describing how to display; browsers historically ignored the tag, so storing already-applied bytes avoids the "image displays sideways" UX issue.
+Rotate clockwise by `degrees`. Quarter-turns (`0`, `90`, `180`, `270`) and any normalized multiple thereof use scrimage's lossless `rotateLeft` / `rotateRight`. Other angles re-sample with a white background. `Int` because real-world rotation is always integer degrees (a user "rotate 90°" button). Note this is *explicit* rotation — EXIF orientation is already handled by scrimage on decode; you don't rotate by the tag yourself (see `convert`).
 
 ### `stripMetadata(bytes, output)`
 Re-encode without metadata. Privacy-safe (location, device serial, etc. gone). Same internal path as `convert`; the separate verb exists so call sites can express intent.
@@ -98,9 +90,7 @@ To add another format:
 
 ## Testing
 
-`ImagingSpec` generates fixtures at runtime (`ImmutableImage.filled(w, h, color)` → encode → bytes). 15 cases covering every operation's happy path plus negatives for non-image input. No checked-in binary fixtures — fast and reproducible.
-
-If you need to test EXIF *content* (not just presence), check in a small fixture file and feed it via `Files.readAllBytes`. scrimage's writer drops EXIF on re-encode, so you can't generate one in-process.
+`ImagingSpec` generates most fixtures at runtime (`ImmutableImage.filled(w, h, color)` → encode → bytes) — fast and reproducible. The one exception is `src/test/resources/exif-orientation-6.jpg` (a 1200×600 JPEG carrying `Orientation = 6`, so it displays as 600×1200): scrimage's writer drops EXIF on re-encode, so an EXIF-bearing fixture can't be generated in-process and has to be checked in. Use it (via `Files.readAllBytes`) whenever you need to exercise EXIF *content*, not just presence — e.g. asserting that `convert` / the auction-image `analyze` step produces upright bytes.
 
 ## Performance notes
 

@@ -8,6 +8,7 @@ import org.scalatest.wordspec.AsyncWordSpec
 import scodec.bits.ByteVector
 
 import java.awt.Color
+import java.nio.file.{Files, Paths}
 
 class ImagingSpec extends AsyncWordSpec with AsyncIOSpec with Matchers {
 
@@ -31,15 +32,28 @@ class ImagingSpec extends AsyncWordSpec with AsyncIOSpec with Matchers {
   private val tinyGif       = fixture(10, 10, Color.BLUE, ImageFormat.Gif)
   private val notAnImage    = ByteVector("not an image at all".getBytes("UTF-8"))
 
+  // 1200x600 sensor pixels, EXIF Orientation 6 ⇒ displays 600x1200
+  private val rotatedJpeg: ByteVector =
+    ByteVector(Files.readAllBytes(Paths.get(getClass.getResource("/exif-orientation-6.jpg").toURI)))
+
   "Imaging.info" should {
-    "return dimensions, format, and orientation for a JPEG" in {
+    "return dimensions and format for a JPEG" in {
       Imaging.info(landscapeJpeg).map { result =>
         result shouldBe defined
         val info = result.get
         info.dimensions shouldBe ImageDimensions(Width(200), Height(100))
         info.format shouldBe ImageFormat.Jpeg
-        info.orientation shouldBe Orientation.Normal
+        info.hasExif shouldBe false
         info.sizeBytes shouldBe landscapeJpeg.size
+      }
+    }
+
+    "report the display (EXIF-applied) dimensions for a rotated JPEG" in {
+      Imaging.info(rotatedJpeg).map { result =>
+        result shouldBe defined
+        val info = result.get
+        info.dimensions shouldBe ImageDimensions(Width(600), Height(1200))
+        info.hasExif shouldBe true
       }
     }
 
@@ -74,6 +88,16 @@ class ImagingSpec extends AsyncWordSpec with AsyncIOSpec with Matchers {
         png  <- Imaging.convert(landscapeJpeg, ImageFormat.Png)
         info <- Imaging.info(png)
       } yield info.map(_.format) shouldBe Some(ImageFormat.Png)
+    }
+
+    "bake the EXIF orientation into the pixels and drop EXIF" in {
+      for {
+        upright <- Imaging.convert(rotatedJpeg, ImageFormat.Jpeg)
+        info    <- Imaging.info(upright)
+      } yield {
+        info.map(_.dimensions) shouldBe Some(ImageDimensions(Width(600), Height(1200)))
+        info.map(_.hasExif) shouldBe Some(false)
+      }
     }
   }
 
@@ -130,15 +154,6 @@ class ImagingSpec extends AsyncWordSpec with AsyncIOSpec with Matchers {
       for {
         rotated <- Imaging.rotate(landscapeJpeg, 0, ImageFormat.Jpeg)
         info    <- Imaging.info(rotated)
-      } yield info.map(_.dimensions) shouldBe Some(ImageDimensions(Width(200), Height(100)))
-    }
-  }
-
-  "Imaging.applyOrientation" should {
-    "be a no-op when the image has no EXIF orientation tag" in {
-      for {
-        oriented <- Imaging.applyOrientation(landscapeJpeg, ImageFormat.Jpeg)
-        info     <- Imaging.info(oriented)
       } yield info.map(_.dimensions) shouldBe Some(ImageDimensions(Width(200), Height(100)))
     }
   }
