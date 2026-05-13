@@ -110,7 +110,7 @@ The convention is: **load close to where the config is used.** The shape of whic
 
 - `Main` loads anything required to construct resources before `ApplicationLoader` (`AppConfig`, `PgConfig`, `SchedulerConfig`, `StorageConfig`). These shape what gets wired before module code runs.
 - `ApplicationLoader` loads things that *every module* might want (`HttpConfig`, `AppConfig` again, `AdminConfig`, `MailerConfig`).
-- A module loads its own slice (`AuthModule` reads `jwt` and `firebase`).
+- A module loads its own slice (`AuthModule` reads `jwt`, `firebase`, and `oidc`).
 
 `AuthModule`'s example:
 
@@ -151,6 +151,7 @@ final case class StorageConfig(maxFetchBytes: Long, objectStorage: S3Config) der
 | `mailer`         | `ApplicationLoader`                  | SMTP host/port/credentials/from                                   |
 | `logging`        | `ApplicationLoader`                  | Outbound HTTP request/response log level                          |
 | `firebase`       | `AuthModule`                         | Firebase project id (`FIREBASE_PROJECT_ID`); Firebase auth is on when set |
+| `oidc`           | `AuthModule`                         | OIDC providers — HOCON map `oidc.providers.<name>` and/or env single slot (`OIDC_PROVIDER_NAME` / `OIDC_ISSUER` / `OIDC_AUDIENCE` / `OIDC_JWKS_URI`) |
 | `jwt`            | `AuthModule`                         | Signing secret + token TTL                                        |
 | `admin`          | `ApplicationLoader`                  | Basic Auth user/password for `/admin/*`                            |
 | `storage`        | `Main`                               | Object store: `max-fetch-bytes` cap + `object-storage.*` S3 creds |
