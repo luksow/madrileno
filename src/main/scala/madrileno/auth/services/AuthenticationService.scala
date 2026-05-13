@@ -66,7 +66,7 @@ class AuthenticationService(
     verifiedToken: VerifiedExternalToken,
     command: AuthenticateWithExternalTokenCommand,
     now: Instant
-  ): DB[AuthenticationResult] = {
+  ): DBInTransaction[AuthenticationResult] = {
     val userUpdater: User => User = _.withUpdatedProfile(verifiedToken.profile)
     userAuthRepository.updateMetadata(userAuth.id, verifiedToken.metadata) *>
       userRepository.update(userAuth.userId, userUpdater, now) *>
