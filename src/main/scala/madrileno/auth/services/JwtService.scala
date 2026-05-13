@@ -1,8 +1,8 @@
 package madrileno.auth.services
 
-import com.auth0.jwt.JWT
 import com.auth0.jwt.algorithms.Algorithm
 import com.auth0.jwt.exceptions.TokenExpiredException
+import com.auth0.jwt.{JWT, JWTCreator}
 import io.circe.*
 import madrileno.auth.domain.InternalJwt
 import pureconfig.*
@@ -45,17 +45,19 @@ class JwtService(config: JwtService.Config) {
     jti: Option[String] = None
   )(using encoder: Encoder[A]
   ): InternalJwt = {
-    val builder = JWT
+    val base = JWT
       .create()
       .withPayload(encoder(payload).asObject.fold(java.util.Collections.emptyMap[String, AnyRef]())(jsonObjectToJava))
       .withIssuedAt(now)
       .withExpiresAt(now.plus(config.validFor))
-    issuer.foreach(builder.withIssuer)
-    subject.foreach(builder.withSubject)
-    audience.foreach(a => builder.withAudience(a.toSeq*))
-    notBefore.foreach(builder.withNotBefore)
-    jti.foreach(builder.withJWTId)
-    InternalJwt(builder.sign(algorithm))
+    val finalBuilder = List[JWTCreator.Builder => JWTCreator.Builder](
+      b => issuer.fold(b)(b.withIssuer),
+      b => subject.fold(b)(b.withSubject),
+      b => audience.fold(b)(set => b.withAudience(set.toSeq*)),
+      b => notBefore.fold(b)(b.withNotBefore),
+      b => jti.fold(b)(b.withJWTId)
+    ).foldLeft(base)((b, f) => f(b))
+    InternalJwt(finalBuilder.sign(algorithm))
   }
 
   private def jsonObjectToJava(obj: JsonObject): java.util.Map[String, AnyRef] =
