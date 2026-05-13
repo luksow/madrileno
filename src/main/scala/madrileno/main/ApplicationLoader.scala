@@ -145,6 +145,13 @@ class ApplicationLoader(
 
   private lazy val logActionLevel: Int = config.at("logging.loglevel-request-response").loadOrThrow[Int]
 
+  private def logActionFor(ctx: Map[String, String]): String => IO[Unit] = logActionLevel match {
+    case 4 => logger.debug(ctx)(_)
+    case 3 => logger.info(ctx)(_)
+    case 2 => logger.warn(ctx)(_)
+    case 1 => logger.error(ctx)(_)
+  }
+
   private val apiVersion: String                   = appConfig.apiVersion
   private val pathPrefixMatcher: PathMatcher[Unit] = Slash ~ apiVersion
 
@@ -152,18 +159,8 @@ class ApplicationLoader(
     val ws = wsb.withOnNonWebSocketRequest(
       IO.pure(Response[IO](Status.UpgradeRequired).withEntity("Upgrade required for WebSocket communication.")(using EntityEncoder.stringEncoder))
     )
-    // Snapshot the trace context once per request while the otel4s middleware's scope is still open.
-    // `logResult` evaluates its effect during response-body materialization, after the middleware's
-    // `Resource.use` has unwound and the trace IOLocal has reverted — so live `currentSpanOrNoop`
-    // returns Noop there. The snapshot fills MDC in that case; live still wins when present.
     onSuccess(traceFields) { initialCtx =>
-      val log = logger
-      val logAction: String => IO[Unit] = logActionLevel match {
-        case 4 => msg => log.debug(initialCtx)(msg)
-        case 3 => msg => log.info(initialCtx)(msg)
-        case 2 => msg => log.warn(initialCtx)(msg)
-        case 1 => msg => log.error(initialCtx)(msg)
-      }
+      val logAction = logActionFor(initialCtx)
       logRequest(logAction = Some(logAction)) {
         handleExceptions(exceptionHandler(logResult(logAction = Some(logAction)))) {
           handleRejections(rejectionHandler(logResult(logAction = Some(logAction)))) {
