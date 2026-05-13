@@ -36,48 +36,55 @@ class AuthenticationService(
       case None =>
         logger.warn(s"No auth verifier configured for provider $provider").as(AuthenticationResult.ProviderUnavailable)
       case Some(verifier) =>
-        verifier
-          .verifyToken(command.token)
-          .flatMap {
-            case Left(t) =>
-              logger
-                .error(s"Failed to authenticate with $provider: ${t.getMessage} ${t.getStackTrace.toList.mkString("\n")}")
-                .as(AuthenticationResult.InvalidToken)
-            case Right(verifiedToken) =>
-              transactor.inTransaction {
-                Clock[IO].realTimeInstant.flatMap { now =>
-                  userAuthRepository
-                    .findForUpdate(verifiedToken.provider, verifiedToken.providerUserId)
-                    .flatMap {
-                      case Some(userAuth) =>
-                        val userUpdater: User => User = _.withUpdatedProfile(verifiedToken.profile)
-                        userAuthRepository.updateMetadata(userAuth.id, verifiedToken.metadata) *>
-                          userRepository.update(userAuth.userId, userUpdater, now) *>
-                          generateTokens(userAuth.userId, command.userAgent, command.ipAddress, now, AuthenticationResult.Authenticated.apply)
-                      case _ =>
-                        for {
-                          user <- IdGenerator.generateId(UserId).map(id => User(id, verifiedToken))
-                          userAuth <-
-                            IdGenerator
-                              .generateId(UserAuthId)
-                              .map(id => UserAuth(id, user.id, verifiedToken))
-                          _ <- userRepository.create(user, now)
-                          _ <- userAuthRepository.save(userAuth, now)
-                          _ <- logger.info(s"Created new user: $user via $provider (${verifiedToken.providerUserId})")
-                          _ <- user.emailAddress.fold(IO.unit) { email =>
-                                 mailer
-                                   .sendTransactionally(to = List(email.toString), template = WelcomeEmailTemplate(user.fullName), lang = Language.En)
-                                   .void
-                               }
-                          tokens <- generateTokens(user.id, command.userAgent, command.ipAddress, now, AuthenticationResult.UserCreated.apply)
-                        } yield {
-                          tokens
-                        }
-                    }
-                }
-              }
-          }
+        verifier.verifyToken(command.token).flatMap {
+          case Left(t) =>
+            logger
+              .error(s"Failed to authenticate with $provider: ${t.getMessage} ${t.getStackTrace.toList.mkString("\n")}")
+              .as(AuthenticationResult.InvalidToken)
+          case Right(verifiedToken) =>
+            transactor.inTransaction(upsertAndIssueTokens(verifiedToken, command))
+        }
     }
+  }
+
+  private def upsertAndIssueTokens(verifiedToken: VerifiedExternalToken, command: AuthenticateWithExternalTokenCommand)
+    : DBInTransaction[AuthenticationResult] = {
+    Clock[IO].realTimeInstant.flatMap { now =>
+      userAuthRepository.findForUpdate(verifiedToken.provider, verifiedToken.providerUserId).flatMap {
+        case Some(userAuth) => updateExistingUser(userAuth, verifiedToken, command, now)
+        case None           => createNewUser(verifiedToken, command, now)
+      }
+    }
+  }
+
+  private def updateExistingUser(
+    userAuth: UserAuth,
+    verifiedToken: VerifiedExternalToken,
+    command: AuthenticateWithExternalTokenCommand,
+    now: Instant
+  ): DB[AuthenticationResult] = {
+    val userUpdater: User => User = _.withUpdatedProfile(verifiedToken.profile)
+    userAuthRepository.updateMetadata(userAuth.id, verifiedToken.metadata) *>
+      userRepository.update(userAuth.userId, userUpdater, now) *>
+      generateTokens(userAuth.userId, command.userAgent, command.ipAddress, now, AuthenticationResult.Authenticated.apply)
+  }
+
+  private def createNewUser(
+    verifiedToken: VerifiedExternalToken,
+    command: AuthenticateWithExternalTokenCommand,
+    now: Instant
+  ): DBInTransaction[AuthenticationResult] = {
+    for {
+      user     <- IdGenerator.generateId(UserId).map(id => User(id, verifiedToken))
+      userAuth <- IdGenerator.generateId(UserAuthId).map(id => UserAuth(id, user.id, verifiedToken))
+      _        <- userRepository.create(user, now)
+      _        <- userAuthRepository.save(userAuth, now)
+      _        <- logger.info(s"Created new user: $user via ${verifiedToken.provider} (${verifiedToken.providerUserId})")
+      _ <- user.emailAddress.fold(IO.unit) { email =>
+             mailer.sendTransactionally(to = List(email.toString), template = WelcomeEmailTemplate(user.fullName), lang = Language.En).void
+           }
+      tokens <- generateTokens(user.id, command.userAgent, command.ipAddress, now, AuthenticationResult.UserCreated.apply)
+    } yield tokens
   }
 
   def authenticateWithRefreshToken(command: AuthenticateWithRefreshTokenCommand): IO[AuthenticationResult] = {
