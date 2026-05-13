@@ -25,7 +25,7 @@ final class FirebaseKeyProvider(http: WebSocketStreamBackend[IO, Fs2Streams[IO]]
         case Some(cached) if cached.expiresAt.isAfter(now) =>
           IO.fromOption(cached.keys.get(keyId))(unknownKid(keyId))
         case _ =>
-          fetchCertificates(now)
+          fetchCertificates
             .flatTap(fresh => cache.set(Some(fresh)))
             .flatMap(fresh => IO.fromOption(fresh.keys.get(keyId))(unknownKid(keyId)))
       }
@@ -34,11 +34,14 @@ final class FirebaseKeyProvider(http: WebSocketStreamBackend[IO, Fs2Streams[IO]]
   private def unknownKid(keyId: String): Throwable =
     new IllegalArgumentException(s"unknown Firebase signing key id '$keyId'")
 
-  private def fetchCertificates(now: Instant): IO[CachedCerts] =
+  private def fetchCertificates: IO[CachedCerts] =
     basicRequest.get(certsUri).response(asJson[Map[String, String]]).send(http).flatMap { response =>
       response.body match {
         case Right(pemByKid) =>
-          parseCertificates(pemByKid).map(keys => CachedCerts(now.plusSeconds(extractMaxAge(response.headers)), keys))
+          for {
+            keys      <- parseCertificates(pemByKid)
+            fetchedAt <- Clock[IO].realTimeInstant
+          } yield CachedCerts(fetchedAt.plusSeconds(extractMaxAge(response.headers)), keys)
         case Left(error) =>
           IO.raiseError(error)
       }
