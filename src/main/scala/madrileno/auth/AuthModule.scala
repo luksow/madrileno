@@ -56,8 +56,7 @@ trait AuthModule extends RouteProvider with AuthRouteProvider with RecurringTask
   }
 
   override abstract def route: Route = {
-    val authRoutes = if (appConfig.environment == "dev") authRouter.routes ~ authRouter.devRoutes else authRouter.routes
-    super.route ~ authRoutes
+    super.route ~ authRouter.routes
   }
 
   override abstract def recurringTasks: List[Task[?]] = {
