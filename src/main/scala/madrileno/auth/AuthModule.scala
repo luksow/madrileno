@@ -18,7 +18,6 @@ import pl.iterators.stir.server.Route
 import pureconfig.*
 import sttp.capabilities.fs2.Fs2Streams
 import sttp.client4.WebSocketStreamBackend
-import sttp.model.Uri
 
 trait AuthModule extends RouteProvider with AuthRouteProvider with RecurringTaskProvider with MailPreviewProvider {
   val config: ConfigSource
@@ -49,23 +48,9 @@ trait AuthModule extends RouteProvider with AuthRouteProvider with RecurringTask
     val oidc: Iterable[(Provider, ExternalAuthVerifier)] =
       oidcEntries.map { case (name, providerConfig) =>
         val provider = Provider(name)
-        provider -> buildOidcVerifier(provider, providerConfig)
+        provider -> OidcAuthVerifier(provider, providerConfig, httpClient, cacheRuntime)
       }
     AuthVerifiers((List(firebase, dev).flatten ++ oidc).toMap)
-  }
-
-  private def buildOidcVerifier(provider: Provider, providerConfig: OidcProviderConfig): ExternalAuthVerifier = {
-    val jwksUri: IO[Uri] = providerConfig.jwksUri match {
-      case Some(uri) =>
-        Uri
-          .parse(uri)
-          .fold(err => IO.raiseError(new IllegalArgumentException(s"oidc provider '$provider' has invalid jwks-uri '$uri': $err")), IO.pure)
-      case None =>
-        OidcDiscovery.jwksUri(providerConfig.issuer, httpClient)
-    }
-    val jwks     = new JwksProvider(jwksUri, httpClient, cacheRuntime)
-    val audience = providerConfig.audience.split(",").iterator.map(_.trim).filter(_.nonEmpty).toSet
-    new Rs256TokenVerifier(provider, providerConfig.issuer, audience, jwks.keyFor)
   }
 
   private val userAuthRepository     = wire[UserAuthRepository]
