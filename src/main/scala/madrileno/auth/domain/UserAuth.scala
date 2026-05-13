@@ -12,8 +12,8 @@ object UserAuthId extends Opaque[UserAuthId, UUID]
 
 opaque type Provider = String
 object Provider extends Opaque[Provider, String] {
-  val Firebase: Provider = Provider("firebase")
-  val Dev: Provider      = Provider("dev")
+  val Firebase: Provider = Provider("Firebase")
+  val Dev: Provider      = Provider("Dev")
 }
 
 opaque type ProviderUserId = String
