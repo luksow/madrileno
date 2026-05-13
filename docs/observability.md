@@ -75,7 +75,7 @@ class AuctionService(...)(using TelemetryContext) extends LoggingSupport {
 ```
 
 The `info` call internally does:
-1. `tc.tracer.currentSpanOrNoop.map(_.context)` — fetch the currently-active `SpanContext`. This goes through otel4s's Java-Context reader, so spans created by the http4s server middleware are visible. (`tracer.currentSpanContext` only sees spans created via otel4s primitives — `tracer.span(...).use { … }` etc. — and would return `None` for the inbound HTTP request span.)
+1. `tc.tracer.currentSpanOrNoop.map(_.context)` — fetch the currently-active `SpanContext` from the otel4s `traceScope` (a `Local[IO, Context]` backed by an IOLocal holding the Java OTel `Context`). `tracer.currentSpanContext: F[Option[SpanContext]]` reads from the same `Local` per the otel4s source — both should produce equivalent results here. We use `currentSpanOrNoop` because it returns a `Span[F]` we can also pull attributes from when needed.
 2. Build a `Map("trace_id" -> .traceIdHex, "span_id" -> .spanIdHex, "trace_flags" -> .traceFlags.toHex)` — skipped when the context is invalid (no active span, e.g. a noop tracer in tests).
 3. Hand that map to log4cats as the structured context.
 4. log4cats writes those keys into the SLF4J MDC.
@@ -111,7 +111,7 @@ tc.tracer.span("AuctionService.closeAuction").use { span =>
 
 Don't wrap *everything*. Lots of small spans inflate trace size and slow down the UI. Span the work you'd want to debug latency on; leave trivial calls inside their parent span.
 
-`tracer.currentSpanOrNoop.map(_.context)` returns the current `SpanContext` (or one with `isValid == false` when no span is active) — useful when you want the trace ID for a log line or response header. Prefer it over `tracer.currentSpanContext` from request-path code, since `currentSpanContext` doesn't see spans created by the http4s middleware.
+`tracer.currentSpanOrNoop.map(_.context)` returns the current `SpanContext` (or one with `isValid == false` when no span is active) — useful when you want the trace ID for a log line or response header. `tracer.currentSpanContext: F[Option[SpanContext]]` reads from the same underlying `Local[F, Context]` and is fine to use too; pick whichever shape fits the call site.
 
 ## Manual metrics
 
