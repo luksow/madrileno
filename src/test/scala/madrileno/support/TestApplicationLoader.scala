@@ -38,6 +38,7 @@ trait TestApplicationLoader extends TestContainersForAll with TestMailpit { self
 
   // Stable across the spec lifetime so tests can seed users matching the fake firebase verifier
   val firebaseToken: VerifiedExternalToken = TestData.verifiedExternalToken()
+  val oidcToken: VerifiedExternalToken     = TestData.verifiedExternalToken(provider = Provider("test-oidc"))
 
   lazy val application: ApplicationLoader = withContainers { container =>
     val pgConfig = PgConfig(
@@ -67,7 +68,7 @@ trait TestApplicationLoader extends TestContainersForAll with TestMailpit { self
       EventBusRuntime.local
     ) {
       override protected lazy val externalAuthVerifiers: AuthVerifiers =
-        AuthVerifiers(Map(Provider.Firebase -> FakeAuthVerifier(firebaseToken)))
+        AuthVerifiers(Map(Provider.Firebase -> FakeAuthVerifier(firebaseToken), Provider("test-oidc") -> FakeAuthVerifier(oidcToken)))
       override protected lazy val vivinoGateway: VivinoGateway = (_, _) => IO.pure(None)
       override protected lazy val mailerConfig: MailerConfig =
         MailerConfig(host = mailpitHost, port = mailpitSmtpPort, fromAddress = "test@example.com", tls = false)

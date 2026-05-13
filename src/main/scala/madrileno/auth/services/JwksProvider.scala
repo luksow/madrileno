@@ -16,7 +16,7 @@ import java.util.Base64
 import scala.concurrent.duration.*
 
 final class JwksProvider(
-  jwksUri: Uri,
+  jwksUri: IO[Uri],
   http: WebSocketStreamBackend[IO, Fs2Streams[IO]],
   cacheRuntime: CacheRuntime) {
   import JwksProvider.*
@@ -29,14 +29,16 @@ final class JwksProvider(
       case _ =>
         fetchJwks
           .flatTap(keys => cache.put((), keys))
-          .flatMap(keys => IO.fromOption(keys.get(keyId))(new IllegalArgumentException(s"unknown JWKS key id '$keyId' at $jwksUri")))
+          .flatMap(keys => IO.fromOption(keys.get(keyId))(new IllegalArgumentException(s"unknown JWKS key id '$keyId'")))
     }
 
   private def fetchJwks: IO[Map[String, RSAPublicKey]] =
-    basicRequest.get(jwksUri).response(asJson[JwksDocument]).send(http).flatMap { response =>
-      response.body match {
-        case Right(document) => parseKeys(document.keys)
-        case Left(error)     => IO.raiseError(error)
+    jwksUri.flatMap { uri =>
+      basicRequest.get(uri).response(asJson[JwksDocument]).send(http).flatMap { response =>
+        response.body match {
+          case Right(document) => parseKeys(document.keys)
+          case Left(error)     => IO.raiseError(error)
+        }
       }
     }
 

@@ -4,7 +4,7 @@ import cats.effect.IO
 import cats.effect.testing.scalatest.AsyncIOSpec
 import com.auth0.jwt.JWT
 import com.auth0.jwt.algorithms.Algorithm
-import madrileno.auth.domain.{Provider, ProviderUserId}
+import madrileno.auth.domain.{ExternalAuthToken, Provider, ProviderUserId}
 import madrileno.user.domain.{EmailAddress, FullName}
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AsyncWordSpec
@@ -56,7 +56,7 @@ class Rs256TokenVerifierSpec extends AsyncWordSpec with AsyncIOSpec with Matcher
     emailVerified: Option[Boolean] = None,
     picture: Option[String] = None,
     algorithm: Algorithm = defaultAlgorithm
-  ): String = {
+  ): ExternalAuthToken = {
     val builder = JWT
       .create()
       .withKeyId(kid)
@@ -69,7 +69,7 @@ class Rs256TokenVerifierSpec extends AsyncWordSpec with AsyncIOSpec with Matcher
     email.foreach(builder.withClaim("email", _))
     emailVerified.foreach(v => builder.withClaim("email_verified", java.lang.Boolean.valueOf(v)))
     picture.foreach(builder.withClaim("picture", _))
-    builder.sign(algorithm)
+    ExternalAuthToken(builder.sign(algorithm))
   }
 
   "Rs256TokenVerifier" should {
