@@ -5,7 +5,7 @@ import org.typelevel.log4cats.SelfAwareStructuredLogger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
 trait LoggingSupport {
-  protected def traceFields(using tc: TelemetryContext): IO[Map[String, String]] =
+  private def traceFields(using tc: TelemetryContext): IO[Map[String, String]] =
     tc.tracer.currentSpanContext.map {
       _.filter(_.isValid).fold(Map.empty[String, String]) { spanContext =>
         Map("trace_id" -> spanContext.traceIdHex, "span_id" -> spanContext.spanIdHex, "trace_flags" -> spanContext.traceFlags.toHex)

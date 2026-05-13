@@ -143,12 +143,12 @@ class ApplicationLoader(
       )
     )
 
-  private def logAction(initialCtx: Map[String, String]): String => IO[Unit] = {
+  private val logAction: String => IO[Unit] = {
     config.at("logging.loglevel-request-response").loadOrThrow[Int] match {
-      case 4 => logger.debug(initialCtx)(_)
-      case 3 => logger.info(initialCtx)(_)
-      case 2 => logger.warn(initialCtx)(_)
-      case 1 => logger.error(initialCtx)(_)
+      case 4 => logger.debug(_)
+      case 3 => logger.info(_)
+      case 2 => logger.warn(_)
+      case 1 => logger.error(_)
     }
   }
 
@@ -159,36 +159,34 @@ class ApplicationLoader(
     val ws = wsb.withOnNonWebSocketRequest(
       IO.pure(Response[IO](Status.UpgradeRequired).withEntity("Upgrade required for WebSocket communication.")(using EntityEncoder.stringEncoder))
     )
-    onSuccess(traceFields(using telemetryContext)) { initialCtx =>
-      logRequest(logAction = Some(logAction(initialCtx))) {
-        handleExceptions(exceptionHandler(logResult(logAction = Some(logAction(initialCtx))))) {
-          handleRejections(rejectionHandler(logResult(logAction = Some(logAction(initialCtx))))) {
-            rawPathPrefix(pathPrefixMatcher) {
-              authenticateOrRejectWithChallenge(userAuthenticator) { auth =>
-                handleExceptions(exceptionHandler(logResult(logAction = Some(logAction(initialCtx))))) {
-                  handleRejections(rejectionHandler(logResult(logAction = Some(logAction(initialCtx))))) {
-                    onSuccess(telemetryContext.tracer.currentSpanOrNoop.flatMap(_.addAttribute(Attribute("app.user.id", auth.userId.toString)))) {
-                      logResult(logAction = Some(logAction(initialCtx))) {
-                        onSuccess(telemetryContext.tracer.propagate(Headers.empty)) { newHeaders =>
-                          mapResponseHeaders(_ ++ newHeaders) {
-                            route(auth) ~ route ~ wsRoutes(auth, ws) ~ wsRoutes(ws)
-                          }
+    logRequest(logAction = Some(logAction)) {
+      handleExceptions(exceptionHandler(logResult(logAction = Some(logAction)))) {
+        handleRejections(rejectionHandler(logResult(logAction = Some(logAction)))) {
+          rawPathPrefix(pathPrefixMatcher) {
+            authenticateOrRejectWithChallenge(userAuthenticator) { auth =>
+              handleExceptions(exceptionHandler(logResult(logAction = Some(logAction)))) {
+                handleRejections(rejectionHandler(logResult(logAction = Some(logAction)))) {
+                  onSuccess(telemetryContext.tracer.currentSpanOrNoop.flatMap(_.addAttribute(Attribute("app.user.id", auth.userId.toString)))) {
+                    logResult(logAction = Some(logAction)) {
+                      onSuccess(telemetryContext.tracer.propagate(Headers.empty)) { newHeaders =>
+                        mapResponseHeaders(_ ++ newHeaders) {
+                          route(auth) ~ route ~ wsRoutes(auth, ws) ~ wsRoutes(ws)
                         }
                       }
                     }
                   }
                 }
-              } ~
-                logResult(logAction = Some(logAction(initialCtx))) {
-                  onSuccess(telemetryContext.tracer.propagate(Headers.empty)) { newHeaders =>
-                    mapResponseHeaders(_ ++ newHeaders) {
-                      route ~ wsRoutes(ws)
-                    }
+              }
+            } ~
+              logResult(logAction = Some(logAction)) {
+                onSuccess(telemetryContext.tracer.propagate(Headers.empty)) { newHeaders =>
+                  mapResponseHeaders(_ ++ newHeaders) {
+                    route ~ wsRoutes(ws)
                   }
                 }
-            } ~ adminRoutes ~ (if (appConfig.environment == "dev") new MailPreviewRouter(mailPreviews, mailContext).routes ~ baklavaDocs
-                               else RouteDirectives.reject)
-          }
+              }
+          } ~ adminRoutes ~ (if (appConfig.environment == "dev") new MailPreviewRouter(mailPreviews, mailContext).routes ~ baklavaDocs
+                             else RouteDirectives.reject)
         }
       }
     }
