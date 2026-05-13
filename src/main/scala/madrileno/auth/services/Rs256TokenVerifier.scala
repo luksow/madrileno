@@ -27,7 +27,16 @@ final class Rs256TokenVerifier(
       keyId      <- IO.fromOption(Option(unverified.getKeyId).filter(_.nonEmpty))(badToken("missing 'kid' header"))
       _          <- IO.raiseUnless(unverified.getAlgorithm == "RS256")(badToken(s"unexpected signature algorithm '${unverified.getAlgorithm}'"))
       publicKey  <- keyResolver(keyId)
-      verified   <- IO.delay(JWT.require(rsa256(publicKey)).withIssuer(issuer).acceptLeeway(leewaySeconds).build().verify(token))
+      verified <- IO.delay(
+                    JWT
+                      .require(rsa256(publicKey))
+                      .withIssuer(issuer)
+                      .acceptLeeway(leewaySeconds)
+                      .withClaimPresence("iat")
+                      .withClaimPresence("exp")
+                      .build()
+                      .verify(token)
+                  )
       tokenAudience = Option(verified.getAudience).map(_.asScala.toSet).getOrElse(Set.empty[String])
       _ <- IO.raiseUnless(audience.isEmpty || tokenAudience.exists(audience))(badToken(s"audience $tokenAudience does not include any of $audience"))
       subject <- IO.fromOption(Option(verified.getSubject).filter(_.nonEmpty))(badToken("missing 'sub' claim"))
