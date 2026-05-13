@@ -16,6 +16,9 @@ object Provider extends Opaque[Provider, String] {
   val Dev: Provider      = Provider("Dev")
 }
 
+opaque type ExternalAuthToken <: String = String
+object ExternalAuthToken extends Opaque[ExternalAuthToken, String]
+
 opaque type ProviderUserId = String
 object ProviderUserId extends Opaque[ProviderUserId, String]
 

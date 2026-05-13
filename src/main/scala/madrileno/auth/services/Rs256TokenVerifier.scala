@@ -21,7 +21,7 @@ final class Rs256TokenVerifier(
   leewaySeconds: Long = 30L)
     extends ExternalAuthVerifier {
 
-  override def verifyToken(token: String): IO[Either[Throwable, VerifiedExternalToken]] =
+  override def verifyToken(token: ExternalAuthToken): IO[Either[Throwable, VerifiedExternalToken]] =
     (for {
       unverified <- IO.delay(JWT.decode(token))
       keyId      <- IO.fromOption(Option(unverified.getKeyId).filter(_.nonEmpty))(badToken("missing 'kid' header"))

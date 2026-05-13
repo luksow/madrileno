@@ -49,7 +49,7 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
     (svc, token)
   }
 
-  private val command = AuthenticateWithExternalTokenCommand("fake-token", UserAgent("test-agent"), TestData.defaultIpAddress)
+  private val command = AuthenticateWithExternalTokenCommand(ExternalAuthToken("fake-token"), UserAgent("test-agent"), TestData.defaultIpAddress)
 
   "authenticateWithProvider" should {
     "create a new user on first login" in {
@@ -80,7 +80,7 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
 
     "return InvalidToken for failed Firebase verification" in {
       val (service, _)        = serviceWithFreshAuth()
-      val invalidTokenCommand = command.copy(token = "invalid-token")
+      val invalidTokenCommand = command.copy(token = ExternalAuthToken("invalid-token"))
       service.authenticateWithProvider(Provider.Firebase, invalidTokenCommand).map { result =>
         result shouldBe AuthenticationResult.InvalidToken
       }

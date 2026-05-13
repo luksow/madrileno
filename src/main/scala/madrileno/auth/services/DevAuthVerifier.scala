@@ -5,7 +5,7 @@ import madrileno.auth.domain.*
 import madrileno.user.domain.EmailAddress
 
 object DevAuthVerifier extends ExternalAuthVerifier {
-  override def verifyToken(token: String): IO[Either[Throwable, VerifiedExternalToken]] =
+  override def verifyToken(token: ExternalAuthToken): IO[Either[Throwable, VerifiedExternalToken]] =
     IO.pure {
       EmailAddress.validate(token.trim) match {
         case Right(email) =>

@@ -1,7 +1,7 @@
 package madrileno.auth.services
 
 import cats.effect.testing.scalatest.AsyncIOSpec
-import madrileno.auth.domain.{Provider, ProviderUserId}
+import madrileno.auth.domain.{ExternalAuthToken, Provider, ProviderUserId}
 import madrileno.user.domain.EmailAddress
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AsyncWordSpec
@@ -9,7 +9,7 @@ import org.scalatest.wordspec.AsyncWordSpec
 class DevAuthVerifierSpec extends AsyncWordSpec with AsyncIOSpec with Matchers {
   "DevAuthVerifier" should {
     "synthesise a verified token from an email address" in {
-      DevAuthVerifier.verifyToken("  alice@example.com  ").asserting {
+      DevAuthVerifier.verifyToken(ExternalAuthToken("  alice@example.com  ")).asserting {
         case Right(token) =>
           token.provider shouldBe Provider.Dev
           token.providerUserId shouldBe ProviderUserId("alice@example.com")
@@ -20,7 +20,7 @@ class DevAuthVerifierSpec extends AsyncWordSpec with AsyncIOSpec with Matchers {
     }
 
     "reject anything that is not an email address" in {
-      DevAuthVerifier.verifyToken("not-an-email").asserting(_.isLeft shouldBe true)
+      DevAuthVerifier.verifyToken(ExternalAuthToken("not-an-email")).asserting(_.isLeft shouldBe true)
     }
   }
 }

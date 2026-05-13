@@ -179,7 +179,7 @@ class AuthenticationService(
 }
 
 final case class AuthenticateWithExternalTokenCommand(
-  token: String,
+  token: ExternalAuthToken,
   userAgent: UserAgent,
   ipAddress: IpAddress)
 

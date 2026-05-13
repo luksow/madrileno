@@ -1,7 +1,7 @@
 package madrileno.auth.routers
 
 import com.comcast.ip4s.*
-import madrileno.auth.domain.{AuthContext, Provider, RefreshTokenId, UserAgent}
+import madrileno.auth.domain.{AuthContext, ExternalAuthToken, Provider, RefreshTokenId, UserAgent}
 import madrileno.auth.routers.dto.*
 import madrileno.auth.services.*
 import madrileno.utils.http.BaseRouter
@@ -24,7 +24,7 @@ class AuthRouter(authenticationService: AuthenticationService)(using TelemetryCo
         complete {
           val command =
             AuthenticateWithExternalTokenCommand(
-              request.firebaseJwtToken,
+              ExternalAuthToken(request.firebaseJwtToken),
               UserAgent(userAgent.getOrElse("Unknown")),
               ipAddress.getOrElse(unknownIpAddress)
             )
@@ -76,7 +76,11 @@ class AuthRouter(authenticationService: AuthenticationService)(using TelemetryCo
         ) =>
           complete {
             val command =
-              AuthenticateWithExternalTokenCommand(request.email, UserAgent(userAgent.getOrElse("Unknown")), ipAddress.getOrElse(unknownIpAddress))
+              AuthenticateWithExternalTokenCommand(
+                ExternalAuthToken(request.email),
+                UserAgent(userAgent.getOrElse("Unknown")),
+                ipAddress.getOrElse(unknownIpAddress)
+              )
             authenticationService
               .authenticateWithProvider(Provider.Dev, command)
               .map[ToResponseMarshallable] {

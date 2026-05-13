@@ -1,7 +1,7 @@
 package madrileno.auth.services
 
 import cats.effect.IO
-import madrileno.auth.domain.{Provider, VerifiedExternalToken}
+import madrileno.auth.domain.{ExternalAuthToken, Provider, VerifiedExternalToken}
 
 class FirebaseService(projectId: String, keyProvider: FirebaseKeyProvider) extends ExternalAuthVerifier {
   private val verifier =
@@ -12,5 +12,5 @@ class FirebaseService(projectId: String, keyProvider: FirebaseKeyProvider) exten
       keyResolver = keyProvider.keyFor
     )
 
-  override def verifyToken(token: String): IO[Either[Throwable, VerifiedExternalToken]] = verifier.verifyToken(token)
+  override def verifyToken(token: ExternalAuthToken): IO[Either[Throwable, VerifiedExternalToken]] = verifier.verifyToken(token)
 }
