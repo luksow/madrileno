@@ -5,6 +5,13 @@ import org.typelevel.log4cats.SelfAwareStructuredLogger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
 trait LoggingSupport {
+  protected def traceFields(using tc: TelemetryContext): IO[Map[String, String]] =
+    tc.tracer.currentSpanContext.map {
+      _.filter(_.isValid).fold(Map.empty[String, String]) { spanContext =>
+        Map("trace_id" -> spanContext.traceIdHex, "span_id" -> spanContext.spanIdHex, "trace_flags" -> spanContext.traceFlags.toHex)
+      }
+    }
+
   def logger(using tc: TelemetryContext): SelfAwareStructuredLogger[IO] = new SelfAwareStructuredLogger[IO] {
     override def isTraceEnabled: IO[Boolean] = _logger.isTraceEnabled
 
@@ -56,11 +63,8 @@ trait LoggingSupport {
 
     override def trace(message: => String): IO[Unit] = propagateNewContext(_logger.trace(_)(message))
 
-    private def propagateContext(ctx: Map[String, String])(withNewCtx: Map[String, String] => IO[Unit]): IO[Unit] = {
-      tc.tracer.propagate(ctx).flatMap { newCtx =>
-        withNewCtx(newCtx)
-      }
-    }
+    private def propagateContext(ctx: Map[String, String])(withNewCtx: Map[String, String] => IO[Unit]): IO[Unit] =
+      traceFields.flatMap(traceCtx => withNewCtx(ctx ++ traceCtx))
 
     private def propagateNewContext(withNewCtx: Map[String, String] => IO[Unit]): IO[Unit] = propagateContext(Map.empty)(withNewCtx)
   }

@@ -159,7 +159,7 @@ class ApplicationLoader(
     val ws = wsb.withOnNonWebSocketRequest(
       IO.pure(Response[IO](Status.UpgradeRequired).withEntity("Upgrade required for WebSocket communication.")(using EntityEncoder.stringEncoder))
     )
-    onSuccess(telemetryContext.tracer.propagate(Map.empty)) { initialCtx =>
+    onSuccess(traceFields(using telemetryContext)) { initialCtx =>
       logRequest(logAction = Some(logAction(initialCtx))) {
         handleExceptions(exceptionHandler(logResult(logAction = Some(logAction(initialCtx))))) {
           handleRejections(rejectionHandler(logResult(logAction = Some(logAction(initialCtx))))) {
