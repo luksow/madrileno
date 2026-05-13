@@ -57,7 +57,7 @@ The container needs environment variables for every `${?VAR}` substitution in `a
 - **Postgres** — `PG_HOST`, `PG_PORT`, `PG_DATABASE`, `PG_USER`, `PG_PASSWORD`. Provision with whatever your platform offers (RDS, Cloud SQL, managed Postgres).
 - **OpenTelemetry** — `OTEL_*` per [observability.md](observability.md). Point at your real OTLP receiver.
 - **Mailer** — `MAILER_HOST`, `MAILER_PORT`, `MAILER_USERNAME`, `MAILER_PASSWORD`, `MAILER_FROM_ADDRESS`, `MAILER_TLS=true`. SES, SendGrid, internal SMTP relay — anything that speaks SMTP.
-- **Auth secrets** — `JWT_SECRET`, `FIREBASE_KEY` (single-line JSON service-account key). Inject from your secrets manager; never bake into the image.
+- **Auth** — `JWT_SECRET` (real secret; inject from your secrets manager, never bake into the image). `FIREBASE_PROJECT_ID` if you use Firebase login — that's just the project id (not a secret); ID-token verification fetches Google's public certs. Leave it unset to disable Firebase auth.
 - **Object storage** — `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`. Point at real S3 or any S3-compatible store.
 - **Admin auth** — `ADMIN_USER`, `ADMIN_PASSWORD`. Gates `/admin/*` (health, jobs UI, mail previews in dev). Strong password.
 

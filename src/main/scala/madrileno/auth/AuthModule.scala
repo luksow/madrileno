@@ -1,25 +1,23 @@
 package madrileno.auth
 
-import com.google.auth.oauth2.GoogleCredentials
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.{FirebaseApp, FirebaseOptions}
+import cats.effect.IO
 import com.softwaremill.macwire.*
-import madrileno.auth.domain.AuthContext
+import madrileno.auth.domain.{AuthContext, Provider}
 import madrileno.auth.emails.WelcomeEmailTemplate
 import madrileno.auth.repositories.*
 import madrileno.auth.routers.{AuthRouter, UserAuthenticator}
 import madrileno.auth.services.*
 import madrileno.user.repositories.UserRepository
+import madrileno.utils.cache.CacheRuntime
 import madrileno.utils.db.transactor.Transactor
 import madrileno.utils.http.{AuthRouteProvider, RouteProvider}
 import madrileno.utils.mailer.{MailPreview, MailPreviewProvider, Mailer}
 import madrileno.utils.observability.TelemetryContext
 import madrileno.utils.task.{RecurringTaskProvider, Task}
 import pl.iterators.stir.server.Route
-import pureconfig.ConfigSource
-
-import java.io.ByteArrayInputStream
-import scala.util.Try
+import pureconfig.*
+import sttp.capabilities.fs2.Fs2Streams
+import sttp.client4.WebSocketStreamBackend
 
 trait AuthModule extends RouteProvider with AuthRouteProvider with RecurringTaskProvider with MailPreviewProvider {
   val config: ConfigSource
@@ -27,26 +25,24 @@ trait AuthModule extends RouteProvider with AuthRouteProvider with RecurringTask
   private val jwtService           = wire[JwtService]
   given telemetryContext: TelemetryContext
   val transactor: Transactor
+  val cacheRuntime: CacheRuntime
+  lazy val httpClient: WebSocketStreamBackend[IO, Fs2Streams[IO]]
   lazy val userRepository: UserRepository
   lazy val mailer: Mailer
 
   val userAuthenticator: UserAuthenticator = wire[UserAuthenticator]
 
-  protected lazy val externalAuthVerifier: ExternalAuthVerifier = {
-    val firebaseKey = config.at("firebase.key").loadOrThrow[String]
-    val firebaseApp = Try {
-      val serviceAccount = new ByteArrayInputStream(firebaseKey.getBytes())
-      val options = FirebaseOptions
-        .builder()
-        .setCredentials(GoogleCredentials.fromStream(serviceAccount))
-        .build()
+  protected lazy val firebaseConfig: FirebaseConfig = config.at("firebase").loadOrThrow[FirebaseConfig]
+  protected lazy val devAuthConfig: DevAuthConfig   = config.at("dev-auth").loadOrThrow[DevAuthConfig]
 
-      FirebaseApp.initializeApp(options)
-    }.recover { case _: IllegalStateException =>
-      FirebaseApp.getInstance()
-    }.fold(e => throw new RuntimeException("Failed to initialize Firebase", e), identity)
-    val firebaseAuth = FirebaseAuth.getInstance(firebaseApp)
-    new FirebaseService(firebaseAuth)
+  protected lazy val externalAuthVerifiers: AuthVerifiers = {
+    val firebase: Option[(Provider, ExternalAuthVerifier)] =
+      firebaseConfig.projectId
+        .filter(_.nonEmpty)
+        .map(projectId => Provider.Firebase -> new FirebaseService(projectId, new FirebaseKeyProvider(httpClient)))
+    val dev: Option[(Provider, ExternalAuthVerifier)] =
+      Option.when(devAuthConfig.enabled)(Provider.Dev -> DevAuthVerifier)
+    AuthVerifiers(List(firebase, dev).flatten.toMap)
   }
 
   private val userAuthRepository     = wire[UserAuthRepository]
@@ -70,3 +66,7 @@ trait AuthModule extends RouteProvider with AuthRouteProvider with RecurringTask
     super.mailPreviews :+ WelcomeEmailTemplate.preview
   }
 }
+
+final case class FirebaseConfig(projectId: Option[String]) derives ConfigReader
+
+final case class DevAuthConfig(enabled: Boolean) derives ConfigReader

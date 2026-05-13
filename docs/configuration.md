@@ -110,7 +110,7 @@ The convention is: **load close to where the config is used.** The shape of whic
 
 - `Main` loads anything required to construct resources before `ApplicationLoader` (`AppConfig`, `PgConfig`, `SchedulerConfig`, `StorageConfig`). These shape what gets wired before module code runs.
 - `ApplicationLoader` loads things that *every module* might want (`HttpConfig`, `AppConfig` again, `AdminConfig`, `MailerConfig`).
-- A module loads its own slice (`AuthModule` reads `jwt` and `firebase.key`).
+- A module loads its own slice (`AuthModule` reads `jwt` and `firebase`).
 
 `AuthModule`'s example:
 
@@ -120,7 +120,7 @@ trait AuthModule extends … {
 
   val jwtConfig: JwtService.Config = config.at("jwt").loadOrThrow[JwtService.Config]
   // …
-  private val firebaseKey = config.at("firebase.key").loadOrThrow[String]
+  private val firebaseConfig = config.at("firebase").loadOrThrow[FirebaseConfig]
 }
 ```
 
@@ -150,7 +150,7 @@ final case class StorageConfig(maxFetchBytes: Long, objectStorage: S3Config) der
 | `scheduler`      | `Main`                               | Polling, retry backoff, heartbeat                                 |
 | `mailer`         | `ApplicationLoader`                  | SMTP host/port/credentials/from                                   |
 | `logging`        | `ApplicationLoader`                  | Outbound HTTP request/response log level                          |
-| `firebase`       | `AuthModule`                         | Service-account key (JSON string)                                 |
+| `firebase`       | `AuthModule`                         | Firebase project id (`FIREBASE_PROJECT_ID`); Firebase auth is on when set |
 | `jwt`            | `AuthModule`                         | Signing secret + token TTL                                        |
 | `admin`          | `ApplicationLoader`                  | Basic Auth user/password for `/admin/*`                            |
 | `storage`        | `Main`                               | Object store: `max-fetch-bytes` cap + `object-storage.*` S3 creds |

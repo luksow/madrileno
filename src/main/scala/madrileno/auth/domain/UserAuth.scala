@@ -10,9 +10,14 @@ import java.util.UUID
 opaque type UserAuthId = UUID
 object UserAuthId extends Opaque[UserAuthId, UUID]
 
-enum Provider {
-  case Firebase
+opaque type Provider = String
+object Provider extends Opaque[Provider, String] {
+  val Firebase: Provider = Provider("Firebase")
+  val Dev: Provider      = Provider("Dev")
 }
+
+opaque type ExternalAuthToken <: String = String
+object ExternalAuthToken extends Opaque[ExternalAuthToken, String]
 
 opaque type ProviderUserId = String
 object ProviderUserId extends Opaque[ProviderUserId, String]

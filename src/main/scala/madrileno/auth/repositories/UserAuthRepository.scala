@@ -45,7 +45,7 @@ private[repositories] object UserAuthRowTable
     with ForeignIdTable[UserId] {
   override val id: Column[UserAuthId]             = column("id", uuid.as[UserAuthId])
   val userId: Column[UserId]                      = column("user_id", uuid.as[UserId])
-  val provider: Column[Provider]                  = column("provider", text.asEnum[Provider])
+  val provider: Column[Provider]                  = column("provider", text.as[Provider])
   val providerUserId: Column[ProviderUserId]      = column("provider_user_id", text.as[ProviderUserId])
   val credential: Column[Credential]              = column("credential", text.as[Credential])
   val metadata: Column[Metadata]                  = column("metadata", jsonb.as[Metadata])

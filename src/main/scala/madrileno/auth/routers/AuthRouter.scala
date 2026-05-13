@@ -1,7 +1,7 @@
 package madrileno.auth.routers
 
 import com.comcast.ip4s.*
-import madrileno.auth.domain.{AuthContext, RefreshTokenId, UserAgent}
+import madrileno.auth.domain.{AuthContext, ExternalAuthToken, Provider, RefreshTokenId, UserAgent}
 import madrileno.auth.routers.dto.*
 import madrileno.auth.services.*
 import madrileno.utils.http.BaseRouter
@@ -23,18 +23,20 @@ class AuthRouter(authenticationService: AuthenticationService)(using TelemetryCo
       ) =>
         complete {
           val command =
-            AuthenticateWithFirebaseCommand(
-              request.firebaseJwtToken,
+            AuthenticateWithExternalTokenCommand(
+              ExternalAuthToken(request.firebaseJwtToken),
               UserAgent(userAgent.getOrElse("Unknown")),
               ipAddress.getOrElse(unknownIpAddress)
             )
           authenticationService
-            .authenticateWithFirebase(command)
+            .authenticateWithProvider(Provider.Firebase, command)
             .map[ToResponseMarshallable] {
               case AuthenticationResult.Authenticated(jwt, rt) => Ok -> AuthenticatedResponse(jwt, rt.id, userCreated = false)
               case AuthenticationResult.UserCreated(jwt, rt)   => Ok -> AuthenticatedResponse(jwt, rt.id, userCreated = true)
               case AuthenticationResult.UserBlocked            => error(Locked, "user-blocked", "User is blocked")
               case AuthenticationResult.InvalidToken           => error(Unauthorized, "invalid-token", "Invalid Firebase token")
+              case AuthenticationResult.ProviderUnavailable =>
+                error(ServiceUnavailable, "provider-unavailable", "Firebase authentication is not configured")
             }
         }
     } ~
@@ -60,6 +62,33 @@ class AuthRouter(authenticationService: AuthenticationService)(using TelemetryCo
                 case AuthenticationResult.UserCreated(jwt, rt)   => Ok -> AuthenticatedResponse(jwt, rt.id, userCreated = true)
                 case AuthenticationResult.UserBlocked            => error(Locked, "user-blocked", "User is blocked")
                 case AuthenticationResult.InvalidToken           => error(Unauthorized, "invalid-token", "Invalid refresh token")
+                case AuthenticationResult.ProviderUnavailable => error(ServiceUnavailable, "provider-unavailable", "Authentication is not available")
+              }
+          }
+      } ~
+      (post & path("auth" / "dev") & entity(as[AuthWithEmailRequest]) & pathEndOrSingleSlash & optionalHeaderValueByName(
+        "User-Agent"
+      ) & extractClientIP) {
+        (
+          request,
+          userAgent,
+          ipAddress
+        ) =>
+          complete {
+            val command =
+              AuthenticateWithExternalTokenCommand(
+                ExternalAuthToken(request.email),
+                UserAgent(userAgent.getOrElse("Unknown")),
+                ipAddress.getOrElse(unknownIpAddress)
+              )
+            authenticationService
+              .authenticateWithProvider(Provider.Dev, command)
+              .map[ToResponseMarshallable] {
+                case AuthenticationResult.Authenticated(jwt, rt) => Ok -> AuthenticatedResponse(jwt, rt.id, userCreated = false)
+                case AuthenticationResult.UserCreated(jwt, rt)   => Ok -> AuthenticatedResponse(jwt, rt.id, userCreated = true)
+                case AuthenticationResult.UserBlocked            => error(Locked, "user-blocked", "User is blocked")
+                case AuthenticationResult.InvalidToken           => error(Unauthorized, "invalid-token", "dev auth requires an email address")
+                case AuthenticationResult.ProviderUnavailable    => error(NotFound, "unknown-provider", "dev auth is not enabled")
               }
           }
       }

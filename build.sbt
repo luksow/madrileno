@@ -25,8 +25,7 @@ libraryDependencies ++= {
   val otelLogbackV       = "2.27.0-alpha"
   val macwireV           = "2.6.7"
   val sealedV            = "2.0.1"
-  val jwtCoreV           = "11.0.3"
-  val firebaseV          = "9.8.0"
+  val javaJwtV           = "4.5.0"
   val cron4sV            = "0.8.2"
   val jakartaMailV       = "2.1.3"
   val angusMailV         = "2.0.3"
@@ -75,13 +74,12 @@ libraryDependencies ++= {
     "pl.iterators"                    %% "kebs-opaque"                               % kebsV,
     "pl.iterators"                    %% "kebs-instances"                            % kebsV,
     "pl.iterators"                    %% "sealed-monad"                              % sealedV,
-    "com.github.jwt-scala"            %% "jwt-core"                                  % jwtCoreV,
+    "com.auth0"                        % "java-jwt"                                  % javaJwtV,
     "com.github.alonsodomin.cron4s"   %% "cron4s-core"                               % cron4sV,
     "jakarta.mail"                     % "jakarta.mail-api"                          % jakartaMailV,
     "org.eclipse.angus"                % "angus-mail"                                % angusMailV         % Runtime,
     "com.lihaoyi"                     %% "scalatags"                                 % scalatagsV,
     "com.github.blemale"              %% "scaffeine"                                 % scaffeineV,
-    "com.google.firebase"              % "firebase-admin"                            % firebaseV,
     "pl.iterators"                    %% "baklava-http4s-routes"                     % baklavaV,
     "org.webjars"                      % "swagger-ui"                                % swaggerUiV,
     "software.amazon.awssdk"           % "s3"                                        % awsSdkV,
