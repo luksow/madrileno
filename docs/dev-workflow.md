@@ -149,7 +149,10 @@ You edited a migration that's already been applied. Either roll back the file ch
 Streams are created on first ingest; hit the app a few times, refresh, give it a moment. If it's still empty, check `OTEL_EXPORTER_OTLP_*` in `.env`.
 
 **`/v1/auth/firebase` returns 503 (`provider-unavailable`).**
-Firebase auth is only enabled when `FIREBASE_PROJECT_ID` is set; the stock `.env` leaves it blank, so the app boots but Firebase login is off. Set it to your Firebase project id — or, in dev, use `POST /v1/auth/dev` with `{"email":"you@example.com"}`, which logs you in (creating the user) with no provider config at all.
+Firebase auth is only enabled when `FIREBASE_PROJECT_ID` is set; the stock `.env` leaves it blank, so the app boots but Firebase login is off. Set it to your Firebase project id — or, in dev, use `POST /v1/auth/dev` with `{"email":"you@example.com"}` (see below), which logs you in (creating the user) with no provider config at all.
+
+**`/v1/auth/dev` returns 404 (`unknown-provider`).**
+Dev login is explicit opt-in, gated on `DEV_AUTH_ENABLED=true` (default `false` in `application.conf`; the stock `.env` sets it). Set it to `true` in your local `.env` if you need the route active. **Never enable in deployments that face real users** — `DevAuthVerifier` mints a session for any email-shaped string, no credential check.
 
 ## One-shot recipes
 
