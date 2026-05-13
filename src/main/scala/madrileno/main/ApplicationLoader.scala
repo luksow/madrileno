@@ -143,14 +143,7 @@ class ApplicationLoader(
       )
     )
 
-  private lazy val logAction: String => IO[Unit] = {
-    config.at("logging.loglevel-request-response").loadOrThrow[Int] match {
-      case 4 => logger.debug(_)
-      case 3 => logger.info(_)
-      case 2 => logger.warn(_)
-      case 1 => logger.error(_)
-    }
-  }
+  private lazy val logActionLevel: Int = config.at("logging.loglevel-request-response").loadOrThrow[Int]
 
   private val apiVersion: String                   = appConfig.apiVersion
   private val pathPrefixMatcher: PathMatcher[Unit] = Slash ~ apiVersion
@@ -159,34 +152,47 @@ class ApplicationLoader(
     val ws = wsb.withOnNonWebSocketRequest(
       IO.pure(Response[IO](Status.UpgradeRequired).withEntity("Upgrade required for WebSocket communication.")(using EntityEncoder.stringEncoder))
     )
-    logRequest(logAction = Some(logAction)) {
-      handleExceptions(exceptionHandler(logResult(logAction = Some(logAction)))) {
-        handleRejections(rejectionHandler(logResult(logAction = Some(logAction)))) {
-          rawPathPrefix(pathPrefixMatcher) {
-            authenticateOrRejectWithChallenge(userAuthenticator) { auth =>
-              handleExceptions(exceptionHandler(logResult(logAction = Some(logAction)))) {
-                handleRejections(rejectionHandler(logResult(logAction = Some(logAction)))) {
-                  onSuccess(telemetryContext.tracer.currentSpanOrNoop.flatMap(_.addAttribute(Attribute("app.user.id", auth.userId.toString)))) {
-                    logResult(logAction = Some(logAction)) {
-                      onSuccess(telemetryContext.tracer.propagate(Headers.empty)) { newHeaders =>
-                        mapResponseHeaders(_ ++ newHeaders) {
-                          route(auth) ~ route ~ wsRoutes(auth, ws) ~ wsRoutes(ws)
+    // Snapshot the trace context once per request while the otel4s middleware's scope is still open.
+    // `logResult` evaluates its effect during response-body materialization, after the middleware's
+    // `Resource.use` has unwound and the trace IOLocal has reverted — so live `currentSpanOrNoop`
+    // returns Noop there. The snapshot fills MDC in that case; live still wins when present.
+    onSuccess(traceFields) { initialCtx =>
+      val log = logger
+      val logAction: String => IO[Unit] = logActionLevel match {
+        case 4 => msg => log.debug(initialCtx)(msg)
+        case 3 => msg => log.info(initialCtx)(msg)
+        case 2 => msg => log.warn(initialCtx)(msg)
+        case 1 => msg => log.error(initialCtx)(msg)
+      }
+      logRequest(logAction = Some(logAction)) {
+        handleExceptions(exceptionHandler(logResult(logAction = Some(logAction)))) {
+          handleRejections(rejectionHandler(logResult(logAction = Some(logAction)))) {
+            rawPathPrefix(pathPrefixMatcher) {
+              authenticateOrRejectWithChallenge(userAuthenticator) { auth =>
+                handleExceptions(exceptionHandler(logResult(logAction = Some(logAction)))) {
+                  handleRejections(rejectionHandler(logResult(logAction = Some(logAction)))) {
+                    onSuccess(telemetryContext.tracer.currentSpanOrNoop.flatMap(_.addAttribute(Attribute("app.user.id", auth.userId.toString)))) {
+                      logResult(logAction = Some(logAction)) {
+                        onSuccess(telemetryContext.tracer.propagate(Headers.empty)) { newHeaders =>
+                          mapResponseHeaders(_ ++ newHeaders) {
+                            route(auth) ~ route ~ wsRoutes(auth, ws) ~ wsRoutes(ws)
+                          }
                         }
                       }
                     }
                   }
                 }
-              }
-            } ~
-              logResult(logAction = Some(logAction)) {
-                onSuccess(telemetryContext.tracer.propagate(Headers.empty)) { newHeaders =>
-                  mapResponseHeaders(_ ++ newHeaders) {
-                    route ~ wsRoutes(ws)
+              } ~
+                logResult(logAction = Some(logAction)) {
+                  onSuccess(telemetryContext.tracer.propagate(Headers.empty)) { newHeaders =>
+                    mapResponseHeaders(_ ++ newHeaders) {
+                      route ~ wsRoutes(ws)
+                    }
                   }
                 }
-              }
-          } ~ adminRoutes ~ (if (appConfig.environment == "dev") new MailPreviewRouter(mailPreviews, mailContext).routes ~ baklavaDocs
-                             else RouteDirectives.reject)
+            } ~ adminRoutes ~ (if (appConfig.environment == "dev") new MailPreviewRouter(mailPreviews, mailContext).routes ~ baklavaDocs
+                               else RouteDirectives.reject)
+          }
         }
       }
     }
