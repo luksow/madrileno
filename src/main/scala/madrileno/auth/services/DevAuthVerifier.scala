@@ -7,17 +7,19 @@ import madrileno.user.domain.EmailAddress
 object DevAuthVerifier extends ExternalAuthVerifier {
   override def verifyToken(token: String): IO[Either[Throwable, VerifiedExternalToken]] =
     IO.pure {
-      val email = token.trim
-      if (email.contains("@"))
-        Right(
-          VerifiedExternalToken(
-            Provider.Dev,
-            ProviderUserId(email),
-            Credential(email),
-            ExternalProfile(fullName = None, emailAddress = Some(EmailAddress(email)), emailVerified = true, avatarUrl = None),
-            Metadata.empty
+      EmailAddress.validate(token.trim) match {
+        case Right(email) =>
+          Right(
+            VerifiedExternalToken(
+              Provider.Dev,
+              ProviderUserId(email.unwrap),
+              Credential(email.unwrap),
+              ExternalProfile(fullName = None, emailAddress = Some(email), emailVerified = true, avatarUrl = None),
+              Metadata.empty
+            )
           )
-        )
-      else Left(new IllegalArgumentException(s"dev auth token must be an email address (got '$token')"))
+        case Left(reason) =>
+          Left(new IllegalArgumentException(s"dev auth token must be an email address: $reason"))
+      }
     }
 }
