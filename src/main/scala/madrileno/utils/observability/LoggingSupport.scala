@@ -5,11 +5,13 @@ import org.typelevel.log4cats.SelfAwareStructuredLogger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
 trait LoggingSupport {
-  private def traceFields(using tc: TelemetryContext): IO[Map[String, String]] =
-    tc.tracer.currentSpanContext.map {
-      _.filter(_.isValid).fold(Map.empty[String, String]) { spanContext =>
+  protected def traceFields(using tc: TelemetryContext): IO[Map[String, String]] =
+    tc.tracer.currentSpanOrNoop.map { span =>
+      val spanContext = span.context
+      if (spanContext.isValid)
         Map("trace_id" -> spanContext.traceIdHex, "span_id" -> spanContext.spanIdHex, "trace_flags" -> spanContext.traceFlags.toHex)
-      }
+      else
+        Map.empty
     }
 
   def logger(using tc: TelemetryContext): SelfAwareStructuredLogger[IO] = new SelfAwareStructuredLogger[IO] {

@@ -143,7 +143,7 @@ class ApplicationLoader(
       )
     )
 
-  private val logAction: String => IO[Unit] = {
+  private lazy val logAction: String => IO[Unit] = {
     config.at("logging.loglevel-request-response").loadOrThrow[Int] match {
       case 4 => logger.debug(_)
       case 3 => logger.info(_)
