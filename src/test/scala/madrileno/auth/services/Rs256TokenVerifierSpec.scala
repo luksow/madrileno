@@ -128,6 +128,34 @@ class Rs256TokenVerifierSpec extends AsyncWordSpec with AsyncIOSpec with Matcher
       verifier().verifyToken(token).asserting(_.isLeft shouldBe true)
     }
 
+    "reject a token without an iat claim" in {
+      val token = ExternalAuthToken(
+        JWT
+          .create()
+          .withKeyId(testKid)
+          .withIssuer(issuer)
+          .withSubject("no-iat")
+          .withAudience(audience)
+          .withExpiresAt(Instant.now().plusSeconds(300))
+          .sign(defaultAlgorithm)
+      )
+      verifier().verifyToken(token).asserting(_.isLeft shouldBe true)
+    }
+
+    "reject a token without an exp claim" in {
+      val token = ExternalAuthToken(
+        JWT
+          .create()
+          .withKeyId(testKid)
+          .withIssuer(issuer)
+          .withSubject("no-exp")
+          .withAudience(audience)
+          .withIssuedAt(Instant.now())
+          .sign(defaultAlgorithm)
+      )
+      verifier().verifyToken(token).asserting(_.isLeft shouldBe true)
+    }
+
     "surface the key resolver failure when the kid is unknown" in {
       val resolver: String => IO[RSAPublicKey] = _ => IO.raiseError(new IllegalArgumentException("unknown kid"))
       verifier(resolver = resolver).verifyToken(signedToken()).asserting(_.isLeft shouldBe true)
