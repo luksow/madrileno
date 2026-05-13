@@ -66,11 +66,11 @@ class AuthRouter(authenticationService: AuthenticationService)(using TelemetryCo
               }
           }
       } ~
-      (post & path("auth" / "oidc" / Segment) & entity(as[AuthWithOidcRequest]) & pathEndOrSingleSlash & optionalHeaderValueByName(
+      (post & path("auth" / "oidc" / Segment.as[Provider]) & entity(as[AuthWithOidcRequest]) & pathEndOrSingleSlash & optionalHeaderValueByName(
         "User-Agent"
       ) & extractClientIP) {
         (
-          providerName,
+          provider,
           request,
           userAgent,
           ipAddress
@@ -83,13 +83,13 @@ class AuthRouter(authenticationService: AuthenticationService)(using TelemetryCo
                 ipAddress.getOrElse(unknownIpAddress)
               )
             authenticationService
-              .authenticateWithProvider(Provider(providerName), command)
+              .authenticateWithProvider(provider, command)
               .map[ToResponseMarshallable] {
                 case AuthenticationResult.Authenticated(jwt, rt) => Ok -> AuthenticatedResponse(jwt, rt.id, userCreated = false)
                 case AuthenticationResult.UserCreated(jwt, rt)   => Ok -> AuthenticatedResponse(jwt, rt.id, userCreated = true)
                 case AuthenticationResult.UserBlocked            => error(Locked, "user-blocked", "User is blocked")
                 case AuthenticationResult.InvalidToken           => error(Unauthorized, "invalid-token", "Invalid ID token")
-                case AuthenticationResult.ProviderUnavailable    => error(NotFound, "unknown-provider", s"No auth provider '$providerName'")
+                case AuthenticationResult.ProviderUnavailable    => error(NotFound, "unknown-provider", s"No auth provider '$provider'")
               }
           }
       } ~
