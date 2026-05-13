@@ -1,45 +1,68 @@
 package madrileno.auth.services
 
-import cats.effect.IO
-import madrileno.utils.cache.CacheRuntime
+import cats.effect.{Clock, IO, Ref}
 import sttp.capabilities.fs2.Fs2Streams
 import sttp.client4.circe.*
 import sttp.client4.{UriContext, WebSocketStreamBackend, basicRequest}
+import sttp.model.Header
 
 import java.io.ByteArrayInputStream
 import java.nio.charset.StandardCharsets.UTF_8
 import java.security.cert.CertificateFactory
 import java.security.interfaces.RSAPublicKey
-import scala.concurrent.duration.*
+import java.time.Instant
+import scala.util.matching.Regex
 
-final class FirebaseKeyProvider(http: WebSocketStreamBackend[IO, Fs2Streams[IO]], cacheRuntime: CacheRuntime) {
+final class FirebaseKeyProvider(http: WebSocketStreamBackend[IO, Fs2Streams[IO]]) {
+  import FirebaseKeyProvider.*
+
   private val certsUri = uri"https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com"
-  private val cache    = cacheRuntime.expiring[Unit, Map[String, RSAPublicKey]](expireAfterWrite = 1.hour, maxSize = 1)
+  private val cache    = Ref.unsafe[IO, Option[CachedCerts]](None)
 
   def keyFor(keyId: String): IO[RSAPublicKey] =
-    cache.get(()).flatMap {
-      case Some(certificates) if certificates.contains(keyId) => IO.pure(certificates(keyId))
-      case _ =>
-        fetchCertificates
-          .flatTap(certificates => cache.put((), certificates))
-          .flatMap(certificates => IO.fromOption(certificates.get(keyId))(new IllegalArgumentException(s"unknown Firebase signing key id '$keyId'")))
-    }
-
-  private def fetchCertificates: IO[Map[String, RSAPublicKey]] =
-    basicRequest.get(certsUri).response(asJson[Map[String, String]]).send(http).flatMap { response =>
-      response.body match {
-        case Right(pemByKeyId) => parseCertificates(pemByKeyId)
-        case Left(error)       => IO.raiseError(error)
+    Clock[IO].realTimeInstant.flatMap { now =>
+      cache.get.flatMap {
+        case Some(cached) if cached.expiresAt.isAfter(now) =>
+          IO.fromOption(cached.keys.get(keyId))(unknownKid(keyId))
+        case _ =>
+          fetchCertificates(now)
+            .flatTap(fresh => cache.set(Some(fresh)))
+            .flatMap(fresh => IO.fromOption(fresh.keys.get(keyId))(unknownKid(keyId)))
       }
     }
 
-  private def parseCertificates(pemByKeyId: Map[String, String]): IO[Map[String, RSAPublicKey]] =
+  private def unknownKid(keyId: String): Throwable =
+    new IllegalArgumentException(s"unknown Firebase signing key id '$keyId'")
+
+  private def fetchCertificates(now: Instant): IO[CachedCerts] =
+    basicRequest.get(certsUri).response(asJson[Map[String, String]]).send(http).flatMap { response =>
+      response.body match {
+        case Right(pemByKid) =>
+          parseCertificates(pemByKid).map(keys => CachedCerts(now.plusSeconds(extractMaxAge(response.headers)), keys))
+        case Left(error) =>
+          IO.raiseError(error)
+      }
+    }
+
+  private def parseCertificates(pemByKid: Map[String, String]): IO[Map[String, RSAPublicKey]] =
     IO.delay {
-      pemByKeyId.map { (keyId, pem) =>
+      pemByKid.map { (keyId, pem) =>
         CertificateFactory.getInstance("X.509").generateCertificate(new ByteArrayInputStream(pem.getBytes(UTF_8))).getPublicKey match {
           case rsa: RSAPublicKey => keyId -> rsa
           case other             => throw new IllegalStateException(s"Firebase signing certificate '$keyId' is not RSA (${other.getAlgorithm})")
         }
       }
     }
+
+  private def extractMaxAge(headers: Seq[Header]): Long = {
+    val cacheControl = headers.find(_.name.equalsIgnoreCase("Cache-Control")).map(_.value).getOrElse("")
+    maxAgeRegex.findFirstMatchIn(cacheControl).flatMap(m => m.group(1).toLongOption).getOrElse(fallbackMaxAgeSeconds)
+  }
+}
+
+object FirebaseKeyProvider {
+  private val maxAgeRegex: Regex          = """max-age\s*=\s*(\d+)""".r
+  private val fallbackMaxAgeSeconds: Long = 3600L
+
+  private final case class CachedCerts(expiresAt: Instant, keys: Map[String, RSAPublicKey])
 }
