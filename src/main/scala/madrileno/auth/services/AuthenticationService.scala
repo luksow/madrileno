@@ -41,6 +41,10 @@ class AuthenticationService(
             logger
               .error(s"Failed to authenticate with $provider: ${t.getMessage} ${t.getStackTrace.toList.mkString("\n")}")
               .as(AuthenticationResult.InvalidToken)
+          case Right(verifiedToken) if verifiedToken.provider != provider =>
+            logger
+              .error(s"Verifier for $provider returned a token claiming provider ${verifiedToken.provider}; refusing")
+              .as(AuthenticationResult.InvalidToken)
           case Right(verifiedToken) =>
             transactor.inTransaction(upsertAndIssueTokens(verifiedToken, command))
         }
