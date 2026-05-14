@@ -100,7 +100,7 @@ def authedRoutes(authContext: AuthContext): Route = {
 
 2. **Client `POST /v1/auth/firebase`** with the Firebase JWT. The route extracts the user-agent and IP, then calls `AuthenticationService.authenticateWithProvider(Provider.Firebase, …)`.
 
-3. **Server verifies the Firebase JWT** through `ExternalAuthVerifier.verifyToken`. `FirebaseService` validates the RS256 signature against Google's published certificates (fetched once, cached, re-fetched on key rotation), checks `iss` / `aud` / `exp`, and returns a `VerifiedExternalToken` carrying the Firebase user-id, email, name, and photo URL.
+3. **Server verifies the Firebase JWT** through `ExternalAuthVerifier.verifyToken`. `FirebaseService` validates the RS256 signature against Google's published certificates (fetched once, cached per the `Cache-Control: max-age` Google returns — usually 6 h), checks `iss` / `aud` / `exp`, and returns a `VerifiedExternalToken` carrying the Firebase user-id, email, name, and photo URL.
 
 4. **Server upserts the User and UserAuth.** `User` is the application's user record; `UserAuth` records the link to a Firebase identity. First-time logins create both; returning users update them with whatever Firebase reported (e.g. updated avatar).
 
@@ -154,7 +154,7 @@ OIDC_JWKS_URI=                # optional override; otherwise discovered
 
 (When the env slot's name collides with a HOCON `oidc.providers` entry, the env slot wins.)
 
-The verifier checks the token's signature against the provider's JWKS (refreshed hourly; on an unknown `kid` it re-fetches transparently to handle key rotation), validates `iss` matches the configured issuer, requires the token's `aud` to intersect the configured audience set, and accepts ±30 s clock skew on `exp` / `nbf` / `iat`. `audience` is comma-split, so `OIDC_AUDIENCE=client1,client2` accepts tokens with either in `aud`.
+The verifier checks the token's signature against the provider's JWKS (cached for 1 h; while the cache is fresh, an unknown `kid` is rejected rather than triggering a refetch — the route is unauthenticated, so a refetch-on-unknown-kid path would let arbitrary callers force outbound JWKS / discovery calls. Key rotation is picked up on the next cache-expiry refresh, so a freshly-rotated kid can lag by up to the cache window). The verifier also validates `iss` matches the configured issuer (trailing-slash-insensitive), requires the token's `aud` to intersect the configured audience set, validates `azp` against the configured audience when the token is multi-audience (per the OIDC ID-Token spec), and accepts ±30 s clock skew on `exp` / `nbf` / `iat`. `audience` is comma-split, so `OIDC_AUDIENCE=client1,client2` accepts tokens with either in `aud`.
 
 Same-email users from different providers are **separate** accounts — `UserAuth` is keyed by `(provider, providerUserId)`. Linking-by-verified-email is a separate, security-sensitive feature, not done out of the box.
 
@@ -183,7 +183,7 @@ A route inside the authenticated branch accepts the `AuthContext` parameter; a r
 
 Three points control where identity comes from:
 
-- **`ExternalAuthVerifier` trait.** One method: `verifyToken(token: String): IO[Either[Throwable, VerifiedExternalToken]]`. Implement it against any provider that maps a token to "this is who, with these attributes."
+- **`ExternalAuthVerifier` trait.** One method: `verifyToken(token: ExternalAuthToken): IO[Either[Throwable, VerifiedExternalToken]]`. Implement it against any provider that maps a token to "this is who, with these attributes."
 - **`AuthModule.externalAuthVerifiers: AuthVerifiers`** — a `Map[Provider, ExternalAuthVerifier]` (a `protected lazy val`). Override in a sub-trait or concrete `ApplicationLoader`; tests do this with `FakeAuthVerifier` (see `TestApplicationLoader`).
 - **For OIDC OPs**, you don't write code — add an entry to `oidc.providers` (or set the `OIDC_*` env slot). `POST /v1/auth/oidc/<name>` is generic.
 - **For non-OIDC providers**, implement `ExternalAuthVerifier`, wire it into the verifier map under a new `Provider("name")` constant, and add a dedicated route (mirroring `/v1/auth/firebase` or `/v1/auth/dev`). The downstream upsert / JWT-mint / refresh-token machinery is provider-agnostic via `AuthenticationService.authenticateWithProvider`.
@@ -202,7 +202,7 @@ None of these are deep changes; they're just not pre-built.
 
 `FakeAuthVerifier` returns a fixed `VerifiedExternalToken` for any input *except* its `invalidTokenValue` (default `"invalid-token"`), which it rejects — that's what lets a route spec assert the 401 path without setting up real signature verification. `TestApplicationLoader` wires it under both `Provider.Firebase` and `Provider("test-oidc")`, so route specs can `POST /v1/auth/firebase` or `POST /v1/auth/oidc/test-oidc` with any other string and get a predictable user back.
 
-`Rs256TokenVerifierSpec` covers the RS256 verification core directly — an in-test RSA keypair signs tokens via `java-jwt`, and the verifier is exercised with a manual key resolver (happy path, wrong issuer / audience, foreign signing key, expired, missing kid, etc.).
+`Rs256TokenVerifierSpec` covers the RS256 verification core directly — an in-test RSA keypair signs tokens via `java-jwt`, and the verifier is exercised with a manual key resolver (happy path, wrong issuer / audience, foreign signing key, expired token, key-resolver failure on unknown kid, missing `iat` / `exp`, etc.).
 
 `TestData.authContext()` builds an `AuthContext` for service-level tests that don't go through the auth flow at all.
 

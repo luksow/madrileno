@@ -110,7 +110,7 @@ The convention is: **load close to where the config is used.** The shape of whic
 
 - `Main` loads anything required to construct resources before `ApplicationLoader` (`AppConfig`, `PgConfig`, `SchedulerConfig`, `StorageConfig`). These shape what gets wired before module code runs.
 - `ApplicationLoader` loads things that *every module* might want (`HttpConfig`, `AppConfig` again, `AdminConfig`, `MailerConfig`).
-- A module loads its own slice (`AuthModule` reads `jwt`, `firebase`, and `oidc`).
+- A module loads its own slice (`AuthModule` reads `jwt`, `firebase`, `dev-auth`, and `oidc`).
 
 `AuthModule`'s example:
 
