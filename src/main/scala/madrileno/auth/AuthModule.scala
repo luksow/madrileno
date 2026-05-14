@@ -45,6 +45,8 @@ trait AuthModule extends RouteProvider with AuthRouteProvider with RecurringTask
       Option.when(devAuthConfig.enabled)(Provider.Dev -> DevAuthVerifier)
     val oidcEntries: Map[String, OidcProviderConfig] =
       oidcConfig.providers ++ oidcConfig.primary.toEntry
+    val reservedConflicts = oidcEntries.keySet.intersect(AuthModule.ReservedProviderNames)
+    require(reservedConflicts.isEmpty, s"oidc provider name(s) ${reservedConflicts.mkString(", ")} are reserved for built-in auth providers")
     val oidc: Iterable[(Provider, ExternalAuthVerifier)] =
       oidcEntries.map { case (name, providerConfig) =>
         val provider = Provider(name)
@@ -73,6 +75,10 @@ trait AuthModule extends RouteProvider with AuthRouteProvider with RecurringTask
   override abstract def mailPreviews: List[MailPreview] = {
     super.mailPreviews :+ WelcomeEmailTemplate.preview
   }
+}
+
+object AuthModule {
+  private val ReservedProviderNames: Set[String] = Set("Firebase", "Dev")
 }
 
 final case class FirebaseConfig(projectId: Option[String]) derives ConfigReader
