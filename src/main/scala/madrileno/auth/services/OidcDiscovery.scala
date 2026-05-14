@@ -14,7 +14,7 @@ object OidcDiscovery {
     val discoveryUri = uri"${issuer.stripSuffix("/")}/.well-known/openid-configuration"
     basicRequest.get(discoveryUri).response(asJson[Metadata]).send(http).flatMap { response =>
       response.body match {
-        case Right(metadata) if metadata.issuer != issuer =>
+        case Right(metadata) if metadata.issuer.stripSuffix("/") != issuer.stripSuffix("/") =>
           IO.raiseError(new IllegalStateException(s"OIDC discovery: issuer mismatch (configured '$issuer', server '${metadata.issuer}')"))
         case Right(metadata) =>
           Uri
