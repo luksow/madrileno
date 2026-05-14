@@ -1,6 +1,6 @@
 package madrileno.auth.services
 
-import cats.effect.IO
+import cats.effect.{IO, Ref}
 import io.circe.derivation.{Configuration, ConfiguredCodec}
 import madrileno.utils.cache.CacheRuntime
 import sttp.capabilities.fs2.Fs2Streams
@@ -21,19 +21,35 @@ final class JwksProvider(
   cacheRuntime: CacheRuntime) {
   import JwksProvider.*
 
-  private val cache = cacheRuntime.expiring[Unit, Map[String, RSAPublicKey]](expireAfterWrite = 1.hour, maxSize = 1)
+  private val cache    = cacheRuntime.expiring[Unit, Map[String, RSAPublicKey]](expireAfterWrite = 1.hour, maxSize = 1)
+  private val uriCache = Ref.unsafe[IO, Option[Uri]](None)
 
+  // While the keys cache is fresh, reject unknown kids without refetching — the route is unauthenticated, so
+  // a refetch-on-unknown-kid path lets random tokens force outbound JWKS / discovery calls. Kid rotation picks
+  // up the new key on the next cache-expiry refresh (1h window).
   def keyFor(keyId: String): IO[RSAPublicKey] =
     cache.get(()).flatMap {
-      case Some(keys) if keys.contains(keyId) => IO.pure(keys(keyId))
-      case _ =>
+      case Some(keys) =>
+        IO.fromOption(keys.get(keyId))(unknownKid(keyId))
+      case None =>
         fetchJwks
           .flatTap(keys => cache.put((), keys))
-          .flatMap(keys => IO.fromOption(keys.get(keyId))(new IllegalArgumentException(s"unknown JWKS key id '$keyId'")))
+          .flatMap(keys => IO.fromOption(keys.get(keyId))(unknownKid(keyId)))
+    }
+
+  private def unknownKid(keyId: String): Throwable =
+    new IllegalArgumentException(s"unknown JWKS key id '$keyId'")
+
+  // Memoize the resolved URI so OIDC discovery (when used) runs once per JwksProvider lifetime rather than
+  // on every JWKS refresh. A small race on first miss is fine — both branches resolve to the same URI.
+  private def resolveUri: IO[Uri] =
+    uriCache.get.flatMap {
+      case Some(uri) => IO.pure(uri)
+      case None      => jwksUri.flatTap(uri => uriCache.set(Some(uri)))
     }
 
   private def fetchJwks: IO[Map[String, RSAPublicKey]] =
-    jwksUri.flatMap { uri =>
+    resolveUri.flatMap { uri =>
       basicRequest.get(uri).response(asJson[JwksDocument]).send(http).flatMap { response =>
         response.body match {
           case Right(document) => parseKeys(document.keys)
