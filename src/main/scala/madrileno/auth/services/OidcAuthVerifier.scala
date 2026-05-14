@@ -23,8 +23,9 @@ object OidcAuthVerifier {
       case None =>
         OidcDiscovery.jwksUri(config.issuer, http)
     }
-    val jwks     = new JwksProvider(jwksUri, http, cacheRuntime)
     val audience = config.audience.split(",").iterator.map(_.trim).filter(_.nonEmpty).toSet
+    require(audience.nonEmpty, s"oidc provider '$provider' must declare a non-empty audience")
+    val jwks = new JwksProvider(jwksUri, http, cacheRuntime)
     new Rs256TokenVerifier(provider, config.issuer, audience, jwks.keyFor)
   }
 }
