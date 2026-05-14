@@ -3,7 +3,7 @@ package madrileno.auth.routers
 import cats.effect.IO
 import madrileno.auth.domain.{AuthContext, FirebaseJwt, RefreshTokenId, UserAgent, UserAuth, UserAuthId}
 import madrileno.auth.repositories.{RefreshTokenRepository, UserAuthRepository}
-import madrileno.auth.routers.dto.{AuthWithFirebaseRequest, AuthWithRefreshTokenRequest, AuthenticatedResponse, RefreshTokenDto}
+import madrileno.auth.routers.dto.{AuthWithFirebaseRequest, AuthWithOidcRequest, AuthWithRefreshTokenRequest, AuthenticatedResponse, RefreshTokenDto}
 import madrileno.support.{BaseRouteSpec, TestApplicationLoader, TestData}
 import madrileno.user.domain.{User, UserId}
 import madrileno.utils.http.Error
@@ -123,6 +123,38 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
         .assert { ctx =>
           val response = ctx.performRequest(allRoutes)
           response.body.title shouldBe Some("Invalid refresh token")
+        }
+    )
+  )
+
+  path("/v1/auth/oidc/{provider}")(
+    supports(
+      POST,
+      description =
+        "Authenticate with an OIDC ID token. The frontend completes the Authorization Code + PKCE flow against the provider; the backend verifies the resulting `id_token` against the provider's JWKS and issues an internal JWT + refresh token. The `{provider}` segment is the name configured under `oidc.providers` (or via `OIDC_PROVIDER_NAME`).",
+      summary = "Exchange an OIDC ID token for an internal JWT and refresh token",
+      pathParameters = p[String]("provider"),
+      tags = Seq("Auth")
+    )(
+      onRequest(pathParameters = "test-oidc", body = AuthWithOidcRequest("test-token"))
+        .respondsWith[AuthenticatedResponse](Ok, description = "Authenticated; a new user account was created (userCreated = true)")
+        .assert { ctx =>
+          val response = ctx.performRequest(allRoutes)
+          response.body.jwt.toString should not be empty
+          response.body.refreshToken.toString should not be empty
+          response.body.userCreated shouldBe true
+        },
+      onRequest(pathParameters = "unknown-provider", body = AuthWithOidcRequest("any-token"))
+        .respondsWith[Error[Unit]](NotFound, description = "Provider is not configured")
+        .assert { ctx =>
+          val response = ctx.performRequest(allRoutes)
+          response.body.title shouldBe Some("No auth provider 'unknown-provider'")
+        },
+      onRequest(pathParameters = "test-oidc", body = AuthWithOidcRequest("invalid-token"))
+        .respondsWith[Error[Unit]](Unauthorized, description = "Invalid ID token")
+        .assert { ctx =>
+          val response = ctx.performRequest(allRoutes)
+          response.body.title shouldBe Some("Invalid ID token")
         }
     )
   )

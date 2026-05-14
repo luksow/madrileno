@@ -8,3 +8,5 @@ final case class AuthWithFirebaseRequest(firebaseJwtToken: FirebaseJwt) derives 
 final case class AuthWithRefreshTokenRequest(refreshToken: RefreshTokenId) derives Decoder, Encoder.AsObject
 
 final case class AuthWithEmailRequest(email: String) derives Decoder, Encoder.AsObject
+
+final case class AuthWithOidcRequest(idToken: String) derives Decoder, Encoder.AsObject

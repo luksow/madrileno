@@ -34,6 +34,7 @@ trait AuthModule extends RouteProvider with AuthRouteProvider with RecurringTask
 
   protected lazy val firebaseConfig: FirebaseConfig = config.at("firebase").loadOrThrow[FirebaseConfig]
   protected lazy val devAuthConfig: DevAuthConfig   = config.at("dev-auth").loadOrThrow[DevAuthConfig]
+  protected lazy val oidcConfig: OidcConfig         = config.at("oidc").loadOrThrow[OidcConfig]
 
   protected lazy val externalAuthVerifiers: AuthVerifiers = {
     val firebase: Option[(Provider, ExternalAuthVerifier)] =
@@ -42,7 +43,16 @@ trait AuthModule extends RouteProvider with AuthRouteProvider with RecurringTask
         .map(projectId => Provider.Firebase -> new FirebaseService(projectId, new FirebaseKeyProvider(httpClient)))
     val dev: Option[(Provider, ExternalAuthVerifier)] =
       Option.when(devAuthConfig.enabled)(Provider.Dev -> DevAuthVerifier)
-    AuthVerifiers(List(firebase, dev).flatten.toMap)
+    val oidcEntries: Map[String, OidcProviderConfig] =
+      oidcConfig.providers ++ oidcConfig.primary.toEntry
+    val reservedConflicts = oidcEntries.keySet.intersect(AuthModule.ReservedProviderNames)
+    require(reservedConflicts.isEmpty, s"oidc provider name(s) ${reservedConflicts.mkString(", ")} are reserved for built-in auth providers")
+    val oidc: Iterable[(Provider, ExternalAuthVerifier)] =
+      oidcEntries.map { case (name, providerConfig) =>
+        val provider = Provider(name)
+        provider -> OidcAuthVerifier(provider, providerConfig, httpClient, cacheRuntime)
+      }
+    AuthVerifiers((List(firebase, dev).flatten ++ oidc).toMap)
   }
 
   private val userAuthRepository     = wire[UserAuthRepository]
@@ -67,6 +77,31 @@ trait AuthModule extends RouteProvider with AuthRouteProvider with RecurringTask
   }
 }
 
+object AuthModule {
+  private val ReservedProviderNames: Set[String] = Set("Firebase", "Dev")
+}
+
 final case class FirebaseConfig(projectId: Option[String]) derives ConfigReader
 
 final case class DevAuthConfig(enabled: Boolean) derives ConfigReader
+
+final case class OidcProviderConfig(
+  issuer: String,
+  audience: String,
+  jwksUri: Option[String])
+    derives ConfigReader
+
+final case class OidcPrimaryConfig(
+  name: String,
+  issuer: Option[String],
+  audience: Option[String],
+  jwksUri: Option[String])
+    derives ConfigReader {
+  def toEntry: Option[(String, OidcProviderConfig)] =
+    for {
+      iss <- issuer.filter(_.nonEmpty)
+      aud <- audience.filter(_.nonEmpty)
+    } yield name -> OidcProviderConfig(iss, aud, jwksUri.filter(_.nonEmpty))
+}
+
+final case class OidcConfig(providers: Map[String, OidcProviderConfig], primary: OidcPrimaryConfig) derives ConfigReader
