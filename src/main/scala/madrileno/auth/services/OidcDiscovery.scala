@@ -1,15 +1,14 @@
 package madrileno.auth.services
 
 import cats.effect.IO
-import io.circe.derivation.{Configuration, ConfiguredCodec}
+import io.circe.Codec
 import sttp.capabilities.fs2.Fs2Streams
 import sttp.client4.circe.*
 import sttp.client4.{UriContext, WebSocketStreamBackend, basicRequest}
 import sttp.model.Uri
 
 object OidcDiscovery {
-  private given Configuration = Configuration.default
-  private final case class Metadata(issuer: String, jwks_uri: String) derives ConfiguredCodec
+  private final case class Metadata(issuer: String, jwks_uri: String) derives Codec.AsObject
 
   def jwksUri(issuer: String, http: WebSocketStreamBackend[IO, Fs2Streams[IO]]): IO[Uri] = {
     val discoveryUri = uri"${issuer.stripSuffix("/")}/.well-known/openid-configuration"
