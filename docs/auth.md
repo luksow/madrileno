@@ -56,7 +56,7 @@ External identity is verified once; from then on the app trusts its own short-li
 | `Rs256TokenVerifier`              | Shared RS256-JWT core. Verifies signature via a `kid → RSAPublicKey` resolver, then `iss` / `aud` / `exp` / `nbf` with 30 s leeway. |
 | `FirebaseService`                 | Wraps `Rs256TokenVerifier` for Firebase: issuer derived from `FIREBASE_PROJECT_ID`, keys fetched via `FirebaseKeyProvider` (Google's x509 endpoint). Enabled when the project id is set. |
 | `JwksProvider` + `OidcDiscovery`  | Used by the generic OIDC path: fetch a JWKS (cached, key-rotation-aware) and discover `jwks_uri` from `<issuer>/.well-known/openid-configuration` if not configured. |
-| `DevAuthVerifier`                 | Dev-env-only. Treats an email-shaped token as a verified identity; reached via `POST /v1/auth/dev`. Absent in prod builds.  |
+| `DevAuthVerifier`                 | Treats an email-shaped token as a verified identity; reached via `POST /v1/auth/dev`. Registered only when `dev-auth.enabled = true` (`DEV_AUTH_ENABLED`); the route is always wired but returns 404 `unknown-provider` when the verifier isn't registered. |
 | `JwtService`                      | Encodes / decodes the app's own JWT (`InternalJwt`). HS256 (`com.auth0:java-jwt`). Signs an `AuthContext`.    |
 | `AuthenticationService`           | `authenticateWithProvider(provider, cmd)`: verify external → upsert `User` + `UserAuth` → mint internal JWT + refresh token. |
 | `AuthRouter`                      | `POST /v1/auth/firebase`, `POST /v1/auth/oidc/{provider}`, `POST /v1/auth/dev` (dev only), `POST /v1/auth/refresh-token`, `GET/DELETE /v1/auth/sessions`. |
@@ -158,9 +158,9 @@ The verifier checks the token's signature against the provider's JWKS (refreshed
 
 Same-email users from different providers are **separate** accounts — `UserAuth` is keyed by `(provider, providerUserId)`. Linking-by-verified-email is a separate, security-sensitive feature, not done out of the box.
 
-## Dev login (dev env only)
+## Dev login
 
-`POST /v1/auth/dev { "email": "alice@example.com" }` synthesises a verified token from the email and logs you in (creating the user on first call, with `emailVerified = true` and `provider = "dev"`). Active **only** when `app.environment == "dev"` — the verifier isn't registered and the route isn't wired in prod builds, so the path is absent from the generated OpenAPI / ts-rest contracts. Useful for exercising the full auth flow on the stock `.env` without any external provider configured.
+`POST /v1/auth/dev { "email": "alice@example.com" }` synthesises a verified token from the email and logs you in (creating the user on first call, with `emailVerified = true` and `provider = "Dev"`). Gated by `dev-auth.enabled` (`DEV_AUTH_ENABLED`) — when the flag is off the route still exists but returns 404 `unknown-provider`. Default `.env.sample` ships `DEV_AUTH_ENABLED=true` so the stock checkout has a working login without any external provider configured; flip to `false` (or unset) for any deploy where dev login shouldn't be reachable.
 
 ## The auth gate
 
@@ -200,7 +200,7 @@ None of these are deep changes; they're just not pre-built.
 
 ## Testing
 
-`FakeAuthVerifier` returns a fixed `VerifiedExternalToken` regardless of input. `TestApplicationLoader` wires it under both `Provider.Firebase` and `Provider("test-oidc")`, so route specs can `POST /v1/auth/firebase` or `POST /v1/auth/oidc/test-oidc` with any string and get a predictable user back.
+`FakeAuthVerifier` returns a fixed `VerifiedExternalToken` for any input *except* its `invalidTokenValue` (default `"invalid-token"`), which it rejects — that's what lets a route spec assert the 401 path without setting up real signature verification. `TestApplicationLoader` wires it under both `Provider.Firebase` and `Provider("test-oidc")`, so route specs can `POST /v1/auth/firebase` or `POST /v1/auth/oidc/test-oidc` with any other string and get a predictable user back.
 
 `Rs256TokenVerifierSpec` covers the RS256 verification core directly — an in-test RSA keypair signs tokens via `java-jwt`, and the verifier is exercised with a manual key resolver (happy path, wrong issuer / audience, foreign signing key, expired, missing kid, etc.).
 
