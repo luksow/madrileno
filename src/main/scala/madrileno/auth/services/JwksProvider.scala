@@ -1,7 +1,7 @@
 package madrileno.auth.services
 
 import cats.effect.{IO, Ref}
-import io.circe.derivation.{Configuration, ConfiguredCodec}
+import io.circe.Codec
 import madrileno.utils.cache.CacheRuntime
 import sttp.capabilities.fs2.Fs2Streams
 import sttp.client4.circe.*
@@ -24,9 +24,6 @@ final class JwksProvider(
   private val cache    = cacheRuntime.expiring[Unit, Map[String, RSAPublicKey]](expireAfterWrite = 1.hour, maxSize = 1)
   private val uriCache = Ref.unsafe[IO, Option[Uri]](None)
 
-  // While the keys cache is fresh, reject unknown kids without refetching — the route is unauthenticated, so
-  // a refetch-on-unknown-kid path lets random tokens force outbound JWKS / discovery calls. Kid rotation picks
-  // up the new key on the next cache-expiry refresh (1h window).
   def keyFor(keyId: String): IO[RSAPublicKey] =
     cache.get(()).flatMap {
       case Some(keys) =>
@@ -40,8 +37,6 @@ final class JwksProvider(
   private def unknownKid(keyId: String): Throwable =
     new IllegalArgumentException(s"unknown JWKS key id '$keyId'")
 
-  // Memoize the resolved URI so OIDC discovery (when used) runs once per JwksProvider lifetime rather than
-  // on every JWKS refresh. A small race on first miss is fine — both branches resolve to the same URI.
   private def resolveUri: IO[Uri] =
     uriCache.get.flatMap {
       case Some(uri) => IO.pure(uri)
@@ -72,13 +67,11 @@ final class JwksProvider(
 }
 
 object JwksProvider {
-  private given Configuration = Configuration.default
-
-  private final case class JwksDocument(keys: List[Jwk]) derives ConfiguredCodec
+  private final case class JwksDocument(keys: List[Jwk]) derives Codec.AsObject
   private final case class Jwk(
     kid: Option[String],
     kty: String,
     n: Option[String],
     e: Option[String])
-      derives ConfiguredCodec
+      derives Codec.AsObject
 }
