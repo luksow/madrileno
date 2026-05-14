@@ -48,6 +48,7 @@ class Rs256TokenVerifierSpec extends AsyncWordSpec with AsyncIOSpec with Matcher
     sub: String = "user-123",
     iss: String = issuer,
     aud: List[String] = List(audience),
+    azp: Option[String] = None,
     issuedAt: Instant = Instant.now(),
     expiresAt: Instant = Instant.now().plusSeconds(300),
     kid: String = testKid,
@@ -65,6 +66,7 @@ class Rs256TokenVerifierSpec extends AsyncWordSpec with AsyncIOSpec with Matcher
       .withAudience(aud*)
       .withIssuedAt(issuedAt)
       .withExpiresAt(expiresAt)
+    azp.foreach(builder.withClaim("azp", _))
     name.foreach(builder.withClaim("name", _))
     email.foreach(builder.withClaim("email", _))
     emailVerified.foreach(v => builder.withClaim("email_verified", java.lang.Boolean.valueOf(v)))
@@ -107,9 +109,19 @@ class Rs256TokenVerifierSpec extends AsyncWordSpec with AsyncIOSpec with Matcher
       verifier(aud = Set("other-audience")).verifyToken(signedToken()).asserting(_.isLeft shouldBe true)
     }
 
-    "accept a token whose audience array intersects the configured set" in {
-      val token = signedToken(aud = List("other-audience", audience))
+    "accept a multi-audience token when azp matches the configured audience" in {
+      val token = signedToken(aud = List("other-audience", audience), azp = Some(audience))
       verifier(aud = Set(audience)).verifyToken(token).asserting(_.isRight shouldBe true)
+    }
+
+    "reject a multi-audience token that omits the azp claim" in {
+      val token = signedToken(aud = List("other-audience", audience))
+      verifier(aud = Set(audience)).verifyToken(token).asserting(_.isLeft shouldBe true)
+    }
+
+    "reject a token whose azp claim is not in the configured audience" in {
+      val token = signedToken(aud = List(audience), azp = Some("other-audience"))
+      verifier(aud = Set(audience)).verifyToken(token).asserting(_.isLeft shouldBe true)
     }
 
     "reject a token signed with a different key" in {

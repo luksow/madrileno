@@ -39,6 +39,9 @@ final class Rs256TokenVerifier(
                   )
       tokenAudience = Option(verified.getAudience).map(_.asScala.toSet).getOrElse(Set.empty[String])
       _ <- IO.raiseUnless(audience.isEmpty || tokenAudience.exists(audience))(badToken(s"audience $tokenAudience does not include any of $audience"))
+      azp = Option(verified.getClaim("azp").asString).filter(_.nonEmpty)
+      _       <- IO.raiseUnless(tokenAudience.size <= 1 || azp.isDefined)(badToken("multi-audience token requires an 'azp' claim"))
+      _       <- IO.raiseUnless(azp.forall(audience))(badToken(s"'azp' claim '${azp.getOrElse("")}' is not in configured audience $audience"))
       subject <- IO.fromOption(Option(verified.getSubject).filter(_.nonEmpty))(badToken("missing 'sub' claim"))
       claims  <- IO.fromEither(parser.parse(new String(Base64.getUrlDecoder.decode(verified.getPayload), UTF_8)))
     } yield {
