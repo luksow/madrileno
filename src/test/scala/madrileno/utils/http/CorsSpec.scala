@@ -2,6 +2,7 @@ package madrileno.utils.http
 
 import cats.effect.IO
 import cats.effect.unsafe.implicits.global
+import madrileno.main.Environment
 import org.http4s.implicits.*
 import org.http4s.{Header, HttpApp, Method, Request, Response, Status}
 import org.scalatest.matchers.should.Matchers
@@ -17,7 +18,7 @@ class CorsSpec extends AnyWordSpec with Matchers {
 
   private def allowOriginHeader(
     config: CorsConfig,
-    environment: String,
+    environment: Environment,
     baseUrl: URI,
     origin: String
   ): Option[String] = {
@@ -32,23 +33,26 @@ class CorsSpec extends AnyWordSpec with Matchers {
 
   "Cors.policy" should {
     "allow any origin in dev when allowed-origins is empty" in {
-      allowOriginHeader(CorsConfig(enabled = true, allowedOrigins = "", maxAge = 1.hour), "dev", localBaseUrl, "http://localhost:5173") shouldBe Some(
-        "*"
-      )
+      allowOriginHeader(
+        CorsConfig(enabled = true, allowedOrigins = "", maxAge = 1.hour),
+        Environment.Dev,
+        localBaseUrl,
+        "http://localhost:5173"
+      ) shouldBe Some("*")
     }
 
     "fall back to the base-url host outside dev" in {
       val prodBaseUrl = URI.create("https://api.example.com")
       allowOriginHeader(
         CorsConfig(enabled = true, allowedOrigins = "", maxAge = 1.hour),
-        "production",
+        Environment.Prod,
         prodBaseUrl,
         "https://api.example.com"
       ) shouldBe
         Some("https://api.example.com")
       allowOriginHeader(
         CorsConfig(enabled = true, allowedOrigins = "", maxAge = 1.hour),
-        "production",
+        Environment.Prod,
         prodBaseUrl,
         "https://evil.example.com"
       ) shouldBe None
@@ -56,15 +60,15 @@ class CorsSpec extends AnyWordSpec with Matchers {
 
     "honor an explicit comma-separated allow-list" in {
       val config = CorsConfig(enabled = true, allowedOrigins = "https://app.example.com, https://www.example.com", maxAge = 1.hour)
-      allowOriginHeader(config, "production", localBaseUrl, "https://app.example.com") shouldBe Some("https://app.example.com")
-      allowOriginHeader(config, "production", localBaseUrl, "https://www.example.com") shouldBe Some("https://www.example.com")
-      allowOriginHeader(config, "production", localBaseUrl, "https://other.example.com") shouldBe None
+      allowOriginHeader(config, Environment.Prod, localBaseUrl, "https://app.example.com") shouldBe Some("https://app.example.com")
+      allowOriginHeader(config, Environment.Prod, localBaseUrl, "https://www.example.com") shouldBe Some("https://www.example.com")
+      allowOriginHeader(config, Environment.Prod, localBaseUrl, "https://other.example.com") shouldBe None
     }
 
     "treat \"*\" as allow-all even outside dev" in {
       allowOriginHeader(
         CorsConfig(enabled = true, allowedOrigins = "*", maxAge = 1.hour),
-        "production",
+        Environment.Prod,
         localBaseUrl,
         "https://anything.example.com"
       ) shouldBe
@@ -72,10 +76,10 @@ class CorsSpec extends AnyWordSpec with Matchers {
     }
 
     "emit no CORS headers when disabled" in {
-      Cors.policy(CorsConfig(enabled = false, allowedOrigins = "*", maxAge = 1.hour), "dev", localBaseUrl).unsafeRunSync() shouldBe None
+      Cors.policy(CorsConfig(enabled = false, allowedOrigins = "*", maxAge = 1.hour), Environment.Dev, localBaseUrl).unsafeRunSync() shouldBe None
       allowOriginHeader(
         CorsConfig(enabled = false, allowedOrigins = "*", maxAge = 1.hour),
-        "dev",
+        Environment.Dev,
         localBaseUrl,
         "http://localhost:5173"
       ) shouldBe None

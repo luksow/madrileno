@@ -189,4 +189,4 @@ For unit tests of templates themselves, just call `template.render(MailContext(t
 ## Where to look next
 
 - [scheduler.md](scheduler.md) — `sendMailTask` is a `OneTimeTask`; everything in that doc applies (retries, idempotency, the admin UI).
-- [http.md](http.md) — the dev-only `/admin/mail-previews` is one of the routes ApplicationLoader gates behind `appConfig.environment == "dev"`.
+- [http.md](http.md) — the dev-only `/admin/mail-previews` is one of the routes ApplicationLoader gates behind `appConfig.environment == Environment.Dev`.

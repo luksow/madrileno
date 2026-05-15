@@ -2,6 +2,7 @@ package madrileno.utils.http
 
 import cats.effect.IO
 import cats.syntax.all.*
+import madrileno.main.Environment
 import madrileno.utils.observability.LoggingSupport
 import org.http4s.Uri
 import org.http4s.headers.Origin
@@ -20,7 +21,7 @@ final case class CorsConfig(
 object Cors extends LoggingSupport {
   def policy(
     config: CorsConfig,
-    environment: String,
+    environment: Environment,
     baseUrl: URI
   ): IO[Option[CORSPolicy]] = {
     if (!config.enabled) IO.pure(None)
@@ -30,7 +31,7 @@ object Cors extends LoggingSupport {
       val built =
         if (configured.contains("*")) IO.pure(base.withAllowOriginAll)
         else if (configured.nonEmpty) parseHosts(configured).map(base.withAllowOriginHost)
-        else if (environment == "dev") IO.pure(base.withAllowOriginAll)
+        else if (environment == Environment.Dev) IO.pure(base.withAllowOriginAll)
         else parseHosts(List(baseUrl.toString)).map(base.withAllowOriginHost)
       built.map(Some(_))
     }

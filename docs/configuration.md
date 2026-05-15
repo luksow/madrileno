@@ -71,13 +71,19 @@ Three rules to know:
 - **Defaults in the case class become defaults in the config.** A field with a Scala default is optional in HOCON. The `application.conf` defaults are what's documented; the case-class defaults are the fallback when even the HOCON file doesn't mention the key.
 - **`Option[T]` fields are nullable.** Use them for genuinely optional settings (`MailerConfig.username` — dev SMTP doesn't need auth).
 
-For Scala 3 enums, derivation works out of the box:
+For Scala 3 enums loaded as a HOCON string, derive `EnumConfigReader` (not plain `ConfigReader`):
 
 ```scala
-enum PgConfigSSL { case None, Trusted, System }
+import pureconfig.generic.derivation.EnumConfigReader
+
+enum Environment derives EnumConfigReader {
+  case Dev, Test, Staging, Prod
+}
 ```
 
-`pureconfig` reads the value as the enum case name. Where derivation can't be inferred (older patterns, Scala 2 holdouts, manual control), `pureconfig.generic.semiauto.deriveReader` is the explicit form — same result, more explicit:
+Case names map PascalCase → kebab-case at the HOCON boundary (`Dev` ↔ `"dev"`). Plain `derives ConfigReader` on an enum doesn't work — pureconfig treats it as a sum type and expects an object with a `type` discriminator, not a flat string.
+
+Where derivation can't be inferred (older patterns, Scala 2 holdouts, manual control), `pureconfig.generic.semiauto.deriveReader` is the explicit form for case classes — same result as `derives ConfigReader`, more explicit:
 
 ```scala
 given ConfigReader[PgConfig] = deriveReader[PgConfig]
@@ -92,7 +98,7 @@ Both are in use; either is fine.
 | `Ipv4Address` / `Port`        | `pureconfig-ip4s`         | `"0.0.0.0"` / `9000`   |
 | `URI`                         | `pureconfig-core`         | `"http://localhost:9000"` |
 | `Duration` / `FiniteDuration` | `pureconfig-core`         | `"30s"`, `"5m"`, `"PT5M"` (ISO 8601) |
-| Scala 3 enums                 | `pureconfig-generic-scala3` | enum case name        |
+| Scala 3 enums                 | `pureconfig-generic-scala3` | kebab-case of case name (`Dev` → `"dev"`) via `derives EnumConfigReader` — see Environment above |
 
 All three pureconfig modules are pulled in via `build.sbt`:
 

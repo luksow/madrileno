@@ -98,7 +98,7 @@ def routes(wsb): Route =
     (route ~ wsRoutes(wsb))
   } ~
   adminRoutes ~                                                // /admin/*  (basic-auth gated)
-  (if (env == "dev") mailPreviewRouter.routes ~ baklavaDocs)    // dev-only
+  (if (env == Environment.Dev) mailPreviewRouter.routes ~ baklavaDocs)    // dev-only
 ```
 
 Logging and tracing are layered on by middleware in `Main`, so individual routers don't have to call them.

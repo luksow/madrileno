@@ -1,12 +1,12 @@
 package madrileno.healthcheck.routers.dto
 
 import io.scalaland.chimney.dsl.*
-import madrileno.main.AppConfig
+import madrileno.main.{AppConfig, Environment}
 import madrileno.utils.json.JsonProtocol.*
 
 final case class HealthCheckDto(
   name: String,
-  environment: String,
+  environment: Environment,
   version: String,
   apiVersion: String)
     derives Encoder.AsObject,
