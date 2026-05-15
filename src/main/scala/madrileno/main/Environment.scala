@@ -8,5 +8,5 @@ enum Environment {
 }
 
 object Environment {
-  given ConfigReader[Environment] = deriveEnumerationReader[Environment]((s: String) => s)
+  given ConfigReader[Environment] = deriveEnumerationReader[Environment]
 }

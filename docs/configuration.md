@@ -71,19 +71,10 @@ Three rules to know:
 - **Defaults in the case class become defaults in the config.** A field with a Scala default is optional in HOCON. The `application.conf` defaults are what's documented; the case-class defaults are the fallback when even the HOCON file doesn't mention the key.
 - **`Option[T]` fields are nullable.** Use them for genuinely optional settings (`MailerConfig.username` — dev SMTP doesn't need auth).
 
-For Scala 3 enums, two forms ship with `pureconfig-generic-scala3`. The pick depends on whether you want the HOCON value to match the case name verbatim or in transformed form.
+For Scala 3 enums actually loaded from HOCON, use `deriveEnumerationReader`. The convention is PascalCase case names in Scala, kebab-case in HOCON — the same mapping pureconfig applies to case-class fields.
 
 ```scala
-// Default — case name is mapped PascalCase → kebab-case at the HOCON boundary.
-// Cases Dev, Test, Staging, Prod read as "dev", "test", "staging", "prod".
-enum PgConfigSSL { case None, Trusted, System }    // HOCON: ssl = "none" / "trusted" / "system"
-```
-
-That default kicks in automatically when an enum appears as a field of a `derives ConfigReader` case class — no per-enum companion needed.
-
-```scala
-// Identity — case name read verbatim. Cases Dev, Test, Staging, Prod
-// read as "Dev", "Test", "Staging", "Prod".
+import pureconfig.ConfigReader
 import pureconfig.generic.semiauto.deriveEnumerationReader
 
 enum Environment {
@@ -91,13 +82,13 @@ enum Environment {
 }
 
 object Environment {
-  given ConfigReader[Environment] = deriveEnumerationReader[Environment]((s: String) => s)
+  given ConfigReader[Environment] = deriveEnumerationReader[Environment]
 }
 ```
 
-`Environment` uses the identity form so config values stay PascalCase (`APP_ENVIRONMENT=Dev` rather than `=dev`), matching the case names you reference in code (`Environment.Dev`, exhaustive `match`, IDE rename support). The transformation function in `deriveEnumerationReader[T](transform)` runs over each case name to produce the expected HOCON string — pass `_.toLowerCase` for `"dev"`, pass `(s => s)` for verbatim, pass `ConfigFieldMapping(PascalCase, SnakeCase).apply` for `"firebase_admin"`-style etc.
+HOCON value: `app.environment = "dev"` / `"test"` / `"staging"` / `"prod"`. Three production call sites today (`Main.scala` migration-warning gate, `Cors.scala` allow-all-origins-in-dev, `ApplicationLoader.scala` mail-preview + swagger gating) compare against `Environment.Dev`. To add a new environment, extend the enum case list; the compiler then makes you handle the new case at every `match`/`==` site.
 
-Where the value is set is the same as anything else — `application.conf`'s `app.environment = "Dev"` provides the default, `${?APP_ENVIRONMENT}` lets ops override per deploy. Three production call sites today (`Main.scala` migration-warning gate, `Cors.scala` allow-all-origins-in-dev, `ApplicationLoader.scala` mail-preview + swagger gating) compare against `Environment.Dev`. To add a new environment, extend the enum case list; the compiler then makes you handle the new case at every `match`/`==` site.
+(The bare `derives ConfigReader` form treats an enum as a sum type and expects an object with a `type` discriminator, which doesn't fit a flat HOCON string — use `deriveEnumerationReader` for string-shaped enums. For enum *fields* of a case class that's never actually set in HOCON, the case-class default supplies the value and no enum-reader is consulted — see `PgConfigSSL.ssl = PgConfigSSL.None`.)
 
 Where derivation can't be inferred (older patterns, Scala 2 holdouts, manual control), `pureconfig.generic.semiauto.deriveReader` is the explicit form for case classes — same result as `derives ConfigReader`, more explicit:
 

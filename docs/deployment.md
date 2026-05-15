@@ -52,7 +52,7 @@ The image is *not* multi-stage; it's whatever `JavaServerAppPackaging` builds pl
 
 The container needs environment variables for every `${?VAR}` substitution in `application.conf`. See [configuration.md](configuration.md) for the full list; the production-relevant subset is:
 
-- **App identity** — `APP_ENVIRONMENT=Prod`, `APP_VERSION=<git sha>`.
+- **App identity** — `APP_ENVIRONMENT=prod`, `APP_VERSION=<git sha>`.
 - **HTTP** — `INTERFACE`, `PORT`, `BASE_URL`, `MAX_REQUEST_SIZE`. Bind to `0.0.0.0` inside the container; expose the port via your orchestrator.
 - **Postgres** — `PG_HOST`, `PG_PORT`, `PG_DATABASE`, `PG_USER`, `PG_PASSWORD`. Provision with whatever your platform offers (RDS, Cloud SQL, managed Postgres).
 - **OpenTelemetry** — `OTEL_*` per [observability.md](observability.md). Point at your real OTLP receiver.

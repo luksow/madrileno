@@ -159,7 +159,7 @@ For production, point at SES / SendGrid / your provider's SMTP relay. The mailer
 
 ## Previews
 
-In dev (`app.environment = "Dev"`), `/admin/mail-previews` lists every `MailPreview` from every module's `mailPreviews: List[MailPreview]`, with its rendered HTML and text shown side-by-side. Edit a template, refresh the page, see the result without sending.
+In dev (`app.environment = "dev"`), `/admin/mail-previews` lists every `MailPreview` from every module's `mailPreviews: List[MailPreview]`, with its rendered HTML and text shown side-by-side. Edit a template, refresh the page, see the result without sending.
 
 To register a preview, add it to your module's `mailPreviews`:
 
