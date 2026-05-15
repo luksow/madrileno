@@ -40,7 +40,7 @@ object Main extends IOApp.Simple {
       httpClient <- HttpClientFs2Backend.resource[IO]()
       pgConfig   <- Resource.eval(IO.delay(config.at("pg").loadOrThrow[PgConfig]))
       transactor <- PgTransactor.resource(pgConfig)
-      _          <- Resource.eval(IO.whenA(appConfig.environment == "dev")(Migrations.warnIfPending(pgConfig)))
+      _          <- Resource.eval(IO.whenA(appConfig.environment == Environment.Dev)(Migrations.warnIfPending(pgConfig)))
       clock = Clock[IO]
       schedulerConfig <- Resource.eval(IO.delay(config.at("scheduler").loadOrThrow[SchedulerConfig]))
       scheduler          = Scheduler(transactor, schedulerConfig)

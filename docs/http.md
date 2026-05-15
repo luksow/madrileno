@@ -98,7 +98,7 @@ def routes(wsb): Route =
     (route ~ wsRoutes(wsb))
   } ~
   adminRoutes ~                                                // /admin/*  (basic-auth gated)
-  (if (env == "dev") mailPreviewRouter.routes ~ baklavaDocs)    // dev-only
+  (if (env == Environment.Dev) mailPreviewRouter.routes ~ baklavaDocs)    // dev-only
 ```
 
 Logging and tracing are layered on by middleware in `Main`, so individual routers don't have to call them.
@@ -119,7 +119,7 @@ cors {
 
 - an explicit list (`https://app.example.com,https://www.example.com`) → exactly those origins
 - `*` → any origin
-- empty (the default) → **any origin in dev** (`app.environment = "dev"`), otherwise **the host of `http.base-url`** — a safe fallback that's zero-config when the SPA and the API share an origin behind one proxy, and never silently `*` in production
+- empty (the default) → **any origin in dev** (`app.environment = "Dev"`), otherwise **the host of `http.base-url`** — a safe fallback that's zero-config when the SPA and the API share an origin behind one proxy, and never silently `*` in production
 
 Methods and request headers are allowed wildcard — what a typical SPA wants; lock them down in `Cors.policy` if you need to.
 
@@ -135,7 +135,7 @@ baklava generates the OpenAPI spec by observing stir routes during the test suit
 - `target/baklava/swagger-ui/` — a static Swagger UI bundle pointing at the spec
 - `target/baklava/tsrest/` — a TypeScript ts-rest contract package
 
-In dev (`app.environment = "dev"` in config), the app serves the same artifacts at:
+In dev (`app.environment = "Dev"` in config), the app serves the same artifacts at:
 
 - `/openapi/openapi.yml`
 - `/swagger` — the Swagger UI

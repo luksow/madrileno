@@ -40,7 +40,7 @@ final case class HttpConfig(
     derives ConfigReader
 final case class AppConfig(
   name: String,
-  environment: String,
+  environment: Environment,
   version: String,
   apiVersion: String)
     derives ConfigReader
@@ -187,7 +187,7 @@ class ApplicationLoader(
                     }
                   }
                 }
-            } ~ adminRoutes ~ (if (appConfig.environment == "dev") new MailPreviewRouter(mailPreviews, mailContext).routes ~ baklavaDocs
+            } ~ adminRoutes ~ (if (appConfig.environment == Environment.Dev) new MailPreviewRouter(mailPreviews, mailContext).routes ~ baklavaDocs
                                else RouteDirectives.reject)
           }
         }

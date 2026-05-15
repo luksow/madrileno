@@ -159,7 +159,7 @@ For production, point at SES / SendGrid / your provider's SMTP relay. The mailer
 
 ## Previews
 
-In dev (`app.environment = "dev"`), `/admin/mail-previews` lists every `MailPreview` from every module's `mailPreviews: List[MailPreview]`, with its rendered HTML and text shown side-by-side. Edit a template, refresh the page, see the result without sending.
+In dev (`app.environment = "Dev"`), `/admin/mail-previews` lists every `MailPreview` from every module's `mailPreviews: List[MailPreview]`, with its rendered HTML and text shown side-by-side. Edit a template, refresh the page, see the result without sending.
 
 To register a preview, add it to your module's `mailPreviews`:
 
@@ -189,4 +189,4 @@ For unit tests of templates themselves, just call `template.render(MailContext(t
 ## Where to look next
 
 - [scheduler.md](scheduler.md) — `sendMailTask` is a `OneTimeTask`; everything in that doc applies (retries, idempotency, the admin UI).
-- [http.md](http.md) — the dev-only `/admin/mail-previews` is one of the routes ApplicationLoader gates behind `appConfig.environment == "dev"`.
+- [http.md](http.md) — the dev-only `/admin/mail-previews` is one of the routes ApplicationLoader gates behind `appConfig.environment == Environment.Dev`.
