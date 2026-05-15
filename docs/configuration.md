@@ -98,7 +98,7 @@ Both are in use; either is fine.
 | `Ipv4Address` / `Port`        | `pureconfig-ip4s`         | `"0.0.0.0"` / `9000`   |
 | `URI`                         | `pureconfig-core`         | `"http://localhost:9000"` |
 | `Duration` / `FiniteDuration` | `pureconfig-core`         | `"30s"`, `"5m"`, `"PT5M"` (ISO 8601) |
-| Scala 3 enums                 | `pureconfig-generic-scala3` | kebab-case of case name (`Dev` → `"dev"`) via `deriveEnumerationReader` — see Environment above |
+| Scala 3 enums                 | `pureconfig-generic-scala3` | kebab-case of case name (`Dev` → `"dev"`) via `derives EnumConfigReader` — see Environment above |
 
 All three pureconfig modules are pulled in via `build.sbt`:
 

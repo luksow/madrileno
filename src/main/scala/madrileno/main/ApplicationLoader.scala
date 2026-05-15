@@ -39,6 +39,7 @@ final case class HttpConfig(
   maxRequestSize: Long,
   baseUrl: URI)
     derives ConfigReader
+
 enum Environment derives EnumConfigReader {
   case Dev, Test, Staging, Prod
 }
