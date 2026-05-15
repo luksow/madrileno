@@ -23,7 +23,7 @@ import pl.iterators.baklava.http4s.routes.BaklavaRoutes
 import pl.iterators.stir.server.directives.{CredentialsHelper, RouteDirectives}
 import pl.iterators.stir.server.{PathMatcher, Route}
 import pureconfig.*
-import pureconfig.generic.semiauto.deriveEnumerationReader
+import pureconfig.generic.derivation.EnumConfigReader
 import pureconfig.module.ip4s.*
 import sttp.capabilities.fs2.Fs2Streams
 import sttp.client4.logging.{LogConfig, LogLevel, Logger, LoggingBackend}
@@ -39,11 +39,8 @@ final case class HttpConfig(
   maxRequestSize: Long,
   baseUrl: URI)
     derives ConfigReader
-enum Environment {
+enum Environment derives EnumConfigReader {
   case Dev, Test, Staging, Prod
-}
-object Environment {
-  given ConfigReader[Environment] = deriveEnumerationReader[Environment]
 }
 
 final case class AppConfig(

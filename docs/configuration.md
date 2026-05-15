@@ -71,13 +71,17 @@ Three rules to know:
 - **Defaults in the case class become defaults in the config.** A field with a Scala default is optional in HOCON. The `application.conf` defaults are what's documented; the case-class defaults are the fallback when even the HOCON file doesn't mention the key.
 - **`Option[T]` fields are nullable.** Use them for genuinely optional settings (`MailerConfig.username` — dev SMTP doesn't need auth).
 
-For Scala 3 enums loaded as a HOCON string, add a one-liner to the companion (see `Environment` next to `AppConfig`):
+For Scala 3 enums loaded as a HOCON string, derive `EnumConfigReader` (not plain `ConfigReader`):
 
 ```scala
-given ConfigReader[Environment] = deriveEnumerationReader[Environment]
+import pureconfig.generic.derivation.EnumConfigReader
+
+enum Environment derives EnumConfigReader {
+  case Dev, Test, Staging, Prod
+}
 ```
 
-Case names map PascalCase → kebab-case at the HOCON boundary (`Dev` ↔ `"dev"`), matching the field-mapping convention. Plain `derives ConfigReader` on an enum doesn't work — pureconfig treats it as a sum type and expects an object with a `type` discriminator, not a flat string.
+Case names map PascalCase → kebab-case at the HOCON boundary (`Dev` ↔ `"dev"`). Plain `derives ConfigReader` on an enum doesn't work — pureconfig treats it as a sum type and expects an object with a `type` discriminator, not a flat string.
 
 Where derivation can't be inferred (older patterns, Scala 2 holdouts, manual control), `pureconfig.generic.semiauto.deriveReader` is the explicit form for case classes — same result as `derives ConfigReader`, more explicit:
 
