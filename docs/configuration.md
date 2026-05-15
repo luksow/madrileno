@@ -71,24 +71,13 @@ Three rules to know:
 - **Defaults in the case class become defaults in the config.** A field with a Scala default is optional in HOCON. The `application.conf` defaults are what's documented; the case-class defaults are the fallback when even the HOCON file doesn't mention the key.
 - **`Option[T]` fields are nullable.** Use them for genuinely optional settings (`MailerConfig.username` — dev SMTP doesn't need auth).
 
-For Scala 3 enums actually loaded from HOCON, use `deriveEnumerationReader`. The convention is PascalCase case names in Scala, kebab-case in HOCON — the same mapping pureconfig applies to case-class fields.
+For Scala 3 enums loaded as a HOCON string, add a one-liner to the companion (see `Environment` next to `AppConfig`):
 
 ```scala
-import pureconfig.ConfigReader
-import pureconfig.generic.semiauto.deriveEnumerationReader
-
-enum Environment {
-  case Dev, Test, Staging, Prod
-}
-
-object Environment {
-  given ConfigReader[Environment] = deriveEnumerationReader[Environment]
-}
+given ConfigReader[Environment] = deriveEnumerationReader[Environment]
 ```
 
-HOCON value: `app.environment = "dev"` / `"test"` / `"staging"` / `"prod"`. Three production call sites today (`Main.scala` migration-warning gate, `Cors.scala` allow-all-origins-in-dev, `ApplicationLoader.scala` mail-preview + swagger gating) compare against `Environment.Dev`. To add a new environment, extend the enum case list; the compiler then makes you handle the new case at every `match`/`==` site.
-
-(The bare `derives ConfigReader` form treats an enum as a sum type and expects an object with a `type` discriminator, which doesn't fit a flat HOCON string — use `deriveEnumerationReader` for string-shaped enums. For enum *fields* of a case class that's never actually set in HOCON, the case-class default supplies the value and no enum-reader is consulted — see `PgConfigSSL.ssl = PgConfigSSL.None`.)
+Case names map PascalCase → kebab-case at the HOCON boundary (`Dev` ↔ `"dev"`), matching the field-mapping convention. Plain `derives ConfigReader` on an enum doesn't work — pureconfig treats it as a sum type and expects an object with a `type` discriminator, not a flat string.
 
 Where derivation can't be inferred (older patterns, Scala 2 holdouts, manual control), `pureconfig.generic.semiauto.deriveReader` is the explicit form for case classes — same result as `derives ConfigReader`, more explicit:
 
