@@ -1,12 +1,18 @@
+#!/usr/bin/env -S scala-cli shebang
+
 //> using scala 3.6
 //> using toolkit default
 //> using dep com.lihaoyi::mainargs:0.7.8
 
 // Rename this project from `madrileno` to `<name>`, swap the package, and delete
-// the auction demo. Run from the project root with scala-cli:
+// the auction demo. Run from the project root, either directly:
+//
+//   ./scripts/init-project.scala wine-cellar
+//   ./scripts/init-project.scala wine-cellar --package winecellar
+//
+// or via scala-cli:
 //
 //   scala-cli run scripts/init-project.scala -- wine-cellar
-//   scala-cli run scripts/init-project.scala -- wine-cellar --package winecellar
 //
 // After: `sbt compile`. If anything's off, `git checkout .` reverts.
 
