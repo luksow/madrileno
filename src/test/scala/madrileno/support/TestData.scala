@@ -2,25 +2,34 @@ package madrileno.support
 
 import com.comcast.ip4s.IpAddress
 import io.circe.Json
+// scripts:auction-block-start
 import madrileno.auction.domain.*
+// scripts:auction-block-end
 import madrileno.auth.domain.{AuthContext, *}
 import madrileno.user.domain.*
+// scripts:auction-block-start
 import madrileno.utils.imaging.{Height, ImageFormat, Width}
 import madrileno.utils.storage.StorageKey
 import org.http4s.MediaType
 import org.http4s.headers.`Content-Type`
+// scripts:auction-block-end
 
 import java.net.URI
 import java.time.Instant
-import java.util.{Currency, UUID}
+import java.util.UUID
+// scripts:auction-block-start
+import java.util.Currency
+// scripts:auction-block-end
 
 object TestData {
   def randomUserId(): UserId                 = UserId(UUID.randomUUID())
   def randomRefreshTokenId(): RefreshTokenId = RefreshTokenId(UUID.randomUUID())
   def randomUserAuthId(): UserAuthId         = UserAuthId(UUID.randomUUID())
+  // scripts:auction-block-start
   def randomAuctionId(): AuctionId           = AuctionId(UUID.randomUUID())
   def randomBidId(): BidId                   = BidId(UUID.randomUUID())
   def randomAuctionImageId(): AuctionImageId = AuctionImageId(UUID.randomUUID())
+  // scripts:auction-block-end
 
   def authContext(): AuthContext = AuthContext(user = user())
 
@@ -55,6 +64,7 @@ object TestData {
 
   val defaultIpAddress: IpAddress = IpAddress.fromString("127.0.0.1").get
 
+  // scripts:auction-block-start
   def auction(
     id: AuctionId = randomAuctionId(),
     sellerId: UserId = randomUserId(),
@@ -121,4 +131,5 @@ object TestData {
     analyzedAt: Option[Instant] = None
   ): AuctionImage =
     AuctionImage(id, auctionId, storageKey, fileName, contentType, sizeBytes, position, uploadedAt, deletedAt, width, height, format, analyzedAt)
+  // scripts:auction-block-end
 }
