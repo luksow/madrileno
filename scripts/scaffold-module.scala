@@ -72,6 +72,18 @@ object ScaffoldModule {
       s"module class '${aggregate}Module' already exists at ${existingModuleFile.getOrElse("")}. " +
         "Choose a different aggregate name to avoid an ambiguous `with` in ApplicationLoader.")
 
+    // Table-name collision check — scan existing migrations for `CREATE TABLE <plural>`.
+    // The Flyway runner would catch this eventually, but catching it here keeps the
+    // failure on the script side (no files written, no migration shipped).
+    val createTableRegex =
+      s"""(?i)CREATE\\s+TABLE\\s+(IF\\s+NOT\\s+EXISTS\\s+)?"?${java.util.regex.Pattern.quote(plural)}"?\\s*\\(""".r
+    val tableCollision = os.list(migrationDest).filter(os.isFile(_)).find { f =>
+      createTableRegex.findFirstIn(os.read(f)).isDefined
+    }
+    require(tableCollision.isEmpty,
+      s"plural '$plural' would collide with a table already created in ${tableCollision.getOrElse("")}. " +
+        "Choose a different plural.")
+
     // Preflight the auto-wire anchors before any writes — if `ApplicationLoader.scala`
     // is missing or has been restructured, we want to abort before stranding generated
     // files on disk (a half-finished scaffold blocks the next run via the dest-exists
