@@ -61,6 +61,17 @@ object ScaffoldModule {
     require(!os.exists(testDest), s"$testDest already exists — refusing to overwrite")
     require(os.exists(migrationDest), s"missing $migrationDest")
 
+    // Class-name collision check — covers the case where the singular directory
+    // doesn't collide (e.g. `HealthCheck health_checks` -> `healthCheck/`) but the
+    // generated `<Aggregate>Module` class name already exists elsewhere (e.g. the
+    // built-in `HealthCheckModule`), which would leave `ApplicationLoader` with
+    // ambiguous duplicate `with <X>Module` clauses on different packages.
+    val moduleClassFile = s"${aggregate}Module.scala"
+    val existingModuleFile = os.walk(mainScalaDir).find(_.last == moduleClassFile)
+    require(existingModuleFile.isEmpty,
+      s"module class '${aggregate}Module' already exists at ${existingModuleFile.getOrElse("")}. " +
+        "Choose a different aggregate name to avoid an ambiguous `with` in ApplicationLoader.")
+
     // Preflight the auto-wire anchors before any writes — if `ApplicationLoader.scala`
     // is missing or has been restructured, we want to abort before stranding generated
     // files on disk (a half-finished scaffold blocks the next run via the dest-exists

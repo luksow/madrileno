@@ -93,4 +93,4 @@ Substitution order is preserved (longer plural forms before shorter singular for
 
 - Doesn't generate a service spec. The service is a thin wrapper around the repository in the scaffold; add a spec when there's real service logic.
 - Doesn't enforce ownership / authorization. The generated router takes the `AuthContext` (so the route is gated by the framework's auth gate) but doesn't yet scope queries by `authContext.userId` — that's where you fill in the domain rules.
-- Doesn't run `sbt compile` or `scalafmtAll`. Both are one command each in the next-steps printout.
+- Doesn't run `sbt compile`, `scalafmtAll`, or `scalafixAll`. All three are bundled into one command in the next-steps printout; `scalafixAll` is the one that sorts the auto-wired import in `ApplicationLoader.scala`.
