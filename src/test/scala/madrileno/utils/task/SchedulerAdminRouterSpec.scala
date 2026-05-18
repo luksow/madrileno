@@ -18,7 +18,9 @@ class SchedulerAdminRouterSpec extends BaseRouteSpec with TestApplicationLoader 
       response.status shouldBe Status.Ok
       response.contentType.exists(_.mediaType.subType == "html") shouldBe true
       val body = response.bodyText.compile.string.unsafeRunSync()
+      // scripts:auction-block-start
       body should include("close-expired-auctions")
+      // scripts:auction-block-end
       body should include("Recurring tasks")
       body should include("Registered task types")
       body should include("send-mail")

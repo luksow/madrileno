@@ -2,6 +2,14 @@
 
 A Scala 3 backend template. Wine auctions are the showcase domain.
 
+If you're using this as a template, run the rename script first — it swaps `madrileno` for your project name + package and removes the auction demo:
+
+```bash
+./scripts/init-project.scala <project-name>
+```
+
+See [`docs/scripts.md`](docs/scripts.md) for what it does and what else lives under `scripts/`.
+
 ## Quick start
 
 You'll need:

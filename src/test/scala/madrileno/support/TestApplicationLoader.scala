@@ -69,7 +69,9 @@ trait TestApplicationLoader extends TestContainersForAll with TestMailpit { self
     ) {
       override protected lazy val externalAuthVerifiers: AuthVerifiers =
         AuthVerifiers(Map(Provider.Firebase -> FakeAuthVerifier(firebaseToken), Provider("test-oidc") -> FakeAuthVerifier(oidcToken)))
+      // scripts:auction-block-start
       override protected lazy val vivinoGateway: VivinoGateway = (_, _) => IO.pure(None)
+      // scripts:auction-block-end
       override protected lazy val mailerConfig: MailerConfig =
         MailerConfig(host = mailpitHost, port = mailpitSmtpPort, fromAddress = "test@example.com", tls = false)
     }

@@ -18,9 +18,11 @@ object TestData {
   def randomUserId(): UserId                 = UserId(UUID.randomUUID())
   def randomRefreshTokenId(): RefreshTokenId = RefreshTokenId(UUID.randomUUID())
   def randomUserAuthId(): UserAuthId         = UserAuthId(UUID.randomUUID())
+  // scripts:auction-block-start
   def randomAuctionId(): AuctionId           = AuctionId(UUID.randomUUID())
   def randomBidId(): BidId                   = BidId(UUID.randomUUID())
   def randomAuctionImageId(): AuctionImageId = AuctionImageId(UUID.randomUUID())
+  // scripts:auction-block-end
 
   def authContext(): AuthContext = AuthContext(user = user())
 
@@ -55,6 +57,7 @@ object TestData {
 
   val defaultIpAddress: IpAddress = IpAddress.fromString("127.0.0.1").get
 
+  // scripts:auction-block-start
   def auction(
     id: AuctionId = randomAuctionId(),
     sellerId: UserId = randomUserId(),
@@ -121,4 +124,5 @@ object TestData {
     analyzedAt: Option[Instant] = None
   ): AuctionImage =
     AuctionImage(id, auctionId, storageKey, fileName, contentType, sizeBytes, position, uploadedAt, deletedAt, width, height, format, analyzedAt)
+  // scripts:auction-block-end
 }
