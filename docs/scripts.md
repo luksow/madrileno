@@ -50,7 +50,7 @@ Adding a new auction-coupled block elsewhere? Bracket it with the same markers a
 
 ## `scaffold-module.scala`
 
-Generate a new module (aggregate vertical slice) under the project's package — domain, repository, service, router, DTO, module trait, Flyway migration, and a repository spec. Wires the module into `ApplicationLoader`'s `extends` chain automatically.
+Generate a new module (aggregate vertical slice) under the project's package — domain, repository, service, router, DTO, module trait, Flyway migration, and three specs (domain, repository, router). Wires the module into `ApplicationLoader`'s `extends` chain automatically.
 
 ```bash
 ./scripts/scaffold-module.scala Wine wines
@@ -82,14 +82,15 @@ sbt 'compile; scalafmtAll; scalafixAll'
 The templates use these placeholders (substituted both in filenames and contents):
 
 - `__Aggregate__` → the PascalCase argument (`Wine`)
+- `__Aggregates__` → capitalized plural, derived from the plural argument (`Wines`) — used for OpenAPI tags
 - `__aggregates__` → the plural argument (`wines`)
 - `__aggregate__` → the lowercase singular, derived (`wine`)
 - `__package__` → the auto-detected project package (`madrileno` in the template, your own name after `init-project.scala`)
 
-Order matters: `__aggregates__` is substituted before `__aggregate__` so the plural prefix isn't eaten.
+Order matters: longer placeholders (`__Aggregates__`, `__aggregates__`) are substituted before their shorter prefixes (`__Aggregate__`, `__aggregate__`) so the plural isn't eaten.
 
 ### What it doesn't do
 
-- Doesn't generate router or service specs. The router/service shapes are aggregate-specific; the repository spec is the highest-value generic test.
+- Doesn't generate a service spec. The service is a thin wrapper around the repository in the scaffold; add a spec when there's real service logic.
 - Doesn't enforce ownership / authorization. The generated router takes the `AuthContext` (so the route is gated by the framework's auth gate) but doesn't yet scope queries by `authContext.userId` — that's where you fill in the domain rules.
 - Doesn't run `sbt compile` or `scalafmtAll`. Both are one command each in the next-steps printout.

@@ -30,7 +30,8 @@ object ScaffoldModule {
     require(plural.matches("[a-z][a-z0-9_]*"),
       s"plural '$plural' must be lowercase (start with letter, alphanumeric or underscore)")
 
-    val singular = aggregate.head.toLower.toString + aggregate.tail
+    val singular      = aggregate.head.toLower.toString + aggregate.tail
+    val capitalPlural = plural.head.toUpper.toString + plural.tail
     require(singular != plural,
       s"plural '$plural' must differ from singular '$singular' (otherwise table/dir naming collides)")
 
@@ -63,9 +64,11 @@ object ScaffoldModule {
       """^V(\d+)__""".r.findFirstMatchIn(f).map(_.group(1).toInt)
     }.maxOption.getOrElse(0) + 1
 
-    // Substitution order matters: PascalCase first (unambiguous), plural before
-    // singular (otherwise singular eats the plural prefix), package last.
+    // Substitution order matters: longer placeholders before shorter prefixes.
+    // `__Aggregates__` must precede `__Aggregate__`; `__aggregates__` must
+    // precede `__aggregate__`. Package last.
     val subs = List(
+      ("__Aggregates__", capitalPlural),
       ("__Aggregate__", aggregate),
       ("__aggregates__", plural),
       ("__aggregate__", singular),
