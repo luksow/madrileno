@@ -1,6 +1,6 @@
 #!/usr/bin/env -S scala-cli shebang
 
-//> using scala 3.6
+//> using scala 3.8.2
 //> using toolkit default
 //> using dep com.lihaoyi::mainargs:0.7.8
 
@@ -17,6 +17,8 @@
 // After: `sbt compile`. If anything's off, `git checkout .` reverts.
 
 import mainargs.{ParserForMethods, arg, main}
+
+import java.util.regex.Matcher
 
 object InitProject {
 
@@ -36,10 +38,11 @@ object InitProject {
     packageOpt: Option[String] = None
   ): Unit = {
 
+    require(name.matches("[A-Za-z][A-Za-z0-9_-]*"),
+      s"project name '$name' must start with a letter and contain only letters, digits, '-' and '_' (sbt + HOCON + docker-compose all share that bar)")
     val packageName = packageOpt.getOrElse(name.toLowerCase.replaceAll("[^a-z0-9]", ""))
     require(packageName.matches("[a-z][a-z0-9]*"),
       s"package '$packageName' is not a lowercase Scala identifier (derived from '$name'; pass --package explicitly)")
-    require(name.nonEmpty, "project name must not be empty")
 
     val root = os.pwd
     require(os.exists(root / "build.sbt"),
@@ -74,7 +77,9 @@ object InitProject {
     //      b) drop `with AuctionModule` lines from the loaders' extends chains
     //      c) drop blocks bracketed by `// scripts:auction-block-start` / `-end`
     //         (used in test support — TestData, TestApplicationLoader)
-    val auctionBlock = """(?s)[ \t]*// scripts:auction-block-start.*?// scripts:auction-block-end[ \t]*\r?\n?""".r
+    // Markers must occupy their own line (with optional indentation). Anchoring keeps
+    // the regex from eating prose in docs that mentions the marker strings inline.
+    val auctionBlock = """(?ms)^[ \t]*// scripts:auction-block-start[ \t]*\r?\n.*?^[ \t]*// scripts:auction-block-end[ \t]*\r?\n?""".r
     val touched = scala.collection.mutable.ListBuffer.empty[os.Path]
     os.walk(root)
       .filter(p => os.isFile(p, followLinks = false))
@@ -87,7 +92,7 @@ object InitProject {
           .replaceAll("""(?m)^import madrileno\.auction\..*\r?\n""", "")
           .replaceAll("""(?m)^[ \t]*with AuctionModule[ \t]*\r?\n""", "")
           .replace("madrileno.", s"$packageName.")
-          .replaceAll("""\bmadrileno\b""", name)
+          .replaceAll("""\bmadrileno\b""", Matcher.quoteReplacement(name))
         if (transformed != original) {
           os.write.over(p, transformed)
           touched += p
@@ -109,8 +114,8 @@ object InitProject {
     println(s"Updated: ${touched.size} files")
     println()
     println("Next:")
-    println("  sbt compile       # verify")
-    println("  sbt scalafixAll   # remove unused imports left by the auction surgery")
+    println("  cp .env.sample .env")
+    println("  sbt 'scalafixAll; scalafixAll; test'   # twice — second pass cleans cascading unused imports")
   }
 
   def main(args: Array[String]): Unit = ParserForMethods(this).runOrExit(args)

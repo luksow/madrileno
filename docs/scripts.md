@@ -18,7 +18,7 @@ What it does, in order:
 1. **Sanity checks** — refuses to run if `build.sbt` isn't present or if `src/main/scala/madrileno/` is missing (already renamed).
 2. **Deletes the auction demo** — `src/{main,test}/scala/madrileno/auction/` and any Flyway migration whose filename mentions `auction` or `bid`.
 3. **Rewrites file contents** under every text file outside `.git`, `target`, IDE caches, `node_modules`, and `scripts/`:
-   - Drops blocks bracketed by `// scripts:auction-block-start` / `// scripts:auction-block-end` — auction-coupled fragments in test support that can't be deleted as whole files. Six such blocks today (`TestData.scala`, `TestApplicationLoader.scala`, `SchedulerAdminRouterSpec.scala`).
+   - Drops blocks bracketed by `// scripts:auction-block-start` / `// scripts:auction-block-end` — auction-coupled fragments in test support that can't be deleted as whole files (today: two in `TestData.scala`, one in `TestApplicationLoader.scala`, one in `SchedulerAdminRouterSpec.scala`). The markers must occupy their own line — inline mentions in prose are ignored.
    - Drops `import madrileno.auction.*` lines and `with AuctionModule` lines from the loaders' `extends` chains.
    - Renames `madrileno.<X>` package references to `<package>.<X>`.
    - Renames standalone `madrileno` to `<project-name>` (HOCON `app.name`, container names, `OTEL_SERVICE_NAME`, `PG_DATABASE`, `MAILER_FROM_ADDRESS`, README/doc references, etc.).
@@ -27,11 +27,11 @@ What it does, in order:
 After running:
 
 ```bash
-sbt compile        # verify
-sbt scalafixAll    # remove unused imports left by the auction surgery
+cp .env.sample .env
+sbt 'scalafixAll; scalafixAll; test'
 ```
 
-The first verifies; the second cleans up imports that were used only by the now-deleted auction methods (e.g. `org.http4s.MediaType`, `madrileno.utils.imaging.*`). `scalafixAll` is part of the project's normal scalafix config and is idempotent — running it doesn't change anything if there's nothing to fix.
+`scalafixAll` runs twice on purpose. The auction surgery leaves a pile of imports that were used only by the now-deleted methods (e.g. `org.http4s.MediaType`, `madrileno.utils.imaging.*`); the first pass removes the obvious ones; some others only become unused once the first pass has run (cascading). The second pass picks those up. After that, `test` should be green.
 
 If anything's off, `git checkout .` reverts.
 
