@@ -4,6 +4,8 @@ A walkthrough. We're going to add a "product" module — products with a name, p
 
 Assume you've read an existing module (`madrileno.auction` is the best reference). This is the *doing* guide.
 
+> **Skip the boilerplate:** `./scripts/scaffold-module.scala <Aggregate> <plural>` materializes the file layout below — module trait, domain, repository, service, router, DTO, migration, repository spec — and wires the module into `ApplicationLoader`. See [`scripts.md`](scripts.md) for what it generates and which placeholders it substitutes. The walkthrough here is still useful as a reference for what each piece is and how it fits together.
+
 ## Before you start: the file layout
 
 Every module has the same shape. When you're done, yours will too:
