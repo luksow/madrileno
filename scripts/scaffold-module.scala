@@ -14,7 +14,8 @@
 //   scala-cli run scripts/scaffold-module.scala -- Wine wines
 //
 // Generates: module trait, domain, repository, service, router, DTO, migration,
-// repo spec. Wires the module into ApplicationLoader's extends chain.
+// plus domain / repository / router specs. Wires the module into
+// ApplicationLoader's extends chain.
 
 import mainargs.{ParserForMethods, arg, main}
 
@@ -32,8 +33,9 @@ object ScaffoldModule {
 
     val singular      = aggregate.head.toLower.toString + aggregate.tail
     val capitalPlural = plural.head.toUpper.toString + plural.tail
-    require(singular != plural,
-      s"plural '$plural' must differ from singular '$singular' (otherwise table/dir naming collides)")
+    // Singular and plural may legitimately be identical in English (`Fish fish`,
+    // `News news`) — the singular drives Scala identifiers / directories, the
+    // plural drives SQL/URL identifiers, so there's no actual collision.
 
     val root = os.pwd
     require(os.exists(root / "build.sbt"),
