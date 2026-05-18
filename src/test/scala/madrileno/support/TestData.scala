@@ -2,24 +2,17 @@ package madrileno.support
 
 import com.comcast.ip4s.IpAddress
 import io.circe.Json
-// scripts:auction-block-start
 import madrileno.auction.domain.*
-// scripts:auction-block-end
 import madrileno.auth.domain.{AuthContext, *}
 import madrileno.user.domain.*
-// scripts:auction-block-start
 import madrileno.utils.imaging.{Height, ImageFormat, Width}
 import madrileno.utils.storage.StorageKey
 import org.http4s.MediaType
 import org.http4s.headers.`Content-Type`
-// scripts:auction-block-end
 
 import java.net.URI
 import java.time.Instant
-import java.util.UUID
-// scripts:auction-block-start
-import java.util.Currency
-// scripts:auction-block-end
+import java.util.{Currency, UUID}
 
 object TestData {
   def randomUserId(): UserId                 = UserId(UUID.randomUUID())

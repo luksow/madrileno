@@ -108,7 +108,9 @@ object InitProject {
     println(s"Deleted: ${deleted.size} auction-related paths")
     println(s"Updated: ${touched.size} files")
     println()
-    println("Next: sbt compile")
+    println("Next:")
+    println("  sbt compile       # verify")
+    println("  sbt scalafixAll   # remove unused imports left by the auction surgery")
   }
 
   def main(args: Array[String]): Unit = ParserForMethods(this).runOrExit(args)

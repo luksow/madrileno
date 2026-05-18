@@ -27,10 +27,11 @@ What it does, in order:
 After running:
 
 ```bash
-sbt compile
+sbt compile        # verify
+sbt scalafixAll    # remove unused imports left by the auction surgery
 ```
 
-The fresh project compiles clean and tests green out of the box (the smoke-test bar before each commit to the script).
+The first verifies; the second cleans up imports that were used only by the now-deleted auction methods (e.g. `org.http4s.MediaType`, `madrileno.utils.imaging.*`). `scalafixAll` is part of the project's normal scalafix config and is idempotent — running it doesn't change anything if there's nothing to fix.
 
 If anything's off, `git checkout .` reverts.
 
