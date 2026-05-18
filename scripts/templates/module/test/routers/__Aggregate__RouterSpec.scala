@@ -4,6 +4,7 @@ import __package__.__aggregate__.domain.{__Aggregate__, __Aggregate__Id, __Aggre
 import __package__.__aggregate__.routers.dto.__Aggregate__Dto
 import __package__.auth.domain.AuthContext
 import __package__.support.{BaseRouteSpec, TestApplicationLoader, TestData}
+import __package__.utils.http.Error
 import __package__.utils.json.JsonProtocol.*
 import org.http4s.Method.*
 import org.http4s.Status.*
@@ -41,6 +42,12 @@ class __Aggregate__RouterSpec extends BaseRouteSpec with TestApplicationLoader {
           val response = ctx.performRequest(allRoutes)
           response.body.id shouldBe entity.id
           response.body.name shouldBe entity.name
+        },
+      onRequest(security = bearer.apply(validJwt(authContext)), pathParameters = __Aggregate__Id(UUID.randomUUID()))
+        .respondsWith[Error[Unit]](NotFound, description = "__Aggregate__ not found")
+        .assert { ctx =>
+          val response = ctx.performRequest(allRoutes)
+          response.body.title shouldBe Some("__Aggregate__ not found")
         }
     )
   )

@@ -5,5 +5,3 @@ CREATE TABLE __aggregates__ (
   updated_at  TIMESTAMPTZ NOT NULL,
   deleted_at  TIMESTAMPTZ
 );
-
-CREATE INDEX idx___aggregates___deleted_at ON __aggregates__ (deleted_at) WHERE deleted_at IS NOT NULL;

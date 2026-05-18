@@ -65,7 +65,7 @@ The script derives the singular lowercase variant from the aggregate (`Wine` →
 
 What it does:
 
-1. **Sanity checks** — refuses to run if not in a project root (no `build.sbt`), if the package can't be uniquely identified, if the target module directory already exists, or if the templates dir (`scripts/templates/module/`) is missing.
+1. **Sanity checks** — refuses to run if not in a project root (no `build.sbt` / no `src/main/scala/`), if the project package can't be uniquely identified (must be exactly one directory under `src/main/scala/`), if the templates dir (`scripts/templates/module/`) is missing, if the migration dir (`src/main/resources/db/migration/`) is missing, if `ApplicationLoader.scala` is missing or doesn't contain the expected `HealthCheckModule` anchors, or if either target dir (`mainDest`, `testDest`) already exists. All loader-anchor and path checks run **before** any writes, so a failing precondition leaves the working tree untouched.
 2. **Copies the template tree** with placeholder substitution. Files under `scripts/templates/module/main/` go to `src/main/scala/<package>/<aggregate>/`; `test/` goes to `src/test/scala/<package>/<aggregate>/`; `migration/` files become `V<next>__<name>.sql` under `src/main/resources/db/migration/`, where `<next>` is the highest existing `V<N>` plus one.
 3. **Auto-wires** by inserting both `import <package>.<aggregate>.<Aggregate>Module` and `    with <Aggregate>Module` into `ApplicationLoader.scala`, anchored on the `HealthCheckModule` import and `with` clauses (always present in the framework's stock loader). Imports are not sorted alphabetically at insertion — `sbt scalafixAll` (recommended in the next-steps printout) reorders them.
 
@@ -87,7 +87,7 @@ The templates use these placeholders (substituted both in filenames and contents
 - `__aggregate__` → the lowercase singular, derived (`wine`)
 - `__package__` → the auto-detected project package (`madrileno` in the template, your own name after `init-project.scala`)
 
-Order matters: longer placeholders (`__Aggregates__`, `__aggregates__`) are substituted before their shorter prefixes (`__Aggregate__`, `__aggregate__`) so the plural isn't eaten.
+Substitution order is preserved (longer plural forms before shorter singular forms), but with the current placeholders the order is cosmetic — the trailing `__` on each token means `__aggregate__` is not a substring of `__aggregates__`, so neither shadows the other regardless of pass order. The convention is there as a habit if you add overlapping placeholders later.
 
 ### What it doesn't do
 

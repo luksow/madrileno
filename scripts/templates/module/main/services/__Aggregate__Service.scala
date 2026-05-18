@@ -6,6 +6,6 @@ import __package__.__aggregate__.repositories.__Aggregate__Repository
 import __package__.utils.db.transactor.Transactor
 
 class __Aggregate__Service(__aggregate__Repository: __Aggregate__Repository, transactor: Transactor) {
-  def get(id: __Aggregate__Id): IO[__Aggregate__] =
-    transactor.inSession(__aggregate__Repository.get(id))
+  def find(id: __Aggregate__Id): IO[Option[__Aggregate__]] =
+    transactor.inSession(__aggregate__Repository.find(id))
 }

@@ -59,14 +59,32 @@ object ScaffoldModule {
     require(!os.exists(testDest), s"$testDest already exists — refusing to overwrite")
     require(os.exists(migrationDest), s"missing $migrationDest")
 
-    // Next Flyway version — max V<N>__ + 1.
-    val nextVersion = os.list(migrationDest).map(_.last).flatMap { f =>
+    // Preflight the auto-wire anchors before any writes — if `ApplicationLoader.scala`
+    // is missing or has been restructured, we want to abort before stranding generated
+    // files on disk (a half-finished scaffold blocks the next run via the dest-exists
+    // guards above and forces the user to clean up by hand).
+    val loader = mainScalaDir / packageName / "main" / "ApplicationLoader.scala"
+    require(os.exists(loader), s"missing $loader (expected the loader at this path)")
+    val loaderText   = os.read(loader)
+    val importAnchor = s"import $packageName.healthcheck.HealthCheckModule"
+    require(loaderText.contains(importAnchor),
+      s"can't auto-wire: import anchor '$importAnchor' not found in $loader.\n" +
+        s"  Add `import $packageName.$singular.${aggregate}Module` manually.")
+    val withAnchor = "    with HealthCheckModule"
+    require(loaderText.contains(withAnchor),
+      s"can't auto-wire: extends-clause anchor '$withAnchor' not found in $loader.\n" +
+        s"  Add `with ${aggregate}Module` to the extends chain manually.")
+
+    // Next Flyway version — max V<N>__ + 1. Filter to files only so a subdirectory
+    // (Flyway supports a `vendor` subfolder) can't accidentally satisfy the regex.
+    val nextVersion = os.list(migrationDest).filter(os.isFile(_)).map(_.last).flatMap { f =>
       """^V(\d+)__""".r.findFirstMatchIn(f).map(_.group(1).toInt)
     }.maxOption.getOrElse(0) + 1
 
-    // Substitution order matters: longer placeholders before shorter prefixes.
-    // `__Aggregates__` must precede `__Aggregate__`; `__aggregates__` must
-    // precede `__aggregate__`. Package last.
+    // Placeholders are non-overlapping (the trailing `__` on each token means neither
+    // `__aggregate__` nor `__Aggregate__` is a substring of its plural form), so order
+    // is currently cosmetic — but keep longer-before-shorter as a habit for any future
+    // placeholder additions where it might start mattering.
     val subs = List(
       ("__Aggregates__", capitalPlural),
       ("__Aggregate__", aggregate),
@@ -101,22 +119,9 @@ object ScaffoldModule {
     }.toList
 
     // Auto-wire: insert both the `import` line and the `with <Aggregate>Module`
-    // clause anchored on HealthCheckModule (always present in the framework's
-    // stock loader). Insertion isn't alphabetically sorted — scalafmt/scalafix
-    // (which the script's next-step printout recommends) reorder afterwards.
-    // Fail loudly if either anchor is missing rather than silently no-op.
-    val loader = mainScalaDir / packageName / "main" / "ApplicationLoader.scala"
-    require(os.exists(loader), s"missing $loader (expected the loader at this path)")
-    val loaderText = os.read(loader)
-
-    val importAnchor = s"import $packageName.healthcheck.HealthCheckModule"
-    require(loaderText.contains(importAnchor),
-      s"can't auto-wire: import anchor '$importAnchor' not found in $loader.\n" +
-        s"  Add `import $packageName.$singular.${aggregate}Module` manually.")
-    val withAnchor = "    with HealthCheckModule"
-    require(loaderText.contains(withAnchor),
-      s"can't auto-wire: extends-clause anchor '$withAnchor' not found in $loader.\n" +
-        s"  Add `with ${aggregate}Module` to the extends chain manually.")
+    // clause anchored on HealthCheckModule (already validated above). Insertion isn't
+    // alphabetically sorted — scalafix (which the next-step printout recommends)
+    // reorders the imports afterwards.
 
     val newImport     = s"import $packageName.$singular.${aggregate}Module\n"
     val newWith       = s"    with ${aggregate}Module\n"
