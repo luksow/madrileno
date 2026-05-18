@@ -160,6 +160,29 @@ flywayUrl := s"jdbc:postgresql://${sys.env.getOrElse("PG_HOST", "localhost")}:${
 flywayUser := sys.env.getOrElse("PG_USER", "postgres")
 flywayPassword := sys.env.getOrElse("PG_PASSWORD", "postgres")
 
+// dev console — `./scripts/dev-console.scala` boots a scala-cli REPL with the
+// runtime classpath. The classpath is cached at `target/console-classpath` and
+// refreshed as a side-effect of `update` — that's exactly when the resolved
+// jars can change (dep added/removed/version-changed; the project's own classes
+// dir is a stable path so no refresh needed when source recompiles).
+//
+// Has to be implemented without referencing `Runtime / fullClasspath` (which
+// depends on `update`, creating a cycle). Instead we pull the resolved jars
+// out of the `UpdateReport` directly and prepend the project's classes dir.
+update := {
+  val r = update.value
+  val runtimeJars = r.configurations
+    .find(_.configuration.name == "runtime")
+    .toSeq
+    .flatMap(_.modules.flatMap(_.artifacts.map(_._2.getAbsolutePath)))
+  val classDir = (Compile / classDirectory).value.getAbsolutePath
+  val cp       = (classDir +: runtimeJars).mkString(":")
+  val dest     = target.value / "console-classpath"
+  IO.write(dest, cp)
+  streams.value.log.info(s"dev-console classpath cached at $dest")
+  r
+}
+
 // scalafix
 semanticdbEnabled := true
 semanticdbVersion := scalafixSemanticdb.revision

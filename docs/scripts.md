@@ -94,3 +94,46 @@ Substitution order is preserved (longer plural forms before shorter singular for
 - Doesn't generate a service spec. The service is a thin wrapper around the repository in the scaffold; add a spec when there's real service logic.
 - Doesn't enforce ownership / authorization. The generated router takes the `AuthContext` (so the route is gated by the framework's auth gate) but doesn't yet scope queries by `authContext.userId` — that's where you fill in the domain rules.
 - Doesn't run `sbt compile`, `scalafmtAll`, or `scalafixAll`. All three are bundled into one command in the next-steps printout; `scalafixAll` is the one that sorts the auto-wired import in `ApplicationLoader.scala`.
+
+## `dev-console.scala`
+
+Boots a Scala 3 REPL with the project's wire graph live — the `ApplicationLoader` is constructed against the real dev Postgres / sttp HTTP client / scheduler / S3 / event bus, and bound to `app` at the prompt. `run(io)` executes an `IO[A]` synchronously, `db(action)` does the same inside a Skunk session.
+
+```bash
+./scripts/dev-console.scala
+```
+
+A short banner shows what's bound; then it's a normal Scala REPL with full classpath. Example:
+
+```
+scala> db(app.userRepository.find(UserId(UUID.fromString("..."))))
+val res0: Option[User] = Some(User(...))
+```
+
+### How it works
+
+The wrapper depends on a cached classpath at `target/console-classpath`, written by a hook on the `update` task in `build.sbt`. Refresh path:
+
+- Cold sbt start: `update` runs automatically, classpath is written.
+- Deps change: `update` re-resolves, classpath is rewritten.
+- Daily dev (no dep changes): cached classpath stays valid; the wrapper boots without touching sbt.
+
+If the cache is missing, the wrapper prints `run \`sbt update\` first` and exits non-zero.
+
+Boot time: warm `./scripts/dev-console.scala` to REPL prompt is ~5s (scala-cli compile + JVM warmup + `ConsoleApplication.boot()` which allocates the DB pool, HTTP client, scheduler, S3 backend, event bus).
+
+### Why not `sbt console`?
+
+Tried it first. Scala 3's REPL under sbt can't resolve classes in non-`java.base` JDK platform modules (`java.net.http`, `java.sql`, etc.) — sbt wires up the REPL classloader with a parent that doesn't reach the platform classloader. Since the project's sttp4 backend uses `java.net.http.HttpClient`, every interesting REPL command would throw `NoClassDefFoundError`. scala-cli's standalone REPL doesn't have the same problem (it uses dotty's REPL directly with `getPlatformClassLoader()` as the parent — the fix in [dotty #11658](https://github.com/scala/scala3/pull/11658)).
+
+### What it doesn't do
+
+- Doesn't enforce a read-only mode. `db(...)` writes are live against the dev DB. There's no audit log of REPL commands. A prod-safe console (read-only by default, `--prod` flag, audit trail) is a separate effort.
+- Doesn't auto-refresh the classpath. If you bump a dep and don't run any sbt task, the cached classpath is stale; the wrapper happily uses it and you'll get a `ClassNotFoundException` at boot for the new dep. Run `sbt update` to refresh.
+- Doesn't emit OTel traces. `ConsoleApplication` wires noop `Tracer` / `Meter`, so REPL commands don't clutter the dev OTel pipeline.
+
+## File layout
+
+- `init-project.scala` — standalone, no companion files
+- `scaffold-module.scala` + `templates/module/` — generator + templates
+- `dev-console.scala` — wrapper. The REPL predef is embedded as a string inside the wrapper (top of the file), written to a temp file at launch and passed to scala-cli's REPL. One file, at the cost of no syntax highlighting on the predef section in most editors.
