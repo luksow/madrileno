@@ -46,7 +46,7 @@ object PgTransactor {
       .withQueryCacheSize(pgConfig.queryCache)
       .withParseCacheSize(pgConfig.parseCache)
       .withReadTimeout(pgConfig.readTimeout)
-      .withRedactionStrategy(RedactionStrategy.OptIn)
+      .withRedactionStrategy(RedactionStrategy.None)
       .withSocketOptions(Session.DefaultSocketOptions)
       .pooled(pgConfig.max)
     pool.map(sessions => new PgTransactor(sessions))
