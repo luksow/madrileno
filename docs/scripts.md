@@ -112,13 +112,13 @@ val res0: Option[User] = Some(User(...))
 
 ### How it works
 
-The wrapper depends on a cached classpath at `target/console-classpath`, written by a hook on the `update` task in `build.sbt`. Refresh path:
+The wrapper depends on a cached classpath at `target/console-classpath`, written by a hook on the `update` task in `build.sbt`. `update` is the right trigger because the classpath only changes when deps change — the project's own classes dir is a stable path. Refresh path:
 
-- Cold sbt start: `update` runs automatically, classpath is written.
-- Deps change: `update` re-resolves, classpath is rewritten.
+- First run of any sbt task that depends on `update` (e.g. `sbt update`, `sbt compile`, `sbt test`) — `update` resolves the deps and the hook writes the classpath.
+- Deps change in `build.sbt`, then any task that depends on `update` re-runs — classpath is rewritten.
 - Daily dev (no dep changes): cached classpath stays valid; the wrapper boots without touching sbt.
 
-If the cache is missing, the wrapper prints `run \`sbt update\` first` and exits non-zero.
+If the cache is missing (e.g. you've just cloned and never run sbt), the wrapper prints `run \`sbt update\` first` and exits non-zero.
 
 Boot time: warm `./scripts/dev-console.scala` to REPL prompt is ~5s (scala-cli compile + JVM warmup + `ConsoleApplication.boot()` which allocates the DB pool, HTTP client, scheduler, S3 backend, event bus).
 

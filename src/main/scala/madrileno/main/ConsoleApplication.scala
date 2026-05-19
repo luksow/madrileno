@@ -11,15 +11,14 @@ import madrileno.utils.http.RateLimiterRuntime
 import madrileno.utils.observability.TelemetryContext
 import madrileno.utils.storage.{ObjectStoreRuntime, StorageConfig}
 import madrileno.utils.task.{Scheduler, SchedulerConfig}
-import org.typelevel.otel4s.metrics.Meter
-import org.typelevel.otel4s.trace.Tracer
 import pureconfig.ConfigSource
 import sttp.client4.httpclient.fs2.HttpClientFs2Backend
 
-// Boots an `ApplicationLoader` for `sbt console` use. Acquires the same runtime
-// resources as `Main` (real DB pool, sttp HTTP client, scheduler, S3 object store,
-// Postgres event bus) but synchronously via `.allocated.unsafeRunSync()._1`. The
-// resources leak on JVM exit — fine for a console session.
+// Boots an `ApplicationLoader` for the `./scripts/dev-console.scala` REPL.
+// Acquires the same runtime resources as `Main` (real DB pool, sttp HTTP
+// client, scheduler, S3 object store, Postgres event bus) but synchronously
+// via `.allocated.unsafeRunSync()._1`. The resources leak on JVM exit — fine
+// for a console session.
 //
 // OpenTelemetry runs as noop (no traces / metrics emitted) so console queries
 // don't clutter the dev OTel pipeline.

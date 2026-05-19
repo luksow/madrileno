@@ -83,7 +83,7 @@ private val predefSource: String =
   val predefFile = os.temp(predefSource, prefix = "dev-console-predef-", suffix = ".scala")
 
   val rc = os.proc("scala-cli", "repl", "--scala", "3.8.2", "--classpath", cp, predefFile.toString).call(
-    env = sys.env ++ envFromFile,
+    env = envFromFile ++ sys.env,
     stdin = os.Inherit,
     stdout = os.Inherit,
     stderr = os.Inherit,
