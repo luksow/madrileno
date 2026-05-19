@@ -28,7 +28,7 @@ services:
       - "127.0.0.1:58025:8025"  # UI + REST API at http://localhost:58025
 
   openobserve:
-    image: public.ecr.aws/zinclabs/openobserve:latest
+    image: public.ecr.aws/zinclabs/openobserve:v0.90.0
     container_name: madrileno-openobserve
     environment:
       ZO_ROOT_USER_EMAIL: root@example.com

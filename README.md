@@ -30,7 +30,7 @@ That brings up three services on non-standard host ports so they don't clash wit
 |---------------|------------------------------------------------|-------------------------------------------|--------------------------------------|
 | Postgres      | `postgres:latest`                              | `55432` → 5432                            | `postgres` / `postgres`              |
 | Mailpit       | `axllent/mailpit:latest`                       | `51025` (SMTP), `58025` (UI)              | —                                    |
-| OpenObserve   | `public.ecr.aws/zinclabs/openobserve:latest`   | `55080` (UI + OTLP HTTP)                  | `root@example.com` / `Complexpass#123` |
+| OpenObserve   | `public.ecr.aws/zinclabs/openobserve:v0.90.0`  | `55080` (UI + OTLP HTTP)                  | `root@example.com` / `Complexpass#123` |
 
 State persists across restarts in named volumes. To wipe and start clean:
 
