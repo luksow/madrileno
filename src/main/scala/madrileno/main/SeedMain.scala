@@ -22,9 +22,7 @@ object SeedMain extends IOApp.Simple {
     val pgConfig  = config.at("pg").loadOrThrow[PgConfig]
 
     IO.raiseUnless(appConfig.environment == Environment.Dev)(
-      new IllegalStateException(
-        s"SeedMain refuses to run with app.environment=${appConfig.environment}. Dev only."
-      )
+      new IllegalStateException(s"SeedMain refuses to run with app.environment=${appConfig.environment}. Dev only.")
     ).flatMap { _ =>
       PgTransactor.resource(pgConfig).use { transactor =>
         seed(transactor, new UserRepository)
@@ -34,17 +32,17 @@ object SeedMain extends IOApp.Simple {
 
   private def seed(transactor: Transactor, userRepository: UserRepository): IO[Unit] = {
     val demoUser = User(
-      id            = UserId(UUID.fromString("00000000-0000-0000-0000-000000000001")),
-      fullName      = Some(FullName("Demo User")),
-      emailAddress  = Some(EmailAddress("demo@example.com")),
+      id = UserId(UUID.fromString("00000000-0000-0000-0000-000000000001")),
+      fullName = Some(FullName("Demo User")),
+      emailAddress = Some(EmailAddress("demo@example.com")),
       emailVerified = true,
-      avatarUrl     = None,
-      blockedAt     = None
+      avatarUrl = None,
+      blockedAt = None
     )
     transactor.inSession {
       userRepository.find(demoUser.id).flatMap {
         case Some(_) => IO.println(s"demo user ${demoUser.id} already present, skipping")
-        case None    =>
+        case None =>
           userRepository.create(demoUser, Instant.now()).void *>
             IO.println(s"created demo user ${demoUser.id}")
       }
