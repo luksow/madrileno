@@ -1,6 +1,6 @@
 package madrileno.main
 
-import cats.effect.{IO, IOApp}
+import cats.effect.{Clock, IO, IOApp}
 import madrileno.user.domain.*
 import madrileno.user.repositories.UserRepository
 import madrileno.utils.db.transactor.{PgConfig, PgTransactor, Transactor}
@@ -8,7 +8,6 @@ import org.typelevel.otel4s.metrics.Meter
 import org.typelevel.otel4s.trace.Tracer
 import pureconfig.ConfigSource
 
-import java.time.Instant
 import java.util.UUID
 
 object SeedMain extends IOApp.Simple {
@@ -39,13 +38,18 @@ object SeedMain extends IOApp.Simple {
       avatarUrl = None,
       blockedAt = None
     )
-    transactor.inSession {
-      userRepository.find(demoUser.id).flatMap {
-        case Some(_) => IO.println(s"demo user ${demoUser.id} already present, skipping")
-        case None =>
-          userRepository.create(demoUser, Instant.now()).void *>
-            IO.println(s"created demo user ${demoUser.id}")
-      }
-    }
+    for {
+      now <- Clock[IO].realTimeInstant
+      created <- transactor.inSession {
+                   userRepository.find(demoUser.id).flatMap {
+                     case Some(_) => IO.pure(false)
+                     case None    => userRepository.create(demoUser, now).as(true)
+                   }
+                 }
+      _ <- IO.println(
+             if (created) s"created demo user ${demoUser.id}"
+             else s"demo user ${demoUser.id} already present, skipping"
+           )
+    } yield ()
   }
 }
