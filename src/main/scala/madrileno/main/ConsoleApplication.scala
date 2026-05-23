@@ -14,18 +14,7 @@ import madrileno.utils.task.{Scheduler, SchedulerConfig}
 import pureconfig.ConfigSource
 import sttp.client4.httpclient.fs2.HttpClientFs2Backend
 
-// Boots an `ApplicationLoader` for the `./scripts/dev-console.scala` REPL.
-// Acquires the same runtime resources as `Main` (real DB pool, sttp HTTP
-// client, scheduler, S3 object store, Postgres event bus) but synchronously
-// via `.allocated.unsafeRunSync()._1`. The resources leak on JVM exit — fine
-// for a console session.
-//
-// OpenTelemetry runs as noop (no traces / metrics emitted) so console queries
-// don't clutter the dev OTel pipeline.
-//
-// Refuses to start unless `app.environment == Environment.Dev`. A prod-safe
-// console (read-only by default + audit log + explicit confirmation) is a
-// separate effort.
+// Boots an `ApplicationLoader` synchronously for `./scripts/dev-console.scala`. Dev-only.
 object ConsoleApplication {
   def boot(): ApplicationLoader = {
     val config    = ConfigSource.default
@@ -33,8 +22,7 @@ object ConsoleApplication {
 
     require(
       appConfig.environment == Environment.Dev,
-      s"ConsoleApplication refuses to boot with app.environment=${appConfig.environment}. " +
-        "Set APP_ENVIRONMENT=dev. Prod console is a separate v2."
+      s"ConsoleApplication refuses to boot with app.environment=${appConfig.environment}. Set APP_ENVIRONMENT=dev."
     )
 
     import org.typelevel.otel4s.metrics.Meter.Implicits.noop as meterNoop

@@ -122,10 +122,6 @@ If the cache is missing (e.g. you've just cloned and never run sbt), the wrapper
 
 Boot time: warm `./scripts/dev-console.scala` to REPL prompt is ~5s (scala-cli compile + JVM warmup + `ConsoleApplication.boot()` which allocates the DB pool, HTTP client, scheduler, S3 backend, event bus).
 
-### Why not `sbt console`?
-
-Tried it first. Scala 3's REPL under sbt can't resolve classes in non-`java.base` JDK platform modules (`java.net.http`, `java.sql`, etc.) — sbt wires up the REPL classloader with a parent that doesn't reach the platform classloader. Since the project's sttp4 backend uses `java.net.http.HttpClient`, every interesting REPL command would throw `NoClassDefFoundError`. scala-cli's standalone REPL doesn't have the same problem (it uses dotty's REPL directly with `getPlatformClassLoader()` as the parent — the fix in [dotty #11658](https://github.com/scala/scala3/pull/11658)).
-
 ### What it doesn't do
 
 - Doesn't enforce a read-only mode. `db(...)` writes are live against the dev DB. There's no audit log of REPL commands. A prod-safe console (read-only by default, `--prod` flag, audit trail) is a separate effort.

@@ -160,15 +160,8 @@ flywayUrl := s"jdbc:postgresql://${sys.env.getOrElse("PG_HOST", "localhost")}:${
 flywayUser := sys.env.getOrElse("PG_USER", "postgres")
 flywayPassword := sys.env.getOrElse("PG_PASSWORD", "postgres")
 
-// dev console — `./scripts/dev-console.scala` boots a scala-cli REPL with the
-// runtime classpath. The classpath is cached at `target/console-classpath` and
-// refreshed as a side-effect of `update` — that's exactly when the resolved
-// jars can change (dep added/removed/version-changed; the project's own classes
-// dir is a stable path so no refresh needed when source recompiles).
-//
-// Has to be implemented without referencing `Runtime / fullClasspath` (which
-// depends on `update`, creating a cycle). Instead we pull the resolved jars
-// out of the `UpdateReport` directly and prepend the project's classes dir.
+// Cache the runtime classpath for `./scripts/dev-console.scala`. Pulls jars
+// from the `UpdateReport` to avoid the cycle of referencing `fullClasspath`.
 update := {
   val r = update.value
   val runtimeJars = r.configurations
