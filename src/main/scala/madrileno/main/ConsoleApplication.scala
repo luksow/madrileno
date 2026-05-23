@@ -29,50 +29,40 @@ object ConsoleApplication {
     import org.typelevel.otel4s.trace.Tracer.Implicits.noop as tracerNoop
     given TelemetryContext = TelemetryContext(meterNoop, tracerNoop, OpenTelemetry.noop())
 
-    // `Resource.allocated` discards the release action. We collect releases here
-    // and run them in LIFO order via a JVM shutdown hook so connections / threads
-    // shut down cleanly when the REPL exits.
-    var releases: List[IO[Unit]] = Nil
-    def alloc[A](r: Resource[IO, A]): A = {
-      val (value, release) = r.allocated.unsafeRunSync()
-      releases = release :: releases
-      value
-    }
-
-    val httpClient = alloc(HttpClientFs2Backend.resource[IO]())
-
-    val pgConfig   = config.at("pg").loadOrThrow[PgConfig]
-    val transactor = alloc(PgTransactor.resource(pgConfig))
-
+    val pgConfig        = config.at("pg").loadOrThrow[PgConfig]
     val schedulerConfig = config.at("scheduler").loadOrThrow[SchedulerConfig]
-    val scheduler       = Scheduler(transactor, schedulerConfig)
+    val storageConfig   = config.at("storage").loadOrThrow[StorageConfig]
 
-    val cacheRuntime       = CacheRuntime.scaffeine
-    val rateLimiterRuntime = RateLimiterRuntime.scaffeine()
-
-    val storageConfig      = config.at("storage").loadOrThrow[StorageConfig]
-    val objectStoreRuntime = alloc(ObjectStoreRuntime.s3(storageConfig))
-
-    given Supervisor[IO] = alloc(Supervisor[IO])
-    val eventBusRuntime  = EventBusRuntime.postgres(transactor)
-
-    val _ = sys.addShutdownHook {
-      releases.foreach { r =>
-        try r.unsafeRunSync()
-        catch { case _: Throwable => () }
-      }
+    val program: Resource[IO, ApplicationLoader] = for {
+      httpClient           <- HttpClientFs2Backend.resource[IO]()
+      transactor           <- PgTransactor.resource(pgConfig)
+      objectStoreRuntime   <- ObjectStoreRuntime.s3(storageConfig)
+      given Supervisor[IO] <- Supervisor[IO]
+    } yield {
+      val scheduler          = Scheduler(transactor, schedulerConfig)
+      val cacheRuntime       = CacheRuntime.scaffeine
+      val rateLimiterRuntime = RateLimiterRuntime.scaffeine()
+      val eventBusRuntime    = EventBusRuntime.postgres(transactor)
+      ApplicationLoader(
+        config,
+        httpClient,
+        transactor,
+        Clock[IO],
+        scheduler.client,
+        cacheRuntime,
+        rateLimiterRuntime,
+        objectStoreRuntime,
+        eventBusRuntime
+      )
     }
 
-    ApplicationLoader(
-      config,
-      httpClient,
-      transactor,
-      Clock[IO],
-      scheduler.client,
-      cacheRuntime,
-      rateLimiterRuntime,
-      objectStoreRuntime,
-      eventBusRuntime
-    )
+    // Single allocation, single release. Shutdown hook runs the release on JVM exit
+    // so connections / supervisors close cleanly.
+    val (app, release) = program.allocated.unsafeRunSync()
+    val _ = sys.addShutdownHook {
+      try release.unsafeRunSync()
+      catch { case _: Throwable => () }
+    }
+    app
   }
 }
