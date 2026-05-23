@@ -160,6 +160,22 @@ flywayUrl := s"jdbc:postgresql://${sys.env.getOrElse("PG_HOST", "localhost")}:${
 flywayUser := sys.env.getOrElse("PG_USER", "postgres")
 flywayPassword := sys.env.getOrElse("PG_PASSWORD", "postgres")
 
+// Cache runtime classpath for `./scripts/dev-console.scala`.
+Compile / compile := {
+  val r = (Compile / compile).value
+  val runtimeJars = update.value.configurations
+    .find(_.configuration.name == "runtime")
+    .toSeq
+    .flatMap(_.modules.flatMap(_.artifacts.map(_._2.getAbsolutePath)))
+  val classDir    = (Compile / classDirectory).value.getAbsolutePath
+  val resourceDir = (Compile / resourceDirectory).value.getAbsolutePath
+  val cp          = (classDir +: resourceDir +: runtimeJars).mkString(":")
+  val dest        = target.value / "console-classpath"
+  IO.write(dest, cp)
+  streams.value.log.info(s"dev-console classpath cached at $dest")
+  r
+}
+
 // scalafix
 semanticdbEnabled := true
 semanticdbVersion := scalafixSemanticdb.revision

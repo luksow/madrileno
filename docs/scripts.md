@@ -94,3 +94,48 @@ Substitution order is preserved (longer plural forms before shorter singular for
 - Doesn't generate a service spec. The service is a thin wrapper around the repository in the scaffold; add a spec when there's real service logic.
 - Doesn't enforce ownership / authorization. The generated router takes the `AuthContext` (so the route is gated by the framework's auth gate) but doesn't yet scope queries by `authContext.userId` — that's where you fill in the domain rules.
 - Doesn't run `sbt compile`, `scalafmtAll`, or `scalafixAll`. All three are bundled into one command in the next-steps printout; `scalafixAll` is the one that sorts the auto-wired import in `ApplicationLoader.scala`.
+
+## `dev-console.scala`
+
+Boots a Scala 3 REPL with the project's wire graph live — the `ApplicationLoader` is constructed against the real dev Postgres / sttp HTTP client / scheduler / S3 / event bus, and bound to `app` at the prompt. `run(io)` executes an `IO[A]` synchronously, `db(action)` does the same inside a Skunk session.
+
+```bash
+./scripts/dev-console.scala
+```
+
+The first `app` reference at the prompt boots the application (scala-cli REPL initialises top-level vals lazily). The banner fires then. Subsequent references are free. Example:
+
+```
+scala> db(app.userRepository.find(UserId(UUID.fromString("..."))))
+madrileno dev console — env=Dev
+  app        the ApplicationLoader (transactor, repositories, services)
+  run(io)    execute an IO[A] and return A
+  db(action) execute a DB[A] inside a session
+val res0: Option[User] = Some(User(...))
+```
+
+### How it works
+
+The wrapper depends on a cached classpath at `target/console-classpath`, written by a hook on the `Compile / compile` task in `build.sbt`. Compile is the right trigger because the cached classpath includes `target/scala-3.8.2/classes` — the project's own compiled output — so the file is only useful after a successful compile.
+
+- Fresh clone: run `sbt compile` once. Resolves deps, compiles project, writes the cache.
+- Source change: next `sbt compile` (including via `~reStart` / `~test`) refreshes the cache.
+- Deps change in `build.sbt`: same — next `sbt compile` resolves new deps and rewrites the cache.
+- Daily dev: nothing extra needed; the file stays valid as long as compile is current.
+
+If the cache is missing, the wrapper prints `run \`sbt compile\` first` and exits non-zero.
+
+Boot time: `./scripts/dev-console.scala` returns a REPL prompt in ~5s (scala-cli compile + JVM warmup). The actual `ConsoleApplication.boot()` (DB pool, HTTP client, scheduler, S3 backend, event bus) only runs on first `app` reference and adds ~3-5s to that first call.
+
+### What it doesn't do
+
+- Doesn't enforce a read-only mode. `db(...)` writes are live against the dev DB. There's no audit log of REPL commands. A prod-safe console (read-only by default, `--prod` flag, audit trail) is a separate effort.
+- Doesn't auto-refresh the classpath. If you bump a dep and don't recompile, the cached classpath is stale; the wrapper happily uses it and you'll get a `ClassNotFoundException` at boot for the new dep. Run `sbt compile` to refresh.
+- Doesn't emit OTel traces. `ConsoleApplication` wires noop `Tracer` / `Meter`, so REPL commands don't clutter the dev OTel pipeline.
+- Doesn't emit app logs. scala-cli's REPL launcher bundles `slf4j-api 1.7.x`, which loads ahead of the project's `2.0.x` and finds no matching binder (logback 1.5 ships the 2.x SPI). The `SLF4J: Defaulting to no-operation` warning at startup is the visible side; the practical effect is that logback-routed logs from your code are silently dropped in the REPL. For "what did this service do?" debugging, wrap calls in `run(...)` and inspect the return value directly.
+
+## File layout
+
+- `init-project.scala` — standalone, no companion files
+- `scaffold-module.scala` + `templates/module/` — generator + templates
+- `dev-console.scala` — wrapper. The REPL predef is embedded as a string inside the wrapper (top of the file), written to a temp file at launch and passed to scala-cli's REPL. One file, at the cost of no syntax highlighting on the predef section in most editors.
