@@ -2,7 +2,7 @@ package madrileno.main
 
 import cats.effect.std.Supervisor
 import cats.effect.unsafe.implicits.global
-import cats.effect.{Clock, IO}
+import cats.effect.{Clock, IO, Resource}
 import io.opentelemetry.api.OpenTelemetry
 import madrileno.utils.cache.CacheRuntime
 import madrileno.utils.db.transactor.{PgConfig, PgTransactor}
@@ -29,10 +29,20 @@ object ConsoleApplication {
     import org.typelevel.otel4s.trace.Tracer.Implicits.noop as tracerNoop
     given TelemetryContext = TelemetryContext(meterNoop, tracerNoop, OpenTelemetry.noop())
 
-    val httpClient = HttpClientFs2Backend.resource[IO]().allocated.unsafeRunSync()._1
+    // `Resource.allocated` discards the release action. We collect releases here
+    // and run them in LIFO order via a JVM shutdown hook so connections / threads
+    // shut down cleanly when the REPL exits.
+    var releases: List[IO[Unit]] = Nil
+    def alloc[A](r: Resource[IO, A]): A = {
+      val (value, release) = r.allocated.unsafeRunSync()
+      releases = release :: releases
+      value
+    }
+
+    val httpClient = alloc(HttpClientFs2Backend.resource[IO]())
 
     val pgConfig   = config.at("pg").loadOrThrow[PgConfig]
-    val transactor = PgTransactor.resource(pgConfig).allocated.unsafeRunSync()._1
+    val transactor = alloc(PgTransactor.resource(pgConfig))
 
     val schedulerConfig = config.at("scheduler").loadOrThrow[SchedulerConfig]
     val scheduler       = Scheduler(transactor, schedulerConfig)
@@ -41,10 +51,17 @@ object ConsoleApplication {
     val rateLimiterRuntime = RateLimiterRuntime.scaffeine()
 
     val storageConfig      = config.at("storage").loadOrThrow[StorageConfig]
-    val objectStoreRuntime = ObjectStoreRuntime.s3(storageConfig).allocated.unsafeRunSync()._1
+    val objectStoreRuntime = alloc(ObjectStoreRuntime.s3(storageConfig))
 
-    given Supervisor[IO] = Supervisor[IO].allocated.unsafeRunSync()._1
+    given Supervisor[IO] = alloc(Supervisor[IO])
     val eventBusRuntime  = EventBusRuntime.postgres(transactor)
+
+    val _ = sys.addShutdownHook {
+      releases.foreach { r =>
+        try r.unsafeRunSync()
+        catch { case _: Throwable => () }
+      }
+    }
 
     ApplicationLoader(
       config,
