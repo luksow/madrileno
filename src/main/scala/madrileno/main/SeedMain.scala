@@ -12,7 +12,7 @@ import java.util.UUID
 
 object SeedMain extends IOApp.Simple {
 
-  def run: IO[Unit] = {
+  override def run: IO[Unit] = {
     given Meter[IO]  = Meter.Implicits.noop
     given Tracer[IO] = Tracer.Implicits.noop
 
@@ -40,8 +40,8 @@ object SeedMain extends IOApp.Simple {
     )
     for {
       now <- Clock[IO].realTimeInstant
-      created <- transactor.inSession {
-                   userRepository.find(demoUser.id).flatMap {
+      created <- transactor.inTransaction {
+                   userRepository.findIncludingDeleted(demoUser.id).flatMap {
                      case Some(_) => IO.pure(false)
                      case None    => userRepository.create(demoUser, now).as(true)
                    }
