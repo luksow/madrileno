@@ -37,7 +37,7 @@ private val predefSource: String =
     s"$root doesn't look like the project root (no build.sbt)")
   if (!os.exists(classpathFile)) {
     Console.err.println(s"missing $classpathFile")
-    Console.err.println("run `sbt update` first — that hook writes the cached classpath.")
+    Console.err.println("run `sbt compile` first — that hook writes the cached classpath (and ensures project classes exist).")
     sys.exit(1)
   }
 

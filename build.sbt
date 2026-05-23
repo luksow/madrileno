@@ -160,11 +160,14 @@ flywayUrl := s"jdbc:postgresql://${sys.env.getOrElse("PG_HOST", "localhost")}:${
 flywayUser := sys.env.getOrElse("PG_USER", "postgres")
 flywayPassword := sys.env.getOrElse("PG_PASSWORD", "postgres")
 
-// Cache the runtime classpath for `./scripts/dev-console.scala`. Pulls jars
-// from the `UpdateReport` to avoid the cycle of referencing `fullClasspath`.
-update := {
-  val r = update.value
-  val runtimeJars = r.configurations
+// Cache the runtime classpath for `./scripts/dev-console.scala`. Hook on
+// `Compile / compile` so the cache is written only after project classes
+// exist on disk (the classpath includes `target/scala-3.8.2/classes`).
+// Jars come from `UpdateReport` to avoid referencing `fullClasspath` here
+// (would cycle).
+Compile / compile := {
+  val r = (Compile / compile).value
+  val runtimeJars = update.value.configurations
     .find(_.configuration.name == "runtime")
     .toSeq
     .flatMap(_.modules.flatMap(_.artifacts.map(_._2.getAbsolutePath)))

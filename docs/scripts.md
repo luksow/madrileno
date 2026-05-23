@@ -103,24 +103,29 @@ Boots a Scala 3 REPL with the project's wire graph live — the `ApplicationLoad
 ./scripts/dev-console.scala
 ```
 
-A short banner shows what's bound; then it's a normal Scala REPL with full classpath. Example:
+The first `app` reference at the prompt boots the application (scala-cli REPL initialises top-level vals lazily). The banner fires then. Subsequent references are free. Example:
 
 ```
 scala> db(app.userRepository.find(UserId(UUID.fromString("..."))))
+madrileno dev console — env=Dev
+  app        the ApplicationLoader (transactor, repositories, services)
+  run(io)    execute an IO[A] and return A
+  db(action) execute a DB[A] inside a session
 val res0: Option[User] = Some(User(...))
 ```
 
 ### How it works
 
-The wrapper depends on a cached classpath at `target/console-classpath`, written by a hook on the `update` task in `build.sbt`. `update` is the right trigger because the classpath only changes when deps change — the project's own classes dir is a stable path. Refresh path:
+The wrapper depends on a cached classpath at `target/console-classpath`, written by a hook on the `Compile / compile` task in `build.sbt`. Compile is the right trigger because the cached classpath includes `target/scala-3.8.2/classes` — the project's own compiled output — so the file is only useful after a successful compile.
 
-- First run of any sbt task that depends on `update` (e.g. `sbt update`, `sbt compile`, `sbt test`) — `update` resolves the deps and the hook writes the classpath.
-- Deps change in `build.sbt`, then any task that depends on `update` re-runs — classpath is rewritten.
-- Daily dev (no dep changes): cached classpath stays valid; the wrapper boots without touching sbt.
+- Fresh clone: run `sbt compile` once. Resolves deps, compiles project, writes the cache.
+- Source change: next `sbt compile` (including via `~reStart` / `~test`) refreshes the cache.
+- Deps change in `build.sbt`: same — next `sbt compile` resolves new deps and rewrites the cache.
+- Daily dev: nothing extra needed; the file stays valid as long as compile is current.
 
-If the cache is missing (e.g. you've just cloned and never run sbt), the wrapper prints `run \`sbt update\` first` and exits non-zero.
+If the cache is missing, the wrapper prints `run \`sbt compile\` first` and exits non-zero.
 
-Boot time: warm `./scripts/dev-console.scala` to REPL prompt is ~5s (scala-cli compile + JVM warmup + `ConsoleApplication.boot()` which allocates the DB pool, HTTP client, scheduler, S3 backend, event bus).
+Boot time: `./scripts/dev-console.scala` returns a REPL prompt in ~5s (scala-cli compile + JVM warmup). The actual `ConsoleApplication.boot()` (DB pool, HTTP client, scheduler, S3 backend, event bus) only runs on first `app` reference and adds ~3-5s to that first call.
 
 ### What it doesn't do
 
