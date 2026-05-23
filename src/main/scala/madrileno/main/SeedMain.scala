@@ -17,17 +17,17 @@ object SeedMain extends IOApp.Simple {
     given Meter[IO]  = Meter.Implicits.noop
     given Tracer[IO] = Tracer.Implicits.noop
 
-    val config    = ConfigSource.default
-    val appConfig = config.at("app").loadOrThrow[AppConfig]
-    val pgConfig  = config.at("pg").loadOrThrow[PgConfig]
-
-    IO.raiseUnless(appConfig.environment == Environment.Dev)(
-      new IllegalStateException(s"SeedMain refuses to run with app.environment=${appConfig.environment}. Dev only.")
-    ).flatMap { _ =>
-      PgTransactor.resource(pgConfig).use { transactor =>
-        seed(transactor, new UserRepository)
-      }
-    }
+    for {
+      config    <- IO.delay(ConfigSource.default)
+      appConfig <- IO.delay(config.at("app").loadOrThrow[AppConfig])
+      pgConfig  <- IO.delay(config.at("pg").loadOrThrow[PgConfig])
+      _ <- IO.raiseUnless(appConfig.environment == Environment.Dev)(
+             new IllegalStateException(s"SeedMain refuses to run with app.environment=${appConfig.environment}. Dev only.")
+           )
+      _ <- PgTransactor.resource(pgConfig).use { transactor =>
+             seed(transactor, new UserRepository)
+           }
+    } yield ()
   }
 
   private def seed(transactor: Transactor, userRepository: UserRepository): IO[Unit] = {
