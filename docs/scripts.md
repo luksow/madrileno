@@ -132,6 +132,7 @@ Boot time: `./scripts/dev-console.scala` returns a REPL prompt in ~5s (scala-cli
 - Doesn't enforce a read-only mode. `db(...)` writes are live against the dev DB. There's no audit log of REPL commands. A prod-safe console (read-only by default, `--prod` flag, audit trail) is a separate effort.
 - Doesn't auto-refresh the classpath. If you bump a dep and don't recompile, the cached classpath is stale; the wrapper happily uses it and you'll get a `ClassNotFoundException` at boot for the new dep. Run `sbt compile` to refresh.
 - Doesn't emit OTel traces. `ConsoleApplication` wires noop `Tracer` / `Meter`, so REPL commands don't clutter the dev OTel pipeline.
+- Doesn't emit app logs. scala-cli's REPL launcher bundles `slf4j-api 1.7.x`, which loads ahead of the project's `2.0.x` and finds no matching binder (logback 1.5 ships the 2.x SPI). The `SLF4J: Defaulting to no-operation` warning at startup is the visible side; the practical effect is that logback-routed logs from your code are silently dropped in the REPL. For "what did this service do?" debugging, wrap calls in `run(...)` and inspect the return value directly.
 
 ## File layout
 
