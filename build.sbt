@@ -167,9 +167,10 @@ Compile / compile := {
     .find(_.configuration.name == "runtime")
     .toSeq
     .flatMap(_.modules.flatMap(_.artifacts.map(_._2.getAbsolutePath)))
-  val classDir = (Compile / classDirectory).value.getAbsolutePath
-  val cp       = (classDir +: runtimeJars).mkString(":")
-  val dest     = target.value / "console-classpath"
+  val classDir    = (Compile / classDirectory).value.getAbsolutePath
+  val resourceDir = (Compile / resourceDirectory).value.getAbsolutePath
+  val cp          = (classDir +: resourceDir +: runtimeJars).mkString(":")
+  val dest        = target.value / "console-classpath"
   IO.write(dest, cp)
   streams.value.log.info(s"dev-console classpath cached at $dest")
   r

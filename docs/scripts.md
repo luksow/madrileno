@@ -130,7 +130,7 @@ Boot time: `./scripts/dev-console.scala` returns a REPL prompt in ~5s (scala-cli
 ### What it doesn't do
 
 - Doesn't enforce a read-only mode. `db(...)` writes are live against the dev DB. There's no audit log of REPL commands. A prod-safe console (read-only by default, `--prod` flag, audit trail) is a separate effort.
-- Doesn't auto-refresh the classpath. If you bump a dep and don't run any sbt task, the cached classpath is stale; the wrapper happily uses it and you'll get a `ClassNotFoundException` at boot for the new dep. Run `sbt update` to refresh.
+- Doesn't auto-refresh the classpath. If you bump a dep and don't recompile, the cached classpath is stale; the wrapper happily uses it and you'll get a `ClassNotFoundException` at boot for the new dep. Run `sbt compile` to refresh.
 - Doesn't emit OTel traces. `ConsoleApplication` wires noop `Tracer` / `Meter`, so REPL commands don't clutter the dev OTel pipeline.
 
 ## File layout
