@@ -115,6 +115,14 @@ The `flyway-sbt` tasks are also there for inspection / cleanup:
 
 There's a `flywayMigrate` too, but it evaluates `sys.env` at build-load time — *before* sbt-dotenv injects `.env` — so it only sees `PG_*` if your shell already has them. Use `runMain madrileno.main.MigrateMain` unless you have a reason not to.
 
+Seed dev data:
+
+```
+> runMain madrileno.main.SeedMain
+```
+
+`SeedMain` is an `IOApp` mirroring `MigrateMain`'s shape. Refuses to run unless `app.environment == Environment.Dev`. The seed body is at the bottom of `SeedMain.scala` — idempotent (find-or-create on stable UUIDs). Edit it to add your own records.
+
 Run a migration after:
 - Adding a migration under `src/main/resources/db/migration/`.
 - `docker compose down -v` (which wipes the volume).
