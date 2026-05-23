@@ -47,17 +47,22 @@ cp .env.sample .env
 
 The sample is wired against the docker-compose ports above — including a working `Authorization` header for OpenObserve so OTLP traces show up in the UI immediately.
 
-> **Required before step 4:** `FIREBASE_KEY` ships as `'{}'` in the sample, which **will crash the app on startup** (`Failed to initialize Firebase`). Replace it with a real Firebase service-account JSON (single line, escaped) for the project you're developing against. Tests don't need this; only the running app does.
-
-`JWT_SECRET` is fine as-is for local dev — change it when you don't want strangers to be able to forge tokens.
+`JWT_SECRET` is fine as-is for local dev — change it when you don't want strangers to be able to forge tokens. External auth providers (`FIREBASE_PROJECT_ID`, `OIDC_*`) ship empty; the app boots fine without them and the dev login (`POST /v1/auth/dev`) is enabled by default via `DEV_AUTH_ENABLED=true`.
 
 ### 3. Apply database migrations
 
+Two ways:
+
 ```bash
+sbt "runMain madrileno.main.MigrateMain"   # recommended
 sbt flywayMigrate
 ```
 
-Run this every time you add a migration under `src/main/resources/db/migration/`.
+`runMain madrileno.main.MigrateMain` is the app's own `IOApp` — same as `bin/migrate-main` in the Docker image — so it reads `application.conf` with `.env` injected by sbt-dotenv. Works out of the box on the default `.env`.
+
+`sbt flywayMigrate` is the sbt-flyway plugin task. It evaluates `sys.env` at build-load time — *before* sbt-dotenv injects `.env` — so it only works if your shell already has `PG_HOST` / `PG_PORT` / `PG_DATABASE` / `PG_USER` / `PG_PASSWORD` exported. The other plugin tasks (`flywayInfo` / `flywayValidate` / `flywayClean`) have the same constraint but are handy for inspection regardless.
+
+Run a migration every time you add one under `src/main/resources/db/migration/`.
 
 ### 4. Run the app
 
