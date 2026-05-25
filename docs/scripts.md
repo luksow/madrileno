@@ -25,8 +25,8 @@ What it does, in order:
    - Renames standalone `madrileno` to `<project-name>` (HOCON `app.name`, container names, `OTEL_SERVICE_NAME`, `PG_DATABASE`, `MAILER_FROM_ADDRESS`, README/doc references, etc.).
    - **Skips `docs/mcp.md`** — that file documents the MCP system itself; its `madrileno_*` tool names, the upstream repo URL, and the upstream path examples are intentional and must not be renamed.
 4. **Renames the source directories** — `src/{main,test}/scala/madrileno/` → `src/{main,test}/scala/<package>/`.
-5. **Writes `.madrileno-ref`** with the upstream URL + the sha resolved at step 1. The MCP server reads this to anchor every tool call to a specific upstream commit. Commit it — your collaborators (and Claude) benefit from a shared pin.
-6. **Adds `.madrileno-mcp/` to `.gitignore`** — that's where the MCP server keeps its shadow clone of the upstream repo.
+5. **Writes `.madrileno-ref`** with the upstream URL (derived from `git remote get-url origin`, falling back to the canonical madrileno URL) + the sha resolved at step 1. The MCP server reads this to anchor every tool call to a specific upstream commit. Commit it — your collaborators (and Claude) benefit from a shared pin.
+6. **Updates `.gitignore`** — whitelists `.madrileno-ref` (the template's blanket `.*` rule would otherwise hide it) and adds `.madrileno-mcp/` (the shadow clone the MCP server keeps for serving docs/source).
 7. **Deletes `docs/`** unless `--keep-docs`. The MCP server serves docs on demand from the pinned ref; most projects don't need them in-tree.
 8. **Rewrites `docs/<X>.md` link targets** across every `*.md` in the project root to point at upstream at the pinned sha (e.g. README's reference-section links become `https://github.com/luksow/madrileno/blob/<sha>/docs/<X>.md`). Only runs when docs were deleted, so the links stay clickable. Under `--keep-docs` the links stay local.
 

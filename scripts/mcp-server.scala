@@ -25,10 +25,13 @@ object MCPServer {
 
   // -- shadow clone management ------------------------------------------------
 
-  def projectRoot: os.Path = os.pwd
-  def shadowDir: os.Path   = projectRoot / ".madrileno-mcp" / "repo"
+  val projectRoot: os.Path = os.pwd
+  val shadowDir: os.Path   = projectRoot / ".madrileno-mcp" / "repo"
 
-  def readRef(): Either[String, MadrilenoRef] = {
+  // Read .madrileno-ref once on first access. The MCP's whole guarantee is "anchored to a specific
+  // sha"; re-reading at every tool call would let runtime edits to .madrileno-ref drift the anchor
+  // to a sha the shadow clone never fetched (since ensureShadow runs only at startup).
+  lazy val readRef: Either[String, MadrilenoRef] = {
     val refFile = projectRoot / ".madrileno-ref"
     if (!os.exists(refFile))
       Left(s"missing $refFile — run `./scripts/init-project.scala` to generate it, or write it by hand")
@@ -64,18 +67,42 @@ object MCPServer {
       }
   }
 
-  def ensureShadow(ref: MadrilenoRef): Either[String, Unit] = Try {
-    if (!os.exists(shadowDir)) {
-      Console.err.println(s"[mcp] cloning ${ref.repo} -> $shadowDir (one-time, ~50MB)")
-      os.makeDir.all(shadowDir / os.up)
-      os.proc("git", "clone", ref.repo, shadowDir.toString).call()
-    } else {
-      Console.err.println(s"[mcp] fetching latest in $shadowDir")
-      os.proc("git", "-C", shadowDir.toString, "fetch", "origin").call(check = false)
+  // Belt-and-braces against a `.madrileno-ref` whose `repo=` line is hand-edited to something
+  // starting with `-` — git clone would interpret it as an option, since `clone` doesn't accept
+  // `--` to disambiguate the URL. Local-path and standard-scheme URLs are both fine.
+  private def validateRepoUrl(repo: String): Either[String, Unit] =
+    if (repo.nonEmpty && !repo.startsWith("-")) Right(())
+    else Left(s"`.madrileno-ref` repo URL is empty or starts with '-': '$repo'")
+
+  // Tool inputs are AI-supplied; restrict to characters that compose into safe git paths.
+  // Module/doc names are simple identifiers; refs may include `/`, `.`, `@`, `^`, `~` for branches/tags.
+  private val ValidNamePattern = """[A-Za-z0-9_-]+""".r
+  private val ValidRefPattern  = """[a-zA-Z0-9_./@^~-]+""".r
+  private def validateName(name: String): Either[String, Unit] =
+    if (ValidNamePattern.matches(name)) Right(()) else Left(s"name must match [A-Za-z0-9_-]+; got '$name'")
+  private def validateRef(ref: String): Either[String, Unit] =
+    if (ValidRefPattern.matches(ref)) Right(()) else Left(s"ref must match [a-zA-Z0-9_./@^~-]+; got '$ref'")
+
+  def ensureShadow(ref: MadrilenoRef): Either[String, Unit] = {
+    validateRepoUrl(ref.repo).flatMap { _ =>
+      Try {
+        if (!os.exists(shadowDir)) {
+          Console.err.println(s"[mcp] cloning ${ref.repo} -> $shadowDir (one-time, ~50MB)")
+          os.makeDir.all(shadowDir / os.up)
+          os.proc("git", "clone", ref.repo, shadowDir.toString).call()
+        } else if (!os.exists(shadowDir / ".git")) {
+          throw new IllegalStateException(s"$shadowDir exists but is not a git repo. Remove it and re-run.")
+        } else {
+          Console.err.println(s"[mcp] fetching latest in $shadowDir")
+          val r = os.proc("git", "-C", shadowDir.toString, "fetch", "origin").call(check = false)
+          if (r.exitCode != 0)
+            Console.err.println(s"[mcp] warning: `git fetch origin` failed (exit ${r.exitCode}); madrileno_changes will compare against the cached origin/main: ${r.err.text().trim}")
+        }
+      } match {
+        case Success(_) => Right(())
+        case Failure(e) => Left(s"shadow clone failed: ${e.getMessage}")
+      }
     }
-  } match {
-    case Success(_) => Right(())
-    case Failure(e) => Left(s"shadow clone failed: ${e.getMessage}")
   }
 
   // -- git plumbing -----------------------------------------------------------
@@ -87,17 +114,24 @@ object MCPServer {
   }
 
   def gitListTree(ref: String, path: String): Either[String, List[String]] = {
-    val r = os.proc("git", "-C", shadowDir.toString, "ls-tree", "-r", "--name-only", ref, path).call(check = false)
+    // `--` separator: ref is a sha (no leading `-`) but path can come from a tool input
+    // (`madrileno_module(name)` → `src/main/scala/madrileno/<name>`), so guard against a
+    // path that starts with `-` being parsed as an ls-tree option.
+    val r = os.proc("git", "-C", shadowDir.toString, "ls-tree", "-r", "--name-only", ref, "--", path).call(check = false)
     if (r.exitCode == 0) Right(r.out.text().linesIterator.toList.filter(_.nonEmpty))
     else Left(s"git ls-tree $ref:$path failed: ${r.err.text().trim}")
   }
 
   def gitLog(since: String, target: String, paths: List[String]): Either[String, List[String]] = {
-    val base = Seq("git", "-C", shadowDir.toString, "log", "--oneline", "--no-decorate", s"$since..$target")
-    val args = if (paths.nonEmpty) base ++ Seq("--") ++ paths else base
-    val r    = os.proc(args).call(check = false)
-    if (r.exitCode == 0) Right(r.out.text().linesIterator.toList.filter(_.nonEmpty))
-    else Left(s"git log $since..$target failed: ${r.err.text().trim}")
+    for {
+      _    <- validateRef(since)
+      _    <- validateRef(target)
+      base  = Seq("git", "-C", shadowDir.toString, "log", "--oneline", "--no-decorate", s"$since..$target")
+      args  = if (paths.nonEmpty) base ++ Seq("--") ++ paths else base
+      r     = os.proc(args).call(check = false)
+      logs <- if (r.exitCode == 0) Right(r.out.text().linesIterator.toList.filter(_.nonEmpty))
+              else Left(s"git log $since..$target failed: ${r.err.text().trim}")
+    } yield logs
   }
 
   // -- source rewriting -------------------------------------------------------
@@ -114,7 +148,7 @@ object MCPServer {
 
   def overview(): Either[String, String] = {
     for {
-      ref     <- readRef()
+      ref     <- readRef
       modules <- gitListTree(ref.ref, "src/main/scala/madrileno").map(_.flatMap(extractModule).distinct.sorted)
       docs    <- gitListTree(ref.ref, "docs").map(_.filter(_.endsWith(".md")).map(_.stripPrefix("docs/").stripSuffix(".md")).sorted)
       scripts <- gitListTree(ref.ref, "scripts").map(
@@ -184,9 +218,12 @@ object MCPServer {
 
   def module(name: String): Either[String, String] = {
     for {
-      ref        <- readRef()
+      _          <- validateName(name)
+      ref        <- readRef
       mainPaths  <- gitListTree(ref.ref, s"src/main/scala/madrileno/$name").map(_.filter(_.endsWith(".scala")))
-      testPaths  <- gitListTree(ref.ref, s"src/test/scala/madrileno/$name").map(_.filter(_.endsWith(".scala"))).orElse(Right(Nil))
+      // git ls-tree returns 0 with empty output when the path doesn't exist (e.g. a module without
+      // tests), so an empty list here is "no test dir, fine" — non-zero exits are real errors and propagate.
+      testPaths  <- gitListTree(ref.ref, s"src/test/scala/madrileno/$name").map(_.filter(_.endsWith(".scala")))
       allPaths    = mainPaths ++ testPaths
       _          <- if (allPaths.isEmpty) Left(s"no files under src/{main,test}/scala/madrileno/$name at ref ${ref.ref.take(10)}") else Right(())
       contents   <- allPaths.foldLeft(Right(List.empty[(String, String)]): Either[String, List[(String, String)]]) { (acc, p) =>
@@ -209,26 +246,27 @@ object MCPServer {
 
   def doc(name: String): Either[String, String] = {
     for {
-      ref     <- readRef()
+      _       <- validateName(name)
+      ref     <- readRef
       content <- gitShow(ref.ref, s"docs/$name.md")
     } yield content
   }
 
   def source(path: String): Either[String, String] = {
     for {
-      ref     <- readRef()
+      ref     <- readRef
       content <- gitShow(ref.ref, path)
     } yield rewritePackage(content, projectPackage())
   }
 
   def changes(since: Option[String], paths: Option[List[String]], target: Option[String]): Either[String, String] = {
     for {
-      ref       <- readRef()
+      ref       <- readRef
       sinceRef   = since.getOrElse(ref.ref)
       targetRef  = target.getOrElse("origin/main")
       logs      <- gitLog(sinceRef, targetRef, paths.getOrElse(Nil))
     } yield {
-      if (logs.isEmpty) s"no commits in $sinceRef..$targetRef${paths.map(p => s" for paths ${p.mkString(", ")}").getOrElse("")}"
+      if (logs.isEmpty) s"no commits in $sinceRef..$targetRef${paths.filter(_.nonEmpty).map(p => s" for paths ${p.mkString(", ")}").getOrElse("")}"
       else s"$sinceRef..$targetRef (${logs.size} commit${if (logs.size == 1) "" else "s"}):\n\n" + logs.mkString("\n")
     }
   }
@@ -261,7 +299,7 @@ object MCPServer {
     .handle(i => changes(i.since, i.paths, i.target))
 
   @main def serve(): Unit = {
-    val ref = readRef() match {
+    val ref = readRef match {
       case Right(r) => r
       case Left(e)  => Console.err.println(s"[mcp] $e"); sys.exit(1)
     }
@@ -277,6 +315,8 @@ object MCPServer {
       List("mcp")
     )
 
-    NettySyncServer().port(8080).addEndpoint(mcpServerEndpoint).startAndWait()
+    // Bind to localhost explicitly — there's no auth, so binding to 0.0.0.0 would expose the
+    // MCP endpoints on the LAN. Loopback only; users wanting LAN access can edit this.
+    NettySyncServer().host("127.0.0.1").port(8080).addEndpoint(mcpServerEndpoint).startAndWait()
   }
 }

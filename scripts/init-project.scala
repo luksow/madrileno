@@ -55,9 +55,9 @@ object InitProject {
     require(os.exists(root / "src" / "main" / "scala" / "madrileno"),
       "no src/main/scala/madrileno tree found — already renamed?")
 
-    // Read the upstream sha before doing any destructive work. The MCP server hard-requires
-    // `.madrileno-ref` to point at a real commit; if we can't resolve one here (e.g. this isn't
-    // a git checkout), fail now rather than mid-init or much later at MCP startup.
+    // Read the upstream sha + the local clone's `origin` URL before doing any destructive work.
+    // The MCP server hard-requires `.madrileno-ref` to point at a real commit reachable from
+    // some git remote; if we can't resolve either here, fail now rather than mid-init.
     val shaProc = os.proc("git", "-C", root.toString, "rev-parse", "HEAD").call(check = false)
     val sha     = shaProc.out.trim()
     require(shaProc.exitCode == 0 && sha.nonEmpty,
@@ -65,25 +65,26 @@ object InitProject {
         "init-project assumes you cloned this template with git — that's how the MCP anchor is pinned. " +
         "Re-run from a git clone, or write `.madrileno-ref` by hand (see docs/mcp.md) before this script.")
 
+    // Derive the upstream URL from `git remote get-url origin`, so users who cloned from a fork
+    // (or via SSH from upstream) get a `.madrileno-ref` that actually resolves the sha. Fall back
+    // to the hardcoded URL if there's no `origin` remote.
+    val originProc = os.proc("git", "-C", root.toString, "remote", "get-url", "origin").call(check = false)
+    val upstreamRepo = if (originProc.exitCode == 0 && originProc.out.trim().nonEmpty) originProc.out.trim() else MadrilenoUpstream
+
     // 1. Delete the auction demo: source, tests, related Flyway migrations.
-    val deleted = scala.collection.mutable.ListBuffer.empty[os.Path]
-    for {
+    val auctionDirs = for {
       kind    <- Seq("main", "test")
       auction = root / "src" / kind / "scala" / "madrileno" / "auction"
       if os.exists(auction)
-    } {
-      os.remove.all(auction)
-      deleted += auction
-    }
+    } yield auction
     val migrations = root / "src" / "main" / "resources" / "db" / "migration"
-    if (os.exists(migrations)) {
-      os.list(migrations)
-        .filter(p => p.last.toLowerCase.contains("auction") || p.last.toLowerCase.contains("bid"))
-        .foreach { p =>
-          os.remove(p)
-          deleted += p
-        }
-    }
+    val auctionMigrations =
+      if (os.exists(migrations))
+        os.list(migrations).filter(p => p.last.toLowerCase.contains("auction") || p.last.toLowerCase.contains("bid")).toList
+      else List.empty
+    val deleted = (auctionDirs ++ auctionMigrations).toList
+    auctionDirs.foreach(os.remove.all)
+    auctionMigrations.foreach(os.remove)
 
     // 2. Rewrite text files. Order matters: do the auction surgery while the strings
     //    still say `madrileno.auction`, then run the package + standalone-name renames.
@@ -99,13 +100,12 @@ object InitProject {
     // upstream repo URL in the `.madrileno-ref` example, package paths in the example query)
     // are intentional and must not be renamed. Skip the file from the rewrite pass.
     val mcpDoc = root / "docs" / "mcp.md"
-    val touched = scala.collection.mutable.ListBuffer.empty[os.Path]
-    os.walk(root)
+    val touched = os.walk(root)
       .filter(p => os.isFile(p, followLinks = false))
       .filter(p => !p.relativeTo(root).segments.exists(SkipDirs.contains))
       .filter(p => !BinaryExts.contains(p.ext.toLowerCase))
       .filter(p => p != mcpDoc)
-      .foreach { p =>
+      .flatMap { p =>
         val original = os.read(p)
         val transformed = auctionBlock
           .replaceAllIn(original, "")
@@ -115,9 +115,10 @@ object InitProject {
           .replaceAll("""\bmadrileno\b""", Matcher.quoteReplacement(name))
         if (transformed != original) {
           os.write.over(p, transformed)
-          touched += p
-        }
+          Some(p)
+        } else None
       }
+      .toList
 
     // 3. Rename the source directories.
     for {
@@ -129,15 +130,20 @@ object InitProject {
     }
 
     // 4. Pin the upstream madrileno ref so the MCP server knows which commit to anchor to.
-    //    `sha` was resolved + validated at the top of `run`.
-    os.write.over(root / ".madrileno-ref", s"repo=$MadrilenoUpstream\nref=$sha\n")
+    //    `sha` and `upstreamRepo` were resolved + validated at the top of `run`.
+    os.write.over(root / ".madrileno-ref", s"repo=$upstreamRepo\nref=$sha\n")
 
-    // 5. .gitignore: add `.madrileno-mcp/` (the shadow clone the MCP server keeps for serving docs/source).
+    // 5. .gitignore: whitelist `.madrileno-ref` (the template's `.*` rule would otherwise hide it),
+    //    and add `.madrileno-mcp/` (the shadow clone the MCP server keeps for serving docs/source).
     val gitignore = root / ".gitignore"
     if (os.exists(gitignore)) {
-      val current = os.read(gitignore)
-      if (!current.linesIterator.exists(_.trim == ".madrileno-mcp/")) {
-        os.write.over(gitignore, current + (if (current.endsWith("\n")) "" else "\n") + "\n# MCP server shadow clone\n.madrileno-mcp/\n")
+      val current   = os.read(gitignore)
+      val needsRef  = !current.linesIterator.exists(_.trim == "!.madrileno-ref")
+      val needsMcp  = !current.linesIterator.exists(_.trim == ".madrileno-mcp/")
+      if (needsRef || needsMcp) {
+        val addRef = if (needsRef) "!.madrileno-ref\n" else ""
+        val addMcp = if (needsMcp) "\n# MCP server shadow clone\n.madrileno-mcp/\n" else ""
+        os.write.over(gitignore, current + (if (current.endsWith("\n")) "" else "\n") + addRef + addMcp)
       }
     }
 
@@ -173,7 +179,7 @@ object InitProject {
     println(s"Package: $packageName")
     println(s"Deleted: ${deleted.size} auction-related paths${if (docsDeleted) ", plus docs/ (run with --keep-docs to retain)" else ""}")
     println(s"Updated: ${touched.size} files")
-    println(s"Anchored: $MadrilenoUpstream @ ${sha.take(10)} (see .madrileno-ref)")
+    println(s"Anchored: $upstreamRepo @ ${sha.take(10)} (see .madrileno-ref)")
     println()
 
     // Auction surgery leaves orphaned imports (e.g., `utils.imaging.*`, `utils.storage.StorageKey`,
