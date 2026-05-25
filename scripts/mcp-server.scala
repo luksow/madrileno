@@ -131,8 +131,6 @@ object MCPServer {
          |
          |Before editing, read `madrileno_doc("principles")`, `madrileno_doc("module-anatomy")`, `madrileno_doc("adding-a-module")` and `madrileno_doc("testing-guide")` — they cover the non-obvious bits the scaffold doesn't reveal on its own.
          |
-         |One specific gotcha: domain operations are methods on the aggregate returning `Either[<Rejection>, <Aggregate>]` (the rejection-ADT pattern — see `madrileno_doc("sealed-monad")`). The scaffold ships with a `rename` method + `RenameRejection` enum as a worked example; *replace* it with your aggregate's actual transitions (`cancel`, `markPaid`, `changeStatus`, etc.), don't just delete it and leave a passive data class.
-         |
          |## Reference modules
          |
          |Each module is a vertical slice. Call `madrileno_module(name)` for the concatenated source (main + tests) of any:
