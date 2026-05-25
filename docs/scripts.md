@@ -28,7 +28,7 @@ What it does, in order:
 5. **Writes `.madrileno-ref`** with the upstream URL (derived from `git remote get-url origin`, falling back to the canonical madrileno URL) + the sha resolved at step 1. The MCP server reads this to anchor every tool call to a specific upstream commit. Commit it — your collaborators (and Claude) benefit from a shared pin.
 6. **Updates `.gitignore`** — whitelists `.madrileno-ref` (the template's blanket `.*` rule would otherwise hide it) and adds `.madrileno-mcp/` (the shadow clone the MCP server keeps for serving docs/source).
 7. **Deletes `docs/`** unless `--keep-docs`. The MCP server serves docs on demand from the pinned ref; most projects don't need them in-tree.
-8. **Rewrites `docs/<X>.md` link targets** across every `*.md` in the project root to point at upstream at the pinned sha (e.g. README's reference-section links become `https://github.com/luksow/madrileno/blob/<sha>/docs/<X>.md`). Only runs when docs were deleted, so the links stay clickable. Under `--keep-docs` the links stay local.
+8. **Rewrites `docs/<X>.md` link targets** across every `*.md` in the project tree (outside `.git`, `target`, IDE caches, `node_modules`, `scripts/`) to point at upstream at the pinned sha (e.g. README's reference-section links become `https://github.com/luksow/madrileno/blob/<sha>/docs/<X>.md`). Only runs when docs were deleted, so the links stay clickable. Under `--keep-docs` the links stay local.
 
 After running:
 

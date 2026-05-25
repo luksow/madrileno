@@ -165,25 +165,29 @@ object InitProject {
       if (upstreamRepo.startsWith("https://github.com/")) upstreamRepo.stripSuffix(".git")
       else MadrilenoUpstream.stripSuffix(".git")
     val docLinkTarget = """\]\(docs/([^)]+)\)""".r
-    if (docsDeleted) {
-      val docLinkBase = s"$upstreamWeb/blob/$sha/docs"
-      os.walk(root)
-        .filter(p => os.isFile(p, followLinks = false))
-        .filter(p => !p.relativeTo(root).segments.exists(SkipDirs.contains))
-        .filter(p => p.ext.toLowerCase == "md")
-        .foreach { p =>
-          val original = os.read(p)
-          val rewritten = docLinkTarget.replaceAllIn(original, m => s"](${docLinkBase}/${Matcher.quoteReplacement(m.group(1))})")
-          if (rewritten != original) {
-            os.write.over(p, rewritten)
+    val linkRewrites: List[os.Path] =
+      if (docsDeleted) {
+        val docLinkBase = s"$upstreamWeb/blob/$sha/docs"
+        os.walk(root)
+          .filter(p => os.isFile(p, followLinks = false))
+          .filter(p => !p.relativeTo(root).segments.exists(SkipDirs.contains))
+          .filter(p => p.ext.toLowerCase == "md")
+          .flatMap { p =>
+            val original  = os.read(p)
+            val rewritten = docLinkTarget.replaceAllIn(original, m => s"](${docLinkBase}/${Matcher.quoteReplacement(m.group(1))})")
+            if (rewritten != original) {
+              os.write.over(p, rewritten)
+              Some(p)
+            } else None
           }
-        }
-    }
+          .toList
+      } else List.empty
 
+    val totalUpdated = (touched.toSet ++ linkRewrites.toSet).size
     println(s"Project: $name")
     println(s"Package: $packageName")
     println(s"Deleted: ${deleted.size} auction-related paths${if (docsDeleted) ", plus docs/ (run with --keep-docs to retain)" else ""}")
-    println(s"Updated: ${touched.size} files")
+    println(s"Updated: $totalUpdated files")
     println(s"Anchored: $upstreamRepo @ ${sha.take(10)} (see .madrileno-ref)")
     println()
 

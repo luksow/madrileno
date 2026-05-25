@@ -129,6 +129,7 @@ object MCPServer {
     for {
       _    <- validateRef(since)
       _    <- validateRef(target)
+      _    <- paths.foldLeft(Right(()): Either[String, Unit])((acc, p) => acc.flatMap(_ => validatePath(p)))
       base  = Seq("git", "-C", shadowDir.toString, "log", "--oneline", "--no-decorate", s"$since..$target")
       args  = if (paths.nonEmpty) base ++ Seq("--") ++ paths else base
       r     = os.proc(args).call(check = false)
