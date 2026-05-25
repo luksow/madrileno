@@ -5,6 +5,8 @@ import __package__.__aggregate__.domain.{__Aggregate__, __Aggregate__Id}
 import __package__.__aggregate__.repositories.__Aggregate__Repository
 import __package__.utils.db.transactor.Transactor
 
+// SCAFFOLD-TODO: this is a stub. Replace with the actual use cases for this aggregate
+// (create, update, list, business workflows...). Delete this comment when you do.
 class __Aggregate__Service(__aggregate__Repository: __Aggregate__Repository, transactor: Transactor) {
   def find(id: __Aggregate__Id): IO[Option[__Aggregate__]] =
     transactor.inSession(__aggregate__Repository.find(id))

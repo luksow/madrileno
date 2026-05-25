@@ -5,6 +5,8 @@ A walkthrough. We're going to add a "product" module — products with a name, p
 Assume you've read an existing module (`madrileno.auction` is the best reference). This is the *doing* guide.
 
 > **Skip the boilerplate:** `./scripts/scaffold-module.scala <Aggregate> <plural>` materializes the file layout below — module trait, domain, repository, service, router, DTO, migration, plus domain / repository / router specs — and wires the module into `ApplicationLoader`. See [`scripts.md`](scripts.md) for what it generates and which placeholders it substitutes. The walkthrough here is still useful as a reference for what each piece is and how it fits together.
+>
+> **What the scaffold ships vs. what you customize:** the *domain* (opaque `<Aggregate>Id` + `<Aggregate>Name`, the aggregate case class), the *repository* (Row + Table + RowFilter + soft-delete + full CRUD), and the *tests* are the finished pattern — you add fields/methods, you don't rebuild the shape. The *service* and the *router* are **stubs**: a single `find` method and a single `GET /<plural>/{id}` route, marked with `// SCAFFOLD-TODO`. They exist so the module compiles green out of the box, not as the finished surface. Replace them with the actual use cases (`create`, `update`, `list`, state transitions) your aggregate needs, then delete the SCAFFOLD-TODO comments. When you have ownership rules, thread `authContext.userId` through to the service — the scaffold's `val _ = authContext` is a placeholder, not the convention.
 
 ## Before you start: the file layout
 

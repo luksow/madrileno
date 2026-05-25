@@ -9,6 +9,10 @@ import __package__.utils.observability.TelemetryContext
 import pl.iterators.stir.marshalling.ToResponseMarshallable
 import pl.iterators.stir.server.Route
 
+// SCAFFOLD-TODO: this is a stub exposing only `GET /__aggregates__/{id}`. Add the
+// endpoints your aggregate actually needs (POST to create, GET list with filters, PATCH
+// for state transitions, etc.) and thread `authContext.userId` through to the service
+// when you have ownership/authorization rules. Delete this comment when you do.
 class __Aggregate__Router(__aggregate__Service: __Aggregate__Service)(using TelemetryContext) extends BaseRouter {
   def authedRoutes(authContext: AuthContext): Route = {
     val _ = authContext
