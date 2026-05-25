@@ -75,7 +75,12 @@ After running:
 sbt 'compile; scalafmtAll; scalafixAll'
 ```
 
-`compile` verifies, `scalafmtAll` formats the generated files, `scalafixAll` reorders the auto-wired import in `ApplicationLoader.scala` (which the script inserts in a fixed position rather than guessing alphabetic order). The generated module compiles green out of the box: `id: <Aggregate>Id`, `name: <Aggregate>Name` (an opaque type over `String` with a non-empty validation), plus the standard audit columns (`createdAt`, `updatedAt`, `deletedAt`) on the row side. The `name` field is a starter — feel free to delete or rename. Add more domain fields by editing the case class, the `Row`, the `Table` mapping, the DTO, and the migration in lockstep.
+`compile` verifies, `scalafmtAll` formats the generated files, `scalafixAll` reorders the auto-wired import in `ApplicationLoader.scala` (which the script inserts in a fixed position rather than guessing alphabetic order). The generated module compiles green out of the box.
+
+What the scaffold ships:
+
+- **Domain** — `id: <Aggregate>Id`, `name: <Aggregate>Name` (an opaque type over `String` with a non-empty validation), and audit fields `createdAt: Instant`, `updatedAt: Instant`, `deletedAt: Option[Instant]` on the case class itself (the auction module's convention). A `<Aggregate>.create(id, name, now)` smart constructor on the companion sets audit fields. A `rename(newName, now): Either[RenameRejection, <Aggregate>]` behavior method bumps `updatedAt` — the worked example for the behavior-on-values pattern; replace it with your aggregate's real transitions.
+- **Repository** — `save`, `find`, `softDelete`, and the auction-style `update[E](id, f: <Aggregate> => Either[E, <Aggregate>]): DBInTransaction[Option[Either[E, <Aggregate>]]]` that does `SELECT … FOR UPDATE` and persists atomically on `Right`. The `name` field is a starter — feel free to delete or rename. Add more domain fields by editing the case class, the `Row`, the `Table` mapping, the DTO, and the migration in lockstep.
 
 ### Placeholder substitution
 

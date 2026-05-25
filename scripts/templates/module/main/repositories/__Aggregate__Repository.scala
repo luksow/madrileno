@@ -1,8 +1,9 @@
 package __package__.__aggregate__.repositories
 
+import cats.effect.IO
 import __package__.__aggregate__.domain.*
 import __package__.utils.db.dsl.*
-import __package__.utils.db.transactor.DB
+import __package__.utils.db.transactor.{DB, DBInTransaction}
 import skunk.*
 import skunk.codec.all.*
 
@@ -18,22 +19,12 @@ private[repositories] final case class __Aggregate__Row(
     import io.scalaland.chimney.dsl.*
     this.into[__Aggregate__].transform
   }
-
-  def update(__aggregate__: __Aggregate__, now: Instant): __Aggregate__Row = {
-    import io.scalaland.chimney.dsl.*
-    this.patchUsing(__aggregate__).copy(updatedAt = now)
-  }
 }
 
 private[repositories] object __Aggregate__Row {
-  def apply(__aggregate__: __Aggregate__, now: Instant): __Aggregate__Row = {
+  def apply(__aggregate__: __Aggregate__): __Aggregate__Row = {
     import io.scalaland.chimney.dsl.*
-    __aggregate__
-      .into[__Aggregate__Row]
-      .withFieldConst(_.createdAt, now)
-      .withFieldConst(_.updatedAt, now)
-      .withFieldConst(_.deletedAt, None)
-      .transform
+    __aggregate__.into[__Aggregate__Row].transform
   }
 }
 
@@ -60,23 +51,22 @@ private[repositories] final case class __Aggregate__RowFilter(
 }
 
 class __Aggregate__Repository {
-  def create(__aggregate__: __Aggregate__, now: Instant): DB[__Aggregate__] = {
-    val row = __Aggregate__Row(__aggregate__, now)
-    repository.create(row).as(row.to__Aggregate__)
-  }
+  def save(__aggregate__: __Aggregate__): DB[Unit] =
+    repository.create(__Aggregate__Row(__aggregate__)).void
 
   def find(id: __Aggregate__Id): DB[Option[__Aggregate__]] =
     repository.findById(id).map(_.map(_.to__Aggregate__))
 
-  def get(id: __Aggregate__Id): DB[__Aggregate__] =
-    repository.getById(id).map(_.to__Aggregate__)
-
-  def update(
-    id: __Aggregate__Id,
-    f: __Aggregate__ => __Aggregate__,
-    now: Instant
-  ): DB[Unit] =
-    repository.updateById(id, row => row.update(f(row.to__Aggregate__), now))
+  def update[E](id: __Aggregate__Id, f: __Aggregate__ => Either[E, __Aggregate__])
+    : DBInTransaction[Option[Either[E, __Aggregate__]]] =
+    repository.findById(id, Lock.ForUpdate).map(_.map(_.to__Aggregate__)).flatMap {
+      case None        => IO.pure(None)
+      case Some(value) =>
+        f(value) match {
+          case Left(e)        => IO.pure(Some(Left(e)))
+          case Right(updated) => repository.update(__Aggregate__Row(updated)).as(Some(Right(updated)))
+        }
+    }
 
   def softDelete(id: __Aggregate__Id, now: Instant): DB[Unit] =
     repository.softDeleteById(id, now)
