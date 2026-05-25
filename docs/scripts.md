@@ -4,25 +4,31 @@ scala-cli scripts under `scripts/` for project lifecycle tasks. Each is self-con
 
 ## `init-project.scala`
 
-Use this once, right after cloning the template, to turn it into your project. Renames `madrileno` everywhere, swaps the Scala package, drops the auction showcase domain.
+Use this once, right after cloning the template, to turn it into your project. Renames `madrileno` everywhere, swaps the Scala package, drops the auction showcase domain, pins the upstream sha for the MCP server, and (by default) deletes the local `docs/` tree since the MCP serves them from the pinned ref.
 
 ```bash
 ./scripts/init-project.scala wine-cellar
 ./scripts/init-project.scala wine-cellar --package winecellar
+./scripts/init-project.scala wine-cellar --keep-docs              # keep `docs/` locally
 ```
 
 If you don't pass `--package`, the package is the project name lowercased with non-alphanumerics stripped (`wine-cellar` → `winecellar`).
 
 What it does, in order:
 
-1. **Sanity checks** — refuses to run if `build.sbt` isn't present or if `src/main/scala/madrileno/` is missing (already renamed).
+1. **Sanity checks** — refuses to run if `build.sbt` isn't present, if `src/main/scala/madrileno/` is missing (already renamed), or if `git rev-parse HEAD` can't resolve a sha (init must run from a git clone — the sha gets pinned in `.madrileno-ref`).
 2. **Deletes the auction demo** — `src/{main,test}/scala/madrileno/auction/` and any Flyway migration whose filename mentions `auction` or `bid`.
 3. **Rewrites file contents** under every text file outside `.git`, `target`, IDE caches, `node_modules`, and `scripts/`:
    - Drops blocks bracketed by `// scripts:auction-block-start` / `// scripts:auction-block-end` — auction-coupled fragments in test support that can't be deleted as whole files (today: two in `TestData.scala`, one in `TestApplicationLoader.scala`, one in `SchedulerAdminRouterSpec.scala`). The markers must occupy their own line — inline mentions in prose are ignored.
    - Drops `import madrileno.auction.*` lines and `with AuctionModule` lines from the loaders' `extends` chains.
    - Renames `madrileno.<X>` package references to `<package>.<X>`.
    - Renames standalone `madrileno` to `<project-name>` (HOCON `app.name`, container names, `OTEL_SERVICE_NAME`, `PG_DATABASE`, `MAILER_FROM_ADDRESS`, README/doc references, etc.).
+   - **Skips `docs/mcp.md`** — that file documents the MCP system itself; its `madrileno_*` tool names, the upstream repo URL, and the upstream path examples are intentional and must not be renamed.
 4. **Renames the source directories** — `src/{main,test}/scala/madrileno/` → `src/{main,test}/scala/<package>/`.
+5. **Writes `.madrileno-ref`** with the upstream URL + the sha resolved at step 1. The MCP server reads this to anchor every tool call to a specific upstream commit. Commit it — your collaborators (and Claude) benefit from a shared pin.
+6. **Adds `.madrileno-mcp/` to `.gitignore`** — that's where the MCP server keeps its shadow clone of the upstream repo.
+7. **Deletes `docs/`** unless `--keep-docs`. The MCP server serves docs on demand from the pinned ref; most projects don't need them in-tree.
+8. **Rewrites `docs/<X>.md` link targets** across every `*.md` in the project root to point at upstream at the pinned sha (e.g. README's reference-section links become `https://github.com/luksow/madrileno/blob/<sha>/docs/<X>.md`). Only runs when docs were deleted, so the links stay clickable. Under `--keep-docs` the links stay local.
 
 After running:
 
@@ -45,7 +51,7 @@ Adding a new auction-coupled block elsewhere? Bracket it with the same markers a
 
 - Doesn't touch your git working tree (no `git add` / `git commit`). Run `git status` after, review, commit yourself.
 - Doesn't run `sbt compile`. The compiler is the safety net; running it is your call. (It *does* run `sbt scalafixAll` twice, to clear orphaned imports from the auction surgery — see above.)
-- Doesn't rewrite prose. Doc files get the `madrileno` → `<name>` substitution but `README.md`, badges, and any project-specific marketing copy are yours to rewrite. Same for `docs/architecture.md`-style "why we did X" notes — they describe the template's reasoning and might or might not match your own.
+- Doesn't rewrite prose. Surviving doc files (under `--keep-docs`) get the `madrileno` → `<name>` substitution, but `README.md`, badges, and any project-specific marketing copy are yours to rewrite. Same for `docs/architecture.md`-style "why we did X" notes — they describe the template's reasoning and might or might not match your own.
 - Doesn't delete itself. Once you're done renaming, `rm scripts/init-project.scala` (and this doc, if you want) — the template baggage is yours to keep or trim.
 
 ## `scaffold-module.scala`
