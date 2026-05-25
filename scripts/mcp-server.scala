@@ -83,29 +83,35 @@ object MCPServer {
     if (ValidNamePattern.matches(name)) Right(()) else Left(s"name must match [A-Za-z0-9_-]+; got '$name'")
   private def validateRef(ref: String): Either[String, Unit] =
     if (!ValidRefPattern.matches(ref)) Left(s"ref must match [a-zA-Z0-9_./@^~-]+; got '$ref'")
+    else if (ref.startsWith("-")) Left(s"ref must not start with '-' (would be parsed as a git option); got '$ref'")
     else if (ref.contains("..")) Left(s"ref must be a single refname, not a range (no `..`); got '$ref'")
     else Right(())
 
   def ensureShadow(ref: MadrilenoRef): Either[String, Unit] = {
-    validateRepoUrl(ref.repo).flatMap { _ =>
-      Try {
-        if (!os.exists(shadowDir)) {
-          Console.err.println(s"[mcp] cloning ${ref.repo} -> $shadowDir (one-time, ~50MB)")
-          os.makeDir.all(shadowDir / os.up)
-          os.proc("git", "clone", ref.repo, shadowDir.toString).call()
-        } else if (!os.exists(shadowDir / ".git")) {
-          throw new IllegalStateException(s"$shadowDir exists but is not a git repo. Remove it and re-run.")
-        } else {
-          Console.err.println(s"[mcp] fetching latest in $shadowDir")
-          val r = os.proc("git", "-C", shadowDir.toString, "fetch", "origin").call(check = false)
-          if (r.exitCode != 0)
-            Console.err.println(s"[mcp] warning: `git fetch origin` failed (exit ${r.exitCode}); madrileno_changes will compare against the cached origin/main: ${r.err.text().trim}")
-        }
-      } match {
-        case Success(_) => Right(())
-        case Failure(e) => Left(s"shadow clone failed: ${e.getMessage}")
+    // Validate the pinned ref alongside the repo URL — `.madrileno-ref` is hand-edit-able,
+    // and a `ref=-rf` would otherwise flow into `git show -rf:path` as an option.
+    def syncShadow: Either[String, Unit] = Try {
+      if (!os.exists(shadowDir)) {
+        Console.err.println(s"[mcp] cloning ${ref.repo} -> $shadowDir (one-time, ~50MB)")
+        os.makeDir.all(shadowDir / os.up)
+        os.proc("git", "clone", ref.repo, shadowDir.toString).call()
+      } else if (!os.exists(shadowDir / ".git")) {
+        throw new IllegalStateException(s"$shadowDir exists but is not a git repo. Remove it and re-run.")
+      } else {
+        Console.err.println(s"[mcp] fetching latest in $shadowDir")
+        val r = os.proc("git", "-C", shadowDir.toString, "fetch", "origin").call(check = false)
+        if (r.exitCode != 0)
+          Console.err.println(s"[mcp] warning: `git fetch origin` failed (exit ${r.exitCode}); madrileno_changes will compare against the cached origin/main: ${r.err.text().trim}")
       }
+    } match {
+      case Success(_) => Right(())
+      case Failure(e) => Left(s"shadow clone failed: ${e.getMessage}")
     }
+    for {
+      _ <- validateRepoUrl(ref.repo)
+      _ <- validateRef(ref.ref).left.map(e => s"invalid pinned ref in .madrileno-ref: $e")
+      _ <- syncShadow
+    } yield ()
   }
 
   // -- git plumbing -----------------------------------------------------------
