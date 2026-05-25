@@ -77,8 +77,9 @@ object MCPServer {
   // Tool inputs are AI-supplied; restrict to characters that compose into safe git paths.
   // Module/doc names are simple identifiers; refs may include `/`, `.`, `@`, `^`, `~` for branches/tags
   // but must be single refnames (no `..` ranges — the caller composes ranges by passing since/target separately).
-  private val ValidNamePattern = """[A-Za-z0-9_-]+""".r
-  private val ValidRefPattern  = """[a-zA-Z0-9_./@^~-]+""".r
+  private val ValidNamePattern   = """[A-Za-z0-9_-]+""".r
+  private val ValidRefPattern    = """[a-zA-Z0-9_./@^~-]+""".r
+  private val PinnedShaPattern   = """[0-9a-f]{7,40}""".r // accept short shas down to 7 chars
   private def validateName(name: String): Either[String, Unit] =
     if (ValidNamePattern.matches(name)) Right(()) else Left(s"name must match [A-Za-z0-9_-]+; got '$name'")
   private def validateRef(ref: String): Either[String, Unit] =
@@ -86,6 +87,12 @@ object MCPServer {
     else if (ref.startsWith("-")) Left(s"ref must not start with '-' (would be parsed as a git option); got '$ref'")
     else if (ref.contains("..")) Left(s"ref must be a single refname, not a range (no `..`); got '$ref'")
     else Right(())
+  // Stricter than validateRef: the pinned ref in `.madrileno-ref` is supposed to be a commit SHA
+  // (init-project writes one from `git rev-parse HEAD`). A branch/tag name there would silently
+  // drift the anchor as upstream moves — violates the "anchored to a sha" contract.
+  private def validatePinnedRef(ref: String): Either[String, Unit] =
+    if (PinnedShaPattern.matches(ref)) Right(())
+    else Left(s"pinned ref must be a commit SHA (7-40 hex chars); got '$ref'. Re-run init-project, or hand-edit .madrileno-ref to a sha.")
 
   def ensureShadow(ref: MadrilenoRef): Either[String, Unit] = {
     // Validate the pinned ref alongside the repo URL — `.madrileno-ref` is hand-edit-able,
@@ -109,7 +116,7 @@ object MCPServer {
     }
     for {
       _ <- validateRepoUrl(ref.repo)
-      _ <- validateRef(ref.ref).left.map(e => s"invalid pinned ref in .madrileno-ref: $e")
+      _ <- validatePinnedRef(ref.ref).left.map(e => s"invalid pinned ref in .madrileno-ref: $e")
       _ <- syncShadow
     } yield ()
   }
@@ -128,7 +135,7 @@ object MCPServer {
     // path that starts with `-` being parsed as an ls-tree option.
     val r = os.proc("git", "-C", shadowDir.toString, "ls-tree", "-r", "--name-only", ref, "--", path).call(check = false)
     if (r.exitCode == 0) Right(r.out.text().linesIterator.toList.filter(_.nonEmpty))
-    else Left(s"git ls-tree $ref:$path failed: ${r.err.text().trim}")
+    else Left(s"git ls-tree -r --name-only $ref -- $path failed: ${r.err.text().trim}")
   }
 
   def gitLog(since: String, target: String, paths: List[String]): Either[String, List[String]] = {
@@ -319,6 +326,14 @@ object MCPServer {
     .handle(i => changes(i.since, i.paths, i.target))
 
   @main def serve(): Unit = {
+    // Sanity-check the cwd is a project root — `os.pwd` is what `projectRoot`, `shadowDir`,
+    // and `readRef` all resolve against. Running this from `scripts/` (e.g. via
+    // `scala-cli run scripts/mcp-server.scala`) would otherwise produce a misleading
+    // "missing .madrileno-ref" error.
+    if (!os.exists(projectRoot / "build.sbt")) {
+      Console.err.println(s"[mcp] $projectRoot doesn't look like a project root (no build.sbt). Run this from the project root.")
+      sys.exit(1)
+    }
     val ref = readRef match {
       case Right(r) => r
       case Left(e)  => Console.err.println(s"[mcp] $e"); sys.exit(1)
