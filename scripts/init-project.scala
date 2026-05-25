@@ -55,6 +55,16 @@ object InitProject {
     require(os.exists(root / "src" / "main" / "scala" / "madrileno"),
       "no src/main/scala/madrileno tree found — already renamed?")
 
+    // Read the upstream sha before doing any destructive work. The MCP server hard-requires
+    // `.madrileno-ref` to point at a real commit; if we can't resolve one here (e.g. this isn't
+    // a git checkout), fail now rather than mid-init or much later at MCP startup.
+    val shaProc = os.proc("git", "-C", root.toString, "rev-parse", "HEAD").call(check = false)
+    val sha     = shaProc.out.trim()
+    require(shaProc.exitCode == 0 && sha.nonEmpty,
+      s"can't resolve upstream sha (`git -C $root rev-parse HEAD` failed). " +
+        "init-project assumes you cloned this template with git — that's how the MCP anchor is pinned. " +
+        "Re-run from a git clone, or write `.madrileno-ref` by hand (see docs/mcp.md) before this script.")
+
     // 1. Delete the auction demo: source, tests, related Flyway migrations.
     val deleted = scala.collection.mutable.ListBuffer.empty[os.Path]
     for {
@@ -119,14 +129,8 @@ object InitProject {
     }
 
     // 4. Pin the upstream madrileno ref so the MCP server knows which commit to anchor to.
-    //    Read sha from this checkout's git HEAD — assumes the user is running init-project
-    //    from a fresh clone of madrileno, which is the documented workflow.
-    val sha = os.proc("git", "-C", root.toString, "rev-parse", "HEAD").call(check = false).out.trim()
-    if (sha.nonEmpty) {
-      os.write.over(root / ".madrileno-ref", s"repo=$MadrilenoUpstream\nref=$sha\n")
-    } else {
-      Console.err.println("warning: couldn't read git HEAD; skipping .madrileno-ref. Write it by hand if you want the MCP server to anchor to a specific upstream sha.")
-    }
+    //    `sha` was resolved + validated at the top of `run`.
+    os.write.over(root / ".madrileno-ref", s"repo=$MadrilenoUpstream\nref=$sha\n")
 
     // 5. .gitignore: add `.madrileno-mcp/` (the shadow clone the MCP server keeps for serving docs/source).
     val gitignore = root / ".gitignore"
@@ -150,7 +154,7 @@ object InitProject {
     //    so onboarding links remain clickable.
     val upstreamWeb = MadrilenoUpstream.stripSuffix(".git")
     val docLinkTarget = """\]\(docs/([^)]+)\)""".r
-    if (docsDeleted && sha.nonEmpty) {
+    if (docsDeleted) {
       val docLinkBase = s"$upstreamWeb/blob/$sha/docs"
       os.walk(root)
         .filter(p => os.isFile(p, followLinks = false))
@@ -169,7 +173,7 @@ object InitProject {
     println(s"Package: $packageName")
     println(s"Deleted: ${deleted.size} auction-related paths${if (docsDeleted) ", plus docs/ (run with --keep-docs to retain)" else ""}")
     println(s"Updated: ${touched.size} files")
-    if (sha.nonEmpty) println(s"Anchored: $MadrilenoUpstream @ ${sha.take(10)} (see .madrileno-ref)")
+    println(s"Anchored: $MadrilenoUpstream @ ${sha.take(10)} (see .madrileno-ref)")
     println()
 
     // Auction surgery leaves orphaned imports (e.g., `utils.imaging.*`, `utils.storage.StorageKey`,
@@ -190,7 +194,7 @@ object InitProject {
     println("  cp .env.sample .env")
     println("  sbt test")
     val mcpDocLink =
-      if (docsDeleted && sha.nonEmpty) s"$upstreamWeb/blob/$sha/docs/mcp.md"
+      if (docsDeleted) s"$upstreamWeb/blob/$sha/docs/mcp.md"
       else "docs/mcp.md"
     println(s"  ./scripts/mcp-server.scala &           # optional — start the docs/source MCP for Claude (see $mcpDocLink)")
   }

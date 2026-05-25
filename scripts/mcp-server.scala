@@ -10,6 +10,7 @@ import chimp.*
 import sttp.tapir.*
 import sttp.tapir.server.netty.sync.NettySyncServer
 
+import java.util.regex.Matcher
 import scala.util.{Failure, Success, Try}
 
 case class MadrilenoRef(repo: String, ref: String)
@@ -103,7 +104,9 @@ object MCPServer {
 
   def rewritePackage(content: String, userPackage: Option[String]): String = userPackage match {
     case Some(pkg) if pkg != "madrileno" =>
-      content.replace("madrileno.", s"$pkg.").replaceAll("""\bmadrileno\b""", pkg)
+      // Matcher.quoteReplacement: defense in depth. init-project validates the package to
+      // `[a-z][a-z0-9]*`, but this method is also reachable with hand-edited .madrileno-ref / src trees.
+      content.replace("madrileno.", s"$pkg.").replaceAll("""\bmadrileno\b""", Matcher.quoteReplacement(pkg))
     case _ => content
   }
 
