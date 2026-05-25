@@ -15,6 +15,15 @@ object __Aggregate__Name extends Opaque[__Aggregate__Name, String] {
   }
 }
 
+enum RenameRejection {
+  case NameUnchanged
+}
+
 final case class __Aggregate__(
   id: __Aggregate__Id,
-  name: __Aggregate__Name)
+  name: __Aggregate__Name) {
+
+  def rename(newName: __Aggregate__Name): Either[RenameRejection, __Aggregate__] =
+    if (newName == name) Left(RenameRejection.NameUnchanged)
+    else Right(copy(name = newName))
+}
