@@ -17,7 +17,7 @@
 //
 // After: `sbt compile`. If anything's off, `git checkout .` reverts.
 
-import mainargs.{ParserForMethods, arg, main}
+import mainargs.{Flag, ParserForMethods, arg, main}
 
 import java.util.regex.Matcher
 
@@ -31,12 +31,16 @@ object InitProject {
   private val BinaryExts: Set[String] =
     Set("jpg", "jpeg", "png", "gif", "ico", "jar", "class", "tasty", "woff", "woff2", "ttf", "otf", "pdf", "zip", "tar", "gz", "bin")
 
+  private val MadrilenoUpstream = "https://github.com/luksow/madrileno.git"
+
   @main
   def run(
     @arg(positional = true, doc = "Project name (e.g. 'wine-cellar')")
     name: String,
     @arg(name = "package", doc = "Scala package; defaults to project name lowercased with non-alphanumerics stripped")
-    packageOpt: Option[String] = None
+    packageOpt: Option[String] = None,
+    @arg(name = "keep-docs", doc = "Keep the `docs/` tree (default: deleted — MCP server serves them from the pinned ref)")
+    keepDocs: Flag = Flag()
   ): Unit = {
 
     require(name.matches("[A-Za-z][A-Za-z0-9_-]*"),
@@ -109,10 +113,38 @@ object InitProject {
       os.move(old, root / "src" / kind / "scala" / packageName)
     }
 
+    // 4. Pin the upstream madrileno ref so the MCP server knows which commit to anchor to.
+    //    Read sha from this checkout's git HEAD — assumes the user is running init-project
+    //    from a fresh clone of madrileno, which is the documented workflow.
+    val sha = os.proc("git", "-C", root.toString, "rev-parse", "HEAD").call(check = false).out.trim()
+    if (sha.nonEmpty) {
+      os.write.over(root / ".madrileno-ref", s"repo=$MadrilenoUpstream\nref=$sha\n")
+    } else {
+      Console.err.println("warning: couldn't read git HEAD; skipping .madrileno-ref. Write it by hand if you want the MCP server to anchor to a specific upstream sha.")
+    }
+
+    // 5. .gitignore: add `.madrileno-mcp/` (the shadow clone the MCP server keeps for serving docs/source).
+    val gitignore = root / ".gitignore"
+    if (os.exists(gitignore)) {
+      val current = os.read(gitignore)
+      if (!current.linesIterator.exists(_.trim == ".madrileno-mcp/")) {
+        os.write.over(gitignore, current + (if (current.endsWith("\n")) "" else "\n") + "\n# MCP server shadow clone\n.madrileno-mcp/\n")
+      }
+    }
+
+    // 6. Delete the docs unless --keep-docs. The MCP server serves them on demand from
+    //    the pinned ref, so most projects don't need to carry them locally.
+    val docsRoot     = root / "docs"
+    val docsDeleted  = !keepDocs.value && os.exists(docsRoot)
+    if (docsDeleted) {
+      os.remove.all(docsRoot)
+    }
+
     println(s"Project: $name")
     println(s"Package: $packageName")
-    println(s"Deleted: ${deleted.size} auction-related paths")
+    println(s"Deleted: ${deleted.size} auction-related paths${if (docsDeleted) ", plus docs/ (run with --keep-docs to retain)" else ""}")
     println(s"Updated: ${touched.size} files")
+    if (sha.nonEmpty) println(s"Anchored: $MadrilenoUpstream @ ${sha.take(10)} (see .madrileno-ref)")
     println()
 
     // Auction surgery leaves orphaned imports (e.g., `utils.imaging.*`, `utils.storage.StorageKey`,
@@ -132,6 +164,7 @@ object InitProject {
     println("Next:")
     println("  cp .env.sample .env")
     println("  sbt test")
+    println("  ./scripts/mcp-server.scala &           # optional — start the docs/source MCP for Claude (see docs/mcp.md)")
   }
 
   def main(args: Array[String]): Unit = ParserForMethods(this).runOrExit(args)
