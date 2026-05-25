@@ -61,16 +61,29 @@ Restart your Claude client. Ask Claude something like *"call `madrileno_overview
 
 You're building a CRM for a car repair shop. You want an `Appointment` module: customer, vehicle, scheduled time, status.
 
-Asking Claude something like *"add an `Appointment` module with a customer, vehicle, scheduledAt, and status field"*, with the MCP wired up:
+A concrete prompt to paste into a fresh Claude session (the project's `.mcp.json` must already point at the running server — see above):
 
-1. Claude calls `madrileno_overview()` — sees the reference modules (`user`, `auction`, `auth`, `healthcheck`), gets the doc index, learns about the scaffold script.
-2. Claude calls `madrileno_module("user")` — sees the canonical aggregate shape (opaque `UserId`, validated opaque `EmailAddress`, repository + filter + soft-delete, route + DTO).
-3. Optionally `madrileno_module("auction")` — picks up the richer patterns (soft-delete with FKs, events, multi-aggregate within one module).
-4. Maybe `madrileno_doc("domain-modeling")` — expands on opaque-type validation idioms.
-5. Runs `scripts/scaffold-module.scala Appointment appointments` via shell → skeleton on disk.
-6. Edits the scaffold to add `customerId: UserId`, `vehicleId: VehicleId`, `scheduledAt: Instant`, `status: AppointmentStatus`, following the patterns it saw in step 2-4.
+> I'm building **garage-crm** — a small CRM for a car repair shop — on top of the madrileno Scala 3 template.
+>
+> Add the first feature: an `Appointment` module. An appointment has:
+>
+> - a `customerId` (links to a `User`)
+> - a `vehicleId` (opaque type, create it inline — no Vehicle aggregate yet)
+> - a `scheduledAt` (Instant)
+> - a `status` enum: `Scheduled`, `InProgress`, `Completed`, `Cancelled`
+>
+> Follow the template's existing module patterns. There's a `madrileno` MCP server connected — use it as your reference. Verify with `sbt compile` when done.
 
-What it generates is shaped by the reference, not by guesses.
+With the MCP wired up, Claude's flow looks like:
+
+1. Calls `madrileno_overview()` — sees the reference modules (`user`, `auction`, `auth`, `healthcheck`), gets the doc index, learns about the scaffold script.
+2. Calls `madrileno_doc("adding-a-module")` and `madrileno_doc("principles")` — the conventions (behavior-on-values, sealed-monad, single-aggregate-per-module).
+3. Calls `madrileno_module("user")` — the canonical small aggregate (opaque `UserId`, validated opaque `EmailAddress`, repository + filter + soft-delete).
+4. Calls `madrileno_module("auction")` — the richer reference (FKs via `ForeignIdTable`, `update[E]` callback with `SELECT … FOR UPDATE`, sealed-monad in the service, behavior methods on the aggregate, `text.asEnum` for status enums).
+5. Runs `scripts/scaffold-module.scala Appointment appointments` → skeleton on disk.
+6. Customises the domain (adds the status state machine + per-transition rejection ADTs + `Appointment.schedule` smart constructor), repo, service, router, DTO + matching specs, all using the patterns from step 3-4.
+
+The MCP doesn't dictate the answer — it routes Claude to the parts of the reference that matter. What it generates is shaped by the reference, not by guesses.
 
 ## Pulling upstream changes
 
