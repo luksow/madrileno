@@ -32,6 +32,10 @@ Skim the **Start here** path on day one. Reach for the rest by topic.
 - [`cache.md`](cache.md) — `CacheRuntime` over Caffeine; per-JVM scope; multi-instance considerations.
 - [`rate-limiting.md`](rate-limiting.md) — fixed-window directive, per-route buckets, IP / user / header discriminators.
 
+## Tooling
+
+- [`scripts.md`](scripts.md) — scala-cli scripts under `scripts/`: `init-project` (rename template), `scaffold-module` (vertical-slice generator), `dev-console` (REPL with the wire graph live).
+
 ## Conventions
 
 - [`domain-modeling.md`](domain-modeling.md) — opaque types, enums, smart constructors; behaviour-on-values rules.
