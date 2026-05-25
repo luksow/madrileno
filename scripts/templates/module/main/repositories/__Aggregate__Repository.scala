@@ -38,7 +38,7 @@ private[repositories] object __Aggregate__Row {
 }
 
 private[repositories] object __Aggregate__RowTable
-    extends Table[__Aggregate__Row]("__aggregates__")
+    extends Table[__Aggregate__Row]("__aggregate__")
     with IdTable[__Aggregate__Row, __Aggregate__Id]
     with SoftDeleteTable {
   override val id: Column[__Aggregate__Id]        = column("id", uuid.as[__Aggregate__Id])

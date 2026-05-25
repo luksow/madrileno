@@ -34,8 +34,9 @@ object ScaffoldModule {
     val singular      = aggregate.head.toLower.toString + aggregate.tail
     val capitalPlural = plural.head.toUpper.toString + plural.tail
     // Singular and plural may legitimately be identical in English (`Fish fish`,
-    // `News news`) — the singular drives Scala identifiers / directories, the
-    // plural drives SQL/URL identifiers, so there's no actual collision.
+    // `News news`). Singular drives Scala identifiers, directories, table names,
+    // and migration filenames (matching the upstream convention — see V1__user_auth.sql
+    // / V3__auction.sql etc.); plural drives URL segments and OpenAPI tags.
 
     val root = os.pwd
     require(os.exists(root / "build.sbt"),
@@ -72,17 +73,17 @@ object ScaffoldModule {
       s"module class '${aggregate}Module' already exists at ${existingModuleFile.getOrElse("")}. " +
         "Choose a different aggregate name to avoid an ambiguous `with` in ApplicationLoader.")
 
-    // Table-name collision check — scan existing migrations for `CREATE TABLE <plural>`.
+    // Table-name collision check — scan existing migrations for `CREATE TABLE <singular>`.
     // The Flyway runner would catch this eventually, but catching it here keeps the
     // failure on the script side (no files written, no migration shipped).
     val createTableRegex =
-      s"""(?i)CREATE\\s+TABLE\\s+(IF\\s+NOT\\s+EXISTS\\s+)?"?${java.util.regex.Pattern.quote(plural)}"?\\s*\\(""".r
+      s"""(?i)CREATE\\s+TABLE\\s+(IF\\s+NOT\\s+EXISTS\\s+)?"?${java.util.regex.Pattern.quote(singular)}"?\\s*\\(""".r
     val tableCollision = os.list(migrationDest).filter(os.isFile(_)).find { f =>
       createTableRegex.findFirstIn(os.read(f)).isDefined
     }
     require(tableCollision.isEmpty,
-      s"plural '$plural' would collide with a table already created in ${tableCollision.getOrElse("")}. " +
-        "Choose a different plural.")
+      s"singular '$singular' would collide with a table already created in ${tableCollision.getOrElse("")}. " +
+        "Choose a different aggregate name.")
 
     // Preflight the auto-wire anchors before any writes — if `ApplicationLoader.scala`
     // is missing or has been restructured, we want to abort before stranding generated

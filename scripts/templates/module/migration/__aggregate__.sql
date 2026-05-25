@@ -1,4 +1,4 @@
-CREATE TABLE __aggregates__ (
+CREATE TABLE __aggregate__ (
   id          UUID PRIMARY KEY,
   name        TEXT NOT NULL,
   created_at  TIMESTAMPTZ NOT NULL,
