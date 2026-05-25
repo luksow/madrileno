@@ -85,11 +85,16 @@ object InitProject {
     // Markers must occupy their own line (with optional indentation). Anchoring keeps
     // the regex from eating prose in docs that mentions the marker strings inline.
     val auctionBlock = """(?ms)^[ \t]*// scripts:auction-block-start[ \t]*\r?\n.*?^[ \t]*// scripts:auction-block-end[ \t]*\r?\n?""".r
+    // docs/mcp.md documents the MCP system itself — its `madrileno` references (tool names, the
+    // upstream repo URL in the `.madrileno-ref` example, package paths in the example query)
+    // are intentional and must not be renamed. Skip the file from the rewrite pass.
+    val mcpDoc = root / "docs" / "mcp.md"
     val touched = scala.collection.mutable.ListBuffer.empty[os.Path]
     os.walk(root)
       .filter(p => os.isFile(p, followLinks = false))
       .filter(p => !p.relativeTo(root).segments.exists(SkipDirs.contains))
       .filter(p => !BinaryExts.contains(p.ext.toLowerCase))
+      .filter(p => p != mcpDoc)
       .foreach { p =>
         val original = os.read(p)
         val transformed = auctionBlock
@@ -140,6 +145,26 @@ object InitProject {
       os.remove.all(docsRoot)
     }
 
+    // 7. If docs were deleted, rewrite the surviving `docs/<X>.md` link targets in README.md
+    //    (and anywhere else that linked into docs) to point at upstream at the pinned sha,
+    //    so onboarding links remain clickable.
+    val upstreamWeb = MadrilenoUpstream.stripSuffix(".git")
+    val docLinkTarget = """\]\(docs/([^)]+)\)""".r
+    if (docsDeleted && sha.nonEmpty) {
+      val docLinkBase = s"$upstreamWeb/blob/$sha/docs"
+      os.walk(root)
+        .filter(p => os.isFile(p, followLinks = false))
+        .filter(p => !p.relativeTo(root).segments.exists(SkipDirs.contains))
+        .filter(p => p.ext.toLowerCase == "md")
+        .foreach { p =>
+          val original = os.read(p)
+          val rewritten = docLinkTarget.replaceAllIn(original, m => s"](${docLinkBase}/${Matcher.quoteReplacement(m.group(1))})")
+          if (rewritten != original) {
+            os.write.over(p, rewritten)
+          }
+        }
+    }
+
     println(s"Project: $name")
     println(s"Package: $packageName")
     println(s"Deleted: ${deleted.size} auction-related paths${if (docsDeleted) ", plus docs/ (run with --keep-docs to retain)" else ""}")
@@ -164,7 +189,10 @@ object InitProject {
     println("Next:")
     println("  cp .env.sample .env")
     println("  sbt test")
-    println("  ./scripts/mcp-server.scala &           # optional — start the docs/source MCP for Claude (see docs/mcp.md)")
+    val mcpDocLink =
+      if (docsDeleted && sha.nonEmpty) s"$upstreamWeb/blob/$sha/docs/mcp.md"
+      else "docs/mcp.md"
+    println(s"  ./scripts/mcp-server.scala &           # optional — start the docs/source MCP for Claude (see $mcpDocLink)")
   }
 
   def main(args: Array[String]): Unit = ParserForMethods(this).runOrExit(args)
