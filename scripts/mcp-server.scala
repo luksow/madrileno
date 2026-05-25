@@ -55,9 +55,9 @@ object MCPServer {
     }
   }
 
-  // detected once at startup; used to rewrite `madrileno.<pkg>` -> `<project>.<pkg>`
-  // in returned source so Claude lifts patterns into the user's project namespace cleanly.
-  def projectPackage(): Option[String] = {
+  // Read once on first access — same lazy-val rationale as readRef: the package dir doesn't
+  // change at runtime, and re-listing the FS on every tool call is just waste.
+  lazy val projectPackage: Option[String] = {
     val mainScala = projectRoot / "src" / "main" / "scala"
     if (!os.exists(mainScala)) None
     else
@@ -75,13 +75,16 @@ object MCPServer {
     else Left(s"`.madrileno-ref` repo URL is empty or starts with '-': '$repo'")
 
   // Tool inputs are AI-supplied; restrict to characters that compose into safe git paths.
-  // Module/doc names are simple identifiers; refs may include `/`, `.`, `@`, `^`, `~` for branches/tags.
+  // Module/doc names are simple identifiers; refs may include `/`, `.`, `@`, `^`, `~` for branches/tags
+  // but must be single refnames (no `..` ranges — the caller composes ranges by passing since/target separately).
   private val ValidNamePattern = """[A-Za-z0-9_-]+""".r
   private val ValidRefPattern  = """[a-zA-Z0-9_./@^~-]+""".r
   private def validateName(name: String): Either[String, Unit] =
     if (ValidNamePattern.matches(name)) Right(()) else Left(s"name must match [A-Za-z0-9_-]+; got '$name'")
   private def validateRef(ref: String): Either[String, Unit] =
-    if (ValidRefPattern.matches(ref)) Right(()) else Left(s"ref must match [a-zA-Z0-9_./@^~-]+; got '$ref'")
+    if (!ValidRefPattern.matches(ref)) Left(s"ref must match [a-zA-Z0-9_./@^~-]+; got '$ref'")
+    else if (ref.contains("..")) Left(s"ref must be a single refname, not a range (no `..`); got '$ref'")
+    else Right(())
 
   def ensureShadow(ref: MadrilenoRef): Either[String, Unit] = {
     validateRepoUrl(ref.repo).flatMap { _ =>
@@ -157,7 +160,7 @@ object MCPServer {
                      .sorted
                  )
     } yield {
-      val pkg = projectPackage().getOrElse("<package>")
+      val pkg = projectPackage.getOrElse("<package>")
       s"""# Madrileno reference (anchored at ${ref.ref.take(10)})
          |
          |Madrileno is a Scala 3 backend template (http4s + stir + cats-effect + Skunk Postgres). The codebase you (the AI) are helping write is derived from it; this MCP serves the upstream reference at a pinned commit.
@@ -233,7 +236,7 @@ object MCPServer {
                       } yield (p, body) :: soFar
                     }
       ordered     = contents.reverse
-      pkg         = projectPackage()
+      pkg         = projectPackage
     } yield {
       ordered
         .map { case (p, body) =>
@@ -254,10 +257,20 @@ object MCPServer {
 
   def source(path: String): Either[String, String] = {
     for {
+      _       <- validatePath(path)
       ref     <- readRef
       content <- gitShow(ref.ref, path)
-    } yield rewritePackage(content, projectPackage())
+    } yield rewritePackage(content, projectPackage)
   }
+
+  // Source paths are AI-supplied. Reject the obvious traversal / option-injection shapes;
+  // git's own resolution stays within the shadow clone so this is about returning clean
+  // validation errors rather than confusing git errors, not about security.
+  private def validatePath(path: String): Either[String, Unit] =
+    if (path.isEmpty) Left("path must be non-empty")
+    else if (path.startsWith("-")) Left(s"path must not start with '-'; got '$path'")
+    else if (path.split("/").contains("..")) Left(s"path must not contain '..' segments; got '$path'")
+    else Right(())
 
   def changes(since: Option[String], paths: Option[List[String]], target: Option[String]): Either[String, String] = {
     for {

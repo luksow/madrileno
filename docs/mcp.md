@@ -43,7 +43,7 @@ First launch downloads dependencies (~1 minute) and clones the upstream repo. Su
 
 ## Wiring it into Claude
 
-For Claude Desktop / CLI clients that support MCP over HTTP, add an entry pointing at the server. Example (`~/.config/claude/mcp.json` or equivalent):
+For Claude Desktop / CLI clients that support MCP over HTTP, add an entry pointing at the server. The same JSON shape works both project-local (commit `.mcp.json` at the project root — picked up automatically by Claude Code) and user-global (`~/.config/claude/mcp.json` or your client's equivalent). Example:
 
 ```json
 {

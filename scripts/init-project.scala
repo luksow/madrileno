@@ -157,8 +157,13 @@ object InitProject {
 
     // 7. If docs were deleted, rewrite the surviving `docs/<X>.md` link targets in README.md
     //    (and anywhere else that linked into docs) to point at upstream at the pinned sha,
-    //    so onboarding links remain clickable.
-    val upstreamWeb = MadrilenoUpstream.stripSuffix(".git")
+    //    so onboarding links remain clickable. Use the *derived* origin URL if it's a github
+    //    https URL — otherwise (SSH/local/other) the github blob path doesn't apply, and we
+    //    fall back to the canonical upstream (links land on luksow/madrileno, which may not
+    //    contain a fork-only sha but is the best we can do without scheme coercion).
+    val upstreamWeb =
+      if (upstreamRepo.startsWith("https://github.com/")) upstreamRepo.stripSuffix(".git")
+      else MadrilenoUpstream.stripSuffix(".git")
     val docLinkTarget = """\]\(docs/([^)]+)\)""".r
     if (docsDeleted) {
       val docLinkBase = s"$upstreamWeb/blob/$sha/docs"
