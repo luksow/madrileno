@@ -1,6 +1,7 @@
 #!/usr/bin/env -S scala-cli shebang
 
 //> using scala 3.8.2
+//> using jvm 21
 //> using toolkit default
 //> using dep com.lihaoyi::mainargs:0.7.8
 
