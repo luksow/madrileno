@@ -114,15 +114,26 @@ object MCPServer {
       ref     <- readRef()
       modules <- gitListTree(ref.ref, "src/main/scala/madrileno").map(_.flatMap(extractModule).distinct.sorted)
       docs    <- gitListTree(ref.ref, "docs").map(_.filter(_.endsWith(".md")).map(_.stripPrefix("docs/").stripSuffix(".md")).sorted)
+      scripts <- gitListTree(ref.ref, "scripts").map(
+                   _.filter(p => p.endsWith(".scala") && !p.contains("/templates/"))
+                     .map(_.stripPrefix("scripts/").stripSuffix(".scala"))
+                     .sorted
+                 )
     } yield {
       val pkg = projectPackage().getOrElse("<package>")
       s"""# Madrileno reference (anchored at ${ref.ref.take(10)})
          |
          |Madrileno is a Scala 3 backend template (http4s + stir + cats-effect + Skunk Postgres). The codebase you (the AI) are helping write is derived from it; this MCP serves the upstream reference at a pinned commit.
          |
+         |## Implementing a new module — start with the scaffold
+         |
+         |**Run `./scripts/scaffold-module.scala <Aggregate> <plural>` first.** It generates the canonical layout — domain + repository + service + router + DTO + module trait + Flyway migration + three specs (domain, repository, router) — auto-wires `ApplicationLoader`, and bakes in conventions that aren't obvious from reading source. Edit the generated files to add your domain-specific fields. Skipping the scaffold means rediscovering those conventions by hand; most are easy to miss.
+         |
+         |Before editing, read `madrileno_doc("principles")`, `madrileno_doc("module-anatomy")`, `madrileno_doc("adding-a-module")` and `madrileno_doc("testing-guide")` — they cover the non-obvious bits the scaffold doesn't reveal on its own.
+         |
          |## Reference modules
          |
-         |Each module is a vertical slice (domain + repository + service + router + DTO + module trait). Call `madrileno_module(name)` for the concatenated source of any:
+         |Each module is a vertical slice. Call `madrileno_module(name)` for the concatenated source (main + tests) of any:
          |
          |${modules.map(m => s"- $m").mkString("\n")}
          |
@@ -134,7 +145,15 @@ object MCPServer {
          |
          |${docs.map(d => s"- $d").mkString("\n")}
          |
-         |Start with `adding-a-module` for vertical-slice walkthroughs, `domain-modeling` for opaque-type / validation idioms.
+         |Start with `adding-a-module` for vertical-slice walkthroughs, `domain-modeling` for opaque-type / validation idioms, `testing-guide` for the testing setup the scaffold's specs build on.
+         |
+         |## Scripts
+         |
+         |Operational scripts under `scripts/`. Call `madrileno_source("scripts/<name>.scala")` for the verbatim source of any:
+         |
+         |${scripts.map(s => s"- $s").mkString("\n")}
+         |
+         |`scaffold-module` is the one you reach for when adding new aggregates (see top of this overview).
          |
          |## Available tools
          |
