@@ -20,10 +20,11 @@ class __Aggregate__RouterSpec extends BaseRouteSpec with TestApplicationLoader {
   private val authContext: AuthContext = AuthContext(TestData.user())
 
   private def seed__Aggregate__(): __Aggregate__ = {
-    val entity = __Aggregate__(id = __Aggregate__Id(UUID.randomUUID()), name = __Aggregate__Name("test-name"))
+    val entity = __Aggregate__.create(__Aggregate__Id(UUID.randomUUID()), __Aggregate__Name("test-name"), Instant.now())
     application.transactor
-      .inSession(application.__aggregate__Repository.create(entity, Instant.now()))
+      .inSession(application.__aggregate__Repository.save(entity))
       .unsafeRunSync()
+    entity
   }
 
   path("/v1/__aggregates__/{id}")(
