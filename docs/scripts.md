@@ -28,10 +28,10 @@ After running:
 
 ```bash
 cp .env.sample .env
-sbt 'scalafixAll; scalafixAll; test'
+sbt test
 ```
 
-`scalafixAll` runs twice on purpose. The auction surgery leaves a pile of imports that were used only by the now-deleted methods (e.g. `org.http4s.MediaType`, `madrileno.utils.imaging.*`); the first pass removes the obvious ones; some others only become unused once the first pass has run (cascading). The second pass picks those up. After that, `test` should be green.
+The init script runs `sbt 'scalafixAll; scalafixAll'` itself before printing the next-steps, because the auction surgery leaves a pile of imports that were used only by the now-deleted methods (e.g. `org.http4s.MediaType`, `madrileno.utils.imaging.*`). Two passes because removing one import can free another. If that step fails (e.g., `sbt` not on PATH), re-run it manually before `sbt test`.
 
 If anything's off, `git checkout .` reverts.
 
@@ -44,7 +44,7 @@ Adding a new auction-coupled block elsewhere? Bracket it with the same markers a
 ### What it doesn't do
 
 - Doesn't touch your git working tree (no `git add` / `git commit`). Run `git status` after, review, commit yourself.
-- Doesn't run `sbt compile`. The compiler is the safety net; running it is your call.
+- Doesn't run `sbt compile`. The compiler is the safety net; running it is your call. (It *does* run `sbt scalafixAll` twice, to clear orphaned imports from the auction surgery — see above.)
 - Doesn't rewrite prose. Doc files get the `madrileno` → `<name>` substitution but `README.md`, badges, and any project-specific marketing copy are yours to rewrite. Same for `docs/architecture.md`-style "why we did X" notes — they describe the template's reasoning and might or might not match your own.
 - Doesn't delete itself. Once you're done renaming, `rm scripts/init-project.scala` (and this doc, if you want) — the template baggage is yours to keep or trim.
 
