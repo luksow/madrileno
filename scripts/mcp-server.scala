@@ -14,11 +14,11 @@ import scala.util.{Failure, Success, Try}
 
 case class MadrilenoRef(repo: String, sha: String)
 
-case class OverviewInput()                                                                derives io.circe.Codec, Schema
-case class ModuleInput(name: String)                                                      derives io.circe.Codec, Schema
-case class DocInput(name: String)                                                         derives io.circe.Codec, Schema
-case class SourceInput(path: String)                                                      derives io.circe.Codec, Schema
-case class ChangesInput(since: Option[String], paths: Option[List[String]], target: Option[String]) derives io.circe.Codec, Schema
+case class OverviewInput()                                                                derives io.circe.Codec.AsObject, Schema
+case class ModuleInput(name: String)                                                      derives io.circe.Codec.AsObject, Schema
+case class DocInput(name: String)                                                         derives io.circe.Codec.AsObject, Schema
+case class SourceInput(path: String)                                                      derives io.circe.Codec.AsObject, Schema
+case class ChangesInput(since: Option[String], paths: Option[List[String]], target: Option[String]) derives io.circe.Codec.AsObject, Schema
 
 object MCPServer {
 
