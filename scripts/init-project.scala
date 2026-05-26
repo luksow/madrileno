@@ -187,7 +187,8 @@ object InitProject {
     val totalUpdated = (touched.toSet ++ linkRewrites.toSet).size
     println(s"Project: $name")
     println(s"Package: $packageName")
-    println(s"Deleted: ${deleted.size} auction-related paths${if (docsDeleted) ", plus docs/ (run with --keep-docs to retain)" else ""}")
+    println(s"Deleted: ${deleted.size} auction-related paths")
+    if (docsDeleted) println("Deleted: docs/ (pass --keep-docs to retain a local copy; the MCP server serves them from the pinned ref)")
     println(s"Updated: $totalUpdated files")
     println(s"Anchored: $upstreamRepo @ ${sha.take(10)} (see .madrileno-ref)")
     println()

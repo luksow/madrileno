@@ -104,6 +104,14 @@ object MCPServer {
       } else if (!os.exists(shadowDir / ".git")) {
         throw new IllegalStateException(s"$shadowDir exists but is not a git repo. Remove it and re-run.")
       } else {
+        // If `.madrileno-ref`'s `repo=` changed since last run (e.g. user switched origin), the
+        // existing shadow's `origin` still points at the old URL. Re-point it so the subsequent
+        // fetch lands in the right place — otherwise we'd silently fetch from the wrong repo.
+        val currentOrigin = os.proc("git", "-C", shadowDir.toString, "remote", "get-url", "origin").call(check = false).out.text().trim
+        if (currentOrigin != ref.repo) {
+          Console.err.println(s"[mcp] shadow's origin ($currentOrigin) differs from .madrileno-ref repo (${ref.repo}); re-pointing")
+          os.proc("git", "-C", shadowDir.toString, "remote", "set-url", "origin", ref.repo).call()
+        }
         Console.err.println(s"[mcp] fetching latest in $shadowDir")
         val r = os.proc("git", "-C", shadowDir.toString, "fetch", "origin").call(check = false)
         if (r.exitCode != 0)
