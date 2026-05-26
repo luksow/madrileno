@@ -78,7 +78,7 @@ object MCPServer {
   // but must be single refnames (no `..` ranges — the caller composes ranges by passing since/target separately).
   private val ValidNamePattern   = """[A-Za-z0-9_-]+""".r
   private val ValidRefPattern    = """[a-zA-Z0-9_./@^~-]+""".r
-  private val PinnedShaPattern   = """[0-9a-f]{7,40}""".r // accept short shas down to 7 chars
+  private val PinnedShaPattern   = """[0-9a-fA-F]{7,40}""".r // accept short shas down to 7 chars; case-insensitive per git
   private def validateName(name: String): Either[String, Unit] =
     if (ValidNamePattern.matches(name)) Right(()) else Left(s"name must match [A-Za-z0-9_-]+; got '$name'")
   private def validateRef(ref: String): Either[String, Unit] =

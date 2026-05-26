@@ -13,7 +13,7 @@ Five tools, designed around the conceptual units of the codebase (a module, a do
 | `madrileno_overview()`     | Orientation: what madrileno is, reference modules, doc index, pinned ref                   | First call in any session — the anchor                |
 | `madrileno_module(name)`   | Concatenated source of all main + test files under one module (`user`, `auction`, etc.)    | Learning a module pattern in full                     |
 | `madrileno_doc(name)`      | One doc (markdown), e.g. `auth`, `domain-modeling`, `adding-a-module`                       | Expanding on a concept                                |
-| `madrileno_source(path)`   | Verbatim file at the pinned ref. Fallback for specific paths                                | "Show me this exact file"                             |
+| `madrileno_source(path)`   | File at the pinned ref (`madrileno.*` package qualifiers rewritten — see below). Fallback for specific paths | "Show me this exact file"                             |
 | `madrileno_changes(since?, paths?, target?)` | `git log --oneline` between two refs, optionally path-filtered                | Pulling upstream changes since the project was anchored |
 
 Source returned by `madrileno_module` and `madrileno_source` is **automatically rewritten** from `madrileno.*` to your project's package. Docs are returned verbatim.
