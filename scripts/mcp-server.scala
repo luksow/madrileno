@@ -12,7 +12,7 @@ import sttp.tapir.server.netty.sync.NettySyncServer
 
 import scala.util.{Failure, Success, Try}
 
-case class MadrilenoRef(repo: String, ref: String)
+case class MadrilenoRef(repo: String, sha: String)
 
 case class OverviewInput()                                                                derives io.circe.Codec, Schema
 case class ModuleInput(name: String)                                                      derives io.circe.Codec, Schema
@@ -35,21 +35,22 @@ object MCPServer {
     if (!os.exists(refFile))
       Left(s"missing $refFile — run `./scripts/init-project.scala` to generate it, or write it by hand")
     else {
-      val map = os
-        .read(refFile)
-        .linesIterator
-        .map(_.trim)
-        .filter(l => l.nonEmpty && !l.startsWith("#"))
-        .flatMap { l =>
-          l.split("=", 2) match {
-            case Array(k, v) => Some(k.trim -> v.trim)
-            case _           => None
-          }
+      // Parse to (lineNo, key, value) so malformed lines produce a specific error rather than
+      // being silently dropped — a `.madrileno-ref` with `ref <sha>` instead of `ref=<sha>`
+      // would otherwise just produce a generic "must contain `ref=` line" message.
+      val lines = os.read(refFile).linesIterator.zipWithIndex.toList
+      val parsed = lines
+        .map { case (l, i) => (i + 1, l.trim) }
+        .filter { case (_, l) => l.nonEmpty && !l.startsWith("#") }
+      val malformed = parsed.collect { case (lineNo, l) if !l.contains('=') => s"line $lineNo: '$l'" }
+      if (malformed.nonEmpty)
+        Left(s"$refFile has malformed line(s) (expected `key=value`): ${malformed.mkString("; ")}")
+      else {
+        val map = parsed.flatMap { case (_, l) => l.split("=", 2) match { case Array(k, v) => Some(k.trim -> v.trim); case _ => None } }.toMap
+        (map.get("repo"), map.get("ref")) match {
+          case (Some(repo), Some(ref)) => Right(MadrilenoRef(repo, ref))
+          case _                       => Left(s"$refFile must contain `repo=<url>` and `ref=<sha>` lines (found keys: ${map.keys.toList.sorted.mkString(", ")})")
         }
-        .toMap
-      (map.get("repo"), map.get("ref")) match {
-        case (Some(repo), Some(ref)) => Right(MadrilenoRef(repo, ref))
-        case _                       => Left(s"$refFile must contain `repo=<url>` and `ref=<sha>` lines")
       }
     }
   }
@@ -121,10 +122,19 @@ object MCPServer {
       case Success(_) => Right(())
       case Failure(e) => Left(s"shadow clone failed: ${e.getMessage}")
     }
+    // After sync, verify the pinned sha actually exists in the shadow. Catches the case where
+    // .madrileno-ref points at a sha that doesn't exist in the (now-fetched) remote — would
+    // otherwise produce confusing `git show` / `ls-tree` failures on the first tool call.
+    def verifyShaExists: Either[String, Unit] = {
+      val r = os.proc("git", "-C", shadowDir.toString, "cat-file", "-e", s"${ref.sha}^{commit}").call(check = false)
+      if (r.exitCode == 0) Right(())
+      else Left(s"pinned ref ${ref.sha} not found in shadow clone at ${ref.repo}. Check `.madrileno-ref` or push the sha to that remote.")
+    }
     for {
       _ <- validateRepoUrl(ref.repo)
-      _ <- validatePinnedRef(ref.ref).left.map(e => s"invalid pinned ref in .madrileno-ref: $e")
+      _ <- validatePinnedRef(ref.sha).left.map(e => s"invalid pinned ref in .madrileno-ref: $e")
       _ <- syncShadow
+      _ <- verifyShaExists
     } yield ()
   }
 
@@ -175,16 +185,16 @@ object MCPServer {
   def overview(): Either[String, String] = {
     for {
       ref     <- readRef
-      modules <- gitListTree(ref.ref, "src/main/scala/madrileno").map(_.flatMap(extractModule).distinct.sorted)
-      docs    <- gitListTree(ref.ref, "docs").map(_.filter(_.endsWith(".md")).map(_.stripPrefix("docs/").stripSuffix(".md")).sorted)
-      scripts <- gitListTree(ref.ref, "scripts").map(
+      modules <- gitListTree(ref.sha, "src/main/scala/madrileno").map(_.flatMap(extractModule).distinct.sorted)
+      docs    <- gitListTree(ref.sha, "docs").map(_.filter(_.endsWith(".md")).map(_.stripPrefix("docs/").stripSuffix(".md")).sorted)
+      scripts <- gitListTree(ref.sha, "scripts").map(
                    _.filter(p => p.endsWith(".scala") && !p.contains("/templates/"))
                      .map(_.stripPrefix("scripts/").stripSuffix(".scala"))
                      .sorted
                  )
     } yield {
       val pkg = projectPackage.getOrElse("<package>")
-      s"""# Madrileno reference (anchored at ${ref.ref.take(10)})
+      s"""# Madrileno reference (anchored at ${ref.sha.take(10)})
          |
          |Madrileno is a Scala 3 backend template (http4s + stir + cats-effect + Skunk Postgres). The codebase you (the AI) are helping write is derived from it; this MCP serves the upstream reference at a pinned commit.
          |
@@ -224,7 +234,7 @@ object MCPServer {
          |- `madrileno_module(name)` — all source files for one module (main + tests).
          |- `madrileno_doc(name)` — one doc.
          |- `madrileno_source(path)` — verbatim file. Fallback for a specific path.
-         |- `madrileno_changes(since?, paths?, target?)` — git log between two refs, optionally path-filtered. Defaults: `since=${ref.ref.take(10)}` (the pinned ref), `target=origin/main`. Use this to learn what's new in upstream since your project was anchored.
+         |- `madrileno_changes(since?, paths?, target?)` — git log between two refs, optionally path-filtered. Defaults: `since=${ref.sha.take(10)}` (the pinned ref), `target=origin/main`. Use this to learn what's new in upstream since your project was anchored.
          |
          |## Package rewriting
          |
@@ -246,16 +256,16 @@ object MCPServer {
     for {
       _          <- validateName(name)
       ref        <- readRef
-      mainPaths  <- gitListTree(ref.ref, s"src/main/scala/madrileno/$name").map(_.filter(_.endsWith(".scala")))
+      mainPaths  <- gitListTree(ref.sha, s"src/main/scala/madrileno/$name").map(_.filter(_.endsWith(".scala")))
       // git ls-tree returns 0 with empty output when the path doesn't exist (e.g. a module without
       // tests), so an empty list here is "no test dir, fine" — non-zero exits are real errors and propagate.
-      testPaths  <- gitListTree(ref.ref, s"src/test/scala/madrileno/$name").map(_.filter(_.endsWith(".scala")))
+      testPaths  <- gitListTree(ref.sha, s"src/test/scala/madrileno/$name").map(_.filter(_.endsWith(".scala")))
       allPaths    = mainPaths ++ testPaths
-      _          <- if (allPaths.isEmpty) Left(s"no files under src/{main,test}/scala/madrileno/$name at ref ${ref.ref.take(10)}") else Right(())
+      _          <- if (allPaths.isEmpty) Left(s"no files under src/{main,test}/scala/madrileno/$name at ref ${ref.sha.take(10)}") else Right(())
       contents   <- allPaths.foldLeft(Right(List.empty[(String, String)]): Either[String, List[(String, String)]]) { (acc, p) =>
                       for {
                         soFar <- acc
-                        body  <- gitShow(ref.ref, p)
+                        body  <- gitShow(ref.sha, p)
                       } yield (p, body) :: soFar
                     }
       ordered     = contents.reverse
@@ -274,7 +284,7 @@ object MCPServer {
     for {
       _       <- validateName(name)
       ref     <- readRef
-      content <- gitShow(ref.ref, s"docs/$name.md")
+      content <- gitShow(ref.sha, s"docs/$name.md")
     } yield content
   }
 
@@ -282,7 +292,7 @@ object MCPServer {
     for {
       _       <- validatePath(path)
       ref     <- readRef
-      content <- gitShow(ref.ref, path)
+      content <- gitShow(ref.sha, path)
     } yield rewritePackage(content, projectPackage)
   }
 
@@ -294,12 +304,13 @@ object MCPServer {
     else if (path.startsWith("-")) Left(s"path must not start with '-'; got '$path'")
     else if (path.split("/").contains("..")) Left(s"path must not contain '..' segments; got '$path'")
     else if (path.contains(":")) Left(s"path must not contain ':' (would split the `ref:path` revspec in `git show`); got '$path'")
+    else if (path.exists(c => c.isControl)) Left(s"path must not contain control characters; got '${path.replaceAll("[\\x00-\\x1f]", "?")}'")
     else Right(())
 
   def changes(since: Option[String], paths: Option[List[String]], target: Option[String]): Either[String, String] = {
     for {
       ref       <- readRef
-      sinceRef   = since.getOrElse(ref.ref)
+      sinceRef   = since.getOrElse(ref.sha)
       targetRef  = target.getOrElse("origin/main")
       logs      <- gitLog(sinceRef, targetRef, paths.getOrElse(Nil))
     } yield {
@@ -352,7 +363,7 @@ object MCPServer {
       case Right(_) => ()
       case Left(e)  => Console.err.println(s"[mcp] $e"); sys.exit(1)
     }
-    Console.err.println(s"[mcp] anchored at ${ref.ref.take(10)} (${ref.repo})")
+    Console.err.println(s"[mcp] anchored at ${ref.sha.take(10)} (${ref.repo})")
     Console.err.println(s"[mcp] listening on http://localhost:8080/mcp")
 
     val mcpServerEndpoint = mcpEndpoint(
