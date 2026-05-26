@@ -62,8 +62,8 @@ object InitProject {
     val sha     = shaProc.out.text().trim
     require(shaProc.exitCode == 0 && sha.nonEmpty,
       s"can't resolve upstream sha (`git -C $root rev-parse HEAD` failed). " +
-        "init-project assumes you cloned this template with git — that's how the MCP anchor is pinned. " +
-        "Re-run from a git clone, or write `.madrileno-ref` by hand (see docs/mcp.md) before this script.")
+        "init-project must be run from a git clone of madrileno — that's how the MCP anchor is pinned. " +
+        "If you don't have git, you can skip init-project entirely (the rename/auction-delete is optional) and write `.madrileno-ref` by hand for the MCP server (see docs/mcp.md).")
 
     // Derive the upstream URL from `git remote get-url origin`, so users who cloned from a fork
     // (or via SSH from upstream) get a `.madrileno-ref` that actually resolves the sha. Fall back
