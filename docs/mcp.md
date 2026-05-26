@@ -93,9 +93,10 @@ Months after init, upstream Madrileno has evolved. To learn what's new in, say, 
 
 ```
 > madrileno_changes(paths=["src/main/scala/madrileno/auth"])
+<your pinned sha>..origin/main (2 commits):
+
 840b2ac auth: provider map refactor + dev login
 208deeb Config: type AppConfig.environment as Environment enum
-...
 ```
 
 Ask Claude to walk through those commits against your auth code and propose updates. After applying, bump `ref=` in `.madrileno-ref` to the new sha. That's the "stay in sync with upstream patterns" loop.
