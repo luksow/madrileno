@@ -23,11 +23,13 @@ Source returned by `madrileno_module` and `madrileno_source` is **automatically 
 `init-project.scala` writes `.madrileno-ref` to your project root on init:
 
 ```
-repo=https://github.com/luksow/madrileno.git
+repo=<your origin URL>
 ref=<sha at init time>
 ```
 
-That's the version every MCP call reads from. Commit `.madrileno-ref` — collaborators benefit too.
+`repo=` is derived from `git remote get-url origin` (so it works for forks / SSH clones), falling back to the canonical upstream when there's no origin. `ref=` is the sha of HEAD at init time.
+
+The MCP server reads this **once at startup** (lazy val) and anchors every tool call to that commit. If you edit `.madrileno-ref` while the server is running, restart the server for the change to take effect. Commit `.madrileno-ref` — collaborators benefit from a shared pin.
 
 The MCP server keeps a local shadow clone of the upstream repo at `.madrileno-mcp/repo/` (gitignored). First launch clones (~50MB, one-time). Every launch does a `git fetch origin` so `madrileno_changes` can compare your pinned ref against the latest `origin/main`.
 

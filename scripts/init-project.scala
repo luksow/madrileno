@@ -59,7 +59,7 @@ object InitProject {
     // The MCP server hard-requires `.madrileno-ref` to point at a real commit reachable from
     // some git remote; if we can't resolve either here, fail now rather than mid-init.
     val shaProc = os.proc("git", "-C", root.toString, "rev-parse", "HEAD").call(check = false)
-    val sha     = shaProc.out.trim()
+    val sha     = shaProc.out.text().trim
     require(shaProc.exitCode == 0 && sha.nonEmpty,
       s"can't resolve upstream sha (`git -C $root rev-parse HEAD` failed). " +
         "init-project assumes you cloned this template with git — that's how the MCP anchor is pinned. " +
@@ -68,8 +68,9 @@ object InitProject {
     // Derive the upstream URL from `git remote get-url origin`, so users who cloned from a fork
     // (or via SSH from upstream) get a `.madrileno-ref` that actually resolves the sha. Fall back
     // to the hardcoded URL if there's no `origin` remote.
-    val originProc = os.proc("git", "-C", root.toString, "remote", "get-url", "origin").call(check = false)
-    val upstreamRepo = if (originProc.exitCode == 0 && originProc.out.trim().nonEmpty) originProc.out.trim() else MadrilenoUpstream
+    val originProc   = os.proc("git", "-C", root.toString, "remote", "get-url", "origin").call(check = false)
+    val originUrl    = originProc.out.text().trim
+    val upstreamRepo = if (originProc.exitCode == 0 && originUrl.nonEmpty) originUrl else MadrilenoUpstream
 
     // 1. Delete the auction demo: source, tests, related Flyway migrations.
     val auctionDirs = for {

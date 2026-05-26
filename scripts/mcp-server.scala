@@ -10,7 +10,6 @@ import chimp.*
 import sttp.tapir.*
 import sttp.tapir.server.netty.sync.NettySyncServer
 
-import java.util.regex.Matcher
 import scala.util.{Failure, Success, Try}
 
 case class MadrilenoRef(repo: String, ref: String)
@@ -155,9 +154,11 @@ object MCPServer {
 
   def rewritePackage(content: String, userPackage: Option[String]): String = userPackage match {
     case Some(pkg) if pkg != "madrileno" =>
-      // Matcher.quoteReplacement: defense in depth. init-project validates the package to
-      // `[a-z][a-z0-9]*`, but this method is also reachable with hand-edited .madrileno-ref / src trees.
-      content.replace("madrileno.", s"$pkg.").replaceAll("""\bmadrileno\b""", Matcher.quoteReplacement(pkg))
+      // Only rewrite `madrileno.` qualifiers (package declarations + imports). Standalone
+      // `madrileno` would also catch string literals, comments, and URLs (e.g. `luksow/madrileno`
+      // in a doc link) — that's noise for source returned to Claude. Matches the overview's
+      // "rewritten from `madrileno.*` to `<pkg>.*`" claim.
+      content.replace("madrileno.", s"$pkg.")
     case _ => content
   }
 
@@ -284,6 +285,7 @@ object MCPServer {
     if (path.isEmpty) Left("path must be non-empty")
     else if (path.startsWith("-")) Left(s"path must not start with '-'; got '$path'")
     else if (path.split("/").contains("..")) Left(s"path must not contain '..' segments; got '$path'")
+    else if (path.contains(":")) Left(s"path must not contain ':' (would split the `ref:path` revspec in `git show`); got '$path'")
     else Right(())
 
   def changes(since: Option[String], paths: Option[List[String]], target: Option[String]): Either[String, String] = {
