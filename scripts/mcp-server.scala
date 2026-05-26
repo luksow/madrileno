@@ -57,14 +57,26 @@ object MCPServer {
 
   // Read once on first access — same lazy-val rationale as readRef: the package dir doesn't
   // change at runtime, and re-listing the FS on every tool call is just waste.
+  // Walk down `src/main/scala/` taking single-child segments until we hit a level that has
+  // multiple subdirs or any .scala file — that's the project's root package. Supports both
+  // flat packages (`madrileno`) and multi-segment ones (`com.example`).
   lazy val projectPackage: Option[String] = {
     val mainScala = projectRoot / "src" / "main" / "scala"
     if (!os.exists(mainScala)) None
-    else
-      os.list(mainScala).filter(os.isDir(_)) match {
-        case Seq(single) => Some(single.last)
-        case _           => None
+    else {
+      @annotation.tailrec
+      def walk(dir: os.Path, segs: List[String]): List[String] = {
+        val items    = os.list(dir).toList
+        val hasFiles = items.exists(os.isFile(_))
+        val subdirs  = items.filter(os.isDir(_))
+        if (hasFiles || subdirs.length != 1) segs
+        else walk(subdirs.head, segs :+ subdirs.head.last)
       }
+      walk(mainScala, Nil) match {
+        case Nil  => None
+        case segs => Some(segs.mkString("."))
+      }
+    }
   }
 
   // Belt-and-braces against a `.madrileno-ref` whose `repo=` line is hand-edited to something
