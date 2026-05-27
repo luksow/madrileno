@@ -35,6 +35,7 @@ Skim the **Start here** path on day one. Reach for the rest by topic.
 ## Tooling
 
 - [`scripts.md`](scripts.md) — scala-cli scripts under `scripts/`: `init-project` (rename template), `scaffold-module` (vertical-slice generator), `dev-console` (REPL with the wire graph live).
+- [`mcp.md`](mcp.md) — `scripts/mcp-server.scala` — MCP server exposing this template's docs / source / commit log to an AI assistant for pattern-aware new-module work.
 
 ## Conventions
 
