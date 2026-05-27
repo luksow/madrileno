@@ -42,8 +42,9 @@ object TestData {
     ipAddress: IpAddress = IpAddress.fromString("127.0.0.1").get,
     createdAt: Instant = Instant.now(),
     usedAt: Option[Instant] = None,
-    deletedAt: Option[Instant] = None
-  ): RefreshToken = RefreshToken(id, userId, userAgent, ipAddress, createdAt, usedAt, deletedAt)
+    deletedAt: Option[Instant] = None,
+    expiresAt: Option[Instant] = None
+  ): RefreshToken = RefreshToken(id, userId, userAgent, ipAddress, createdAt, usedAt, deletedAt, expiresAt)
 
   def verifiedExternalToken(
     provider: Provider = Provider.Firebase,
