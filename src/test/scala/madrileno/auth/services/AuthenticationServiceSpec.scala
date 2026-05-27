@@ -166,5 +166,20 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
         )
         .map(_ shouldBe AuthenticationResult.InvalidToken)
     }
+
+    "reject an expired refresh token when validFor is configured" in {
+      val (service, _) = serviceWithFreshAuth(validFor = Some(Duration.ofMinutes(5)))
+      for {
+        created <- service.authenticateWithProvider(Provider.Firebase, command)
+        refreshTokenId = created match {
+                           case AuthenticationResult.UserCreated(_, rt) => rt.id
+                           case other                                   => fail(s"Expected UserCreated, got $other")
+                         }
+        _ = testClock.advance(Duration.ofMinutes(10).toMillis)
+        result <- service.authenticateWithRefreshToken(
+                    AuthenticateWithRefreshTokenCommand(refreshTokenId, UserAgent("test-agent"), TestData.defaultIpAddress)
+                  )
+      } yield result shouldBe AuthenticationResult.InvalidToken
+    }
   }
 }
