@@ -76,11 +76,11 @@ class JwtService(config: JwtService.Config) {
 
 object JwtService {
   final case class Config(secret: String, validFor: Duration) derives ConfigReader
+}
 
-  enum DecodingResult[A] {
-    case Decoded(payload: A)
-    case ParsingFailure(t: Throwable)
-    case InvalidToken(t: Throwable)
-    case Expired(t: Throwable)
-  }
+enum DecodingResult[A] {
+  case Decoded(payload: A)
+  case ParsingFailure(t: Throwable)
+  case InvalidToken(t: Throwable)
+  case Expired(t: Throwable)
 }

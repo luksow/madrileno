@@ -91,7 +91,7 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
       service.authenticateWithProvider(Provider.Firebase, command).map {
         case AuthenticationResult.UserCreated(jwt, _) =>
           jwtService.decode[AuthContext](jwt.toString) match {
-            case JwtService.DecodingResult.Decoded(ctx) =>
+            case DecodingResult.Decoded(ctx) =>
               ctx.fullName shouldBe token.profile.fullName
             case other => fail(s"Expected Decoded, got $other")
           }

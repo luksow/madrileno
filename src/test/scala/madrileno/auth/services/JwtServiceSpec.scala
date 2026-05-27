@@ -23,7 +23,7 @@ class JwtServiceSpec extends AnyWordSpec with Matchers {
       val jwt = service.encode(authContext, now)
 
       service.decode[AuthContext](jwt.toString) match {
-        case JwtService.DecodingResult.Decoded(decoded) =>
+        case DecodingResult.Decoded(decoded) =>
           decoded shouldBe authContext
         case other => fail(s"Expected Decoded, got $other")
       }
@@ -49,8 +49,8 @@ class JwtServiceSpec extends AnyWordSpec with Matchers {
       val jwt  = service.encode(authContext, past)
 
       service.decode[AuthContext](jwt.toString) match {
-        case JwtService.DecodingResult.Expired(_) => succeed
-        case other                                => fail(s"Expected Expired, got $other")
+        case DecodingResult.Expired(_) => succeed
+        case other                     => fail(s"Expected Expired, got $other")
       }
     }
 
@@ -62,15 +62,15 @@ class JwtServiceSpec extends AnyWordSpec with Matchers {
       val jwt = otherService.encode(authContext, now)
 
       service.decode[AuthContext](jwt.toString) match {
-        case JwtService.DecodingResult.InvalidToken(_) => succeed
-        case other                                     => fail(s"Expected InvalidToken, got $other")
+        case DecodingResult.InvalidToken(_) => succeed
+        case other                          => fail(s"Expected InvalidToken, got $other")
       }
     }
 
     "reject a malformed token" in {
       service.decode[AuthContext]("not.a.valid.jwt") match {
-        case JwtService.DecodingResult.InvalidToken(_) => succeed
-        case other                                     => fail(s"Expected InvalidToken, got $other")
+        case DecodingResult.InvalidToken(_) => succeed
+        case other                          => fail(s"Expected InvalidToken, got $other")
       }
     }
 
@@ -79,8 +79,8 @@ class JwtServiceSpec extends AnyWordSpec with Matchers {
       val jwt = service.encode("just a string", now)(using Encoder.encodeString)
 
       service.decode[AuthContext](jwt.toString) match {
-        case JwtService.DecodingResult.ParsingFailure(_) => succeed
-        case other                                       => fail(s"Expected ParsingFailure, got $other")
+        case DecodingResult.ParsingFailure(_) => succeed
+        case other                            => fail(s"Expected ParsingFailure, got $other")
       }
     }
   }
