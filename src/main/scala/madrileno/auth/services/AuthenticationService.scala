@@ -221,8 +221,5 @@ final case class RevokeRefreshTokenCommand(userId: UserId, refreshTokenId: Refre
 final case class RevokeRefreshTokensCommand(userId: UserId, userAgent: UserAgent)
 
 object AuthenticationService {
-  // `validFor` is `Option[Duration]` so the config can be omitted entirely to mean "no expiry"
-  // (leaked tokens still revocable; current behavior preserved for projects that haven't opted in).
-  // Set via `refresh-token.valid-for` HOCON or `REFRESH_TOKEN_VALID_FOR` env var.
   final case class Config(validFor: Option[Duration]) derives ConfigReader
 }

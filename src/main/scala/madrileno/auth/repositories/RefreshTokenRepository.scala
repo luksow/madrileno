@@ -110,8 +110,6 @@ class RefreshTokenRepository {
     repository.update(RefreshTokenRow(refreshToken))
   }
 
-  // Tokens that were either used, deleted, or expired before `cutoff` — i.e. retained only for
-  // post-mortem auditability for some window, then physically removed.
   def deleteStaleBefore(cutoff: Instant): DB[Unit] = {
     val session = summon[Session[IO]]
     val table   = RefreshTokenRowTable

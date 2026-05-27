@@ -28,8 +28,6 @@ final case class RefreshToken(
   deletedAt: Option[Instant],
   expiresAt: Option[Instant]) {
   def isValid(now: Instant): Boolean = {
-    // Option.forall: None (no expiry configured) → always valid time-wise;
-    // Some(t) → valid only while now is strictly before t.
     deletedAt.isEmpty && usedAt.isEmpty && expiresAt.forall(now.isBefore)
   }
 
