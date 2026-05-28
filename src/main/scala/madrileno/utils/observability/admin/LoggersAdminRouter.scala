@@ -12,10 +12,10 @@ import scala.jdk.CollectionConverters.*
 class LoggersAdminRouter extends BaseRouter {
 
   val routes: Route =
-    (get & path("loggers") & pathEndOrSingleSlash) {
+    (get & pathPrefix("loggers") & pathEndOrSingleSlash) {
       complete(IO.delay(listLoggers()).map[ToResponseMarshallable](Ok -> _))
     } ~
-      (get & path("loggers" / Segment) & pathEndOrSingleSlash) { name =>
+      (get & pathPrefix("loggers" / Segment) & pathEndOrSingleSlash) { name =>
         complete {
           IO.delay(getLogger(name)).map[ToResponseMarshallable] {
             case Some(dto) => Ok       -> dto
@@ -23,11 +23,12 @@ class LoggersAdminRouter extends BaseRouter {
           }
         }
       } ~
-      (post & path("loggers" / Segment) & pathEndOrSingleSlash & entity(as[SetLoggerLevelRequest])) { (name, request) =>
+      (post & pathPrefix("loggers" / Segment) & pathEndOrSingleSlash & entity(as[SetLoggerLevelRequest])) { (name, request) =>
         complete {
           IO.delay(setLoggerLevel(name, request.level)).map[ToResponseMarshallable] {
-            case Right(dto)  => Ok         -> dto
-            case Left(error) => BadRequest -> error
+            case Right(Some(dto)) => Ok         -> dto
+            case Right(None)      => NotFound   -> ""
+            case Left(error)      => BadRequest -> error
           }
         }
       }
@@ -41,24 +42,25 @@ class LoggersAdminRouter extends BaseRouter {
   private def listLoggers(): List[LoggerLevelDto] =
     loggerContext.getLoggerList.asScala.toList.map(toDto).sortBy(_.name)
 
-  private def getLogger(name: String): Option[LoggerLevelDto] = {
-    val raw = loggerContext.exists(name)
-    Option(raw).map(toDto)
-  }
+  private def getLogger(name: String): Option[LoggerLevelDto] =
+    Option(loggerContext.exists(name)).map(toDto)
 
-  private def setLoggerLevel(name: String, levelStr: Option[String]): Either[String, LoggerLevelDto] = {
-    val logger: Logger = loggerContext.getLogger(name)
-    levelStr match {
-      case None =>
-        logger.setLevel(null) // scalafix:ok DisableSyntax.null
-        Right(toDto(logger))
-      case Some(s) =>
-        parseLevel(s) match {
-          case Some(level) =>
-            logger.setLevel(level)
-            Right(toDto(logger))
+  private def setLoggerLevel(name: String, levelStr: Option[String]): Either[String, Option[LoggerLevelDto]] = {
+    Option(loggerContext.exists(name)) match {
+      case None => Right(None)
+      case Some(logger) =>
+        levelStr match {
           case None =>
-            Left(s"unknown log level: '$s' (valid: TRACE, DEBUG, INFO, WARN, ERROR, OFF)")
+            logger.setLevel(null) // scalafix:ok DisableSyntax.null
+            Right(Some(toDto(logger)))
+          case Some(s) =>
+            parseLevel(s) match {
+              case Some(level) =>
+                logger.setLevel(level)
+                Right(Some(toDto(logger)))
+              case None =>
+                Left(s"unknown log level: '$s' (valid: TRACE, DEBUG, INFO, WARN, ERROR, OFF)")
+            }
         }
     }
   }

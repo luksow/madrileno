@@ -7,6 +7,7 @@ import madrileno.support.{BaseRouteSpec, TestApplicationLoader}
 import org.http4s.circe.CirceEntityCodec.*
 import org.http4s.headers.Authorization
 import org.http4s.{BasicCredentials, Headers, Method, Request, Status, Uri}
+import org.slf4j.LoggerFactory
 import pl.iterators.stir.server.Route
 
 class LoggersAdminRouterSpec extends BaseRouteSpec with TestApplicationLoader {
@@ -15,6 +16,9 @@ class LoggersAdminRouterSpec extends BaseRouteSpec with TestApplicationLoader {
   private val loggersUri                   = Uri.unsafeFromString("/admin/loggers")
   private def loggerUri(name: String): Uri = Uri.unsafeFromString(s"/admin/loggers/$name")
   private val adminAuth                    = Authorization(BasicCredentials("admin", "admin"))
+
+  private val testLoggerName = classOf[LoggersAdminRouterSpec].getName
+  LoggerFactory.getLogger(testLoggerName)
 
   describe("/admin/loggers") {
     it("returns a list of configured loggers when authenticated") {
@@ -44,8 +48,7 @@ class LoggersAdminRouterSpec extends BaseRouteSpec with TestApplicationLoader {
       dto.effectiveLevel should not be empty
     }
 
-    it("sets the level for a named logger and a subsequent GET reflects it") {
-      val testLoggerName = "madrileno.test.LoggersAdminRouterSpec"
+    it("sets the level for an existing logger and a subsequent GET reflects it") {
       val setRequest = Request[IO](method = Method.POST, uri = loggerUri(testLoggerName), headers = Headers(adminAuth))
         .withEntity(SetLoggerLevelRequest(level = Some("DEBUG")).asJson)
       val setResponse = allRoutes.orNotFound.run(setRequest).unsafeRunSync()
@@ -61,7 +64,6 @@ class LoggersAdminRouterSpec extends BaseRouteSpec with TestApplicationLoader {
     }
 
     it("clears the configured level when level is null and falls back to inherited") {
-      val testLoggerName = "madrileno.test.InheritTest"
       val set = Request[IO](method = Method.POST, uri = loggerUri(testLoggerName), headers = Headers(adminAuth))
         .withEntity(SetLoggerLevelRequest(level = Some("WARN")).asJson)
       allRoutes.orNotFound.run(set).unsafeRunSync().status shouldBe Status.Ok
@@ -76,16 +78,36 @@ class LoggersAdminRouterSpec extends BaseRouteSpec with TestApplicationLoader {
     }
 
     it("rejects an unknown level with 400") {
-      val request = Request[IO](method = Method.POST, uri = loggerUri("madrileno.test.Unknown"), headers = Headers(adminAuth))
+      val request = Request[IO](method = Method.POST, uri = loggerUri(testLoggerName), headers = Headers(adminAuth))
         .withEntity(SetLoggerLevelRequest(level = Some("VERBOSE")).asJson)
       val response = allRoutes.orNotFound.run(request).unsafeRunSync()
       response.status shouldBe Status.BadRequest
     }
 
-    it("returns 404 for an unknown logger (no configuration anywhere)") {
+    it("returns 404 for GET on an unknown logger") {
       val request  = Request[IO](method = Method.GET, uri = loggerUri("madrileno.test.NeverConfigured"), headers = Headers(adminAuth))
       val response = allRoutes.orNotFound.run(request).unsafeRunSync()
       response.status shouldBe Status.NotFound
+    }
+
+    it("returns 404 for POST on an unknown logger (does not auto-create)") {
+      val request = Request[IO](method = Method.POST, uri = loggerUri("madrileno.test.NeverEverConfigured"), headers = Headers(adminAuth))
+        .withEntity(SetLoggerLevelRequest(level = Some("DEBUG")).asJson)
+      val response = allRoutes.orNotFound.run(request).unsafeRunSync()
+      response.status shouldBe Status.NotFound
+    }
+
+    it("rejects POST without auth with 401") {
+      val request = Request[IO](method = Method.POST, uri = loggerUri("ROOT"))
+        .withEntity(SetLoggerLevelRequest(level = Some("DEBUG")).asJson)
+      val response = allRoutes.orNotFound.run(request).unsafeRunSync()
+      response.status shouldBe Status.Unauthorized
+    }
+
+    it("accepts /admin/loggers/ with a trailing slash") {
+      val request  = Request[IO](method = Method.GET, uri = Uri.unsafeFromString("/admin/loggers/"), headers = Headers(adminAuth))
+      val response = allRoutes.orNotFound.run(request).unsafeRunSync()
+      response.status shouldBe Status.Ok
     }
   }
 }
