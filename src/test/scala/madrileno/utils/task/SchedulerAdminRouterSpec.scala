@@ -37,5 +37,16 @@ class SchedulerAdminRouterSpec extends BaseRouteSpec with TestApplicationLoader 
       val response = allRoutes.orNotFound.run(request).unsafeRunSync()
       response.status shouldBe Status.Unauthorized
     }
+
+    it("accepts /admin/jobs/ with a trailing slash") {
+      val request =
+        Request[IO](
+          method = Method.GET,
+          uri = Uri.unsafeFromString("/admin/jobs/"),
+          headers = Headers(Authorization(BasicCredentials("admin", "admin")))
+        )
+      val response = allRoutes.orNotFound.run(request).unsafeRunSync()
+      response.status shouldBe Status.Ok
+    }
   }
 }
