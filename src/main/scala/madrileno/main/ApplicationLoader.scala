@@ -33,12 +33,14 @@ import sttp.client4.{WebSocketStreamBackend, logging}
 
 import java.io.File
 import java.net.URI
+import scala.concurrent.duration.FiniteDuration
 
 final case class HttpConfig(
   host: Ipv4Address,
   port: Port,
   maxRequestSize: Long,
-  baseUrl: URI)
+  baseUrl: URI,
+  shutdownTimeout: FiniteDuration)
     derives ConfigReader
 
 enum Environment derives EnumConfigReader {

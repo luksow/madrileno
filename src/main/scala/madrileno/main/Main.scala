@@ -93,6 +93,7 @@ object Main extends IOApp.Simple {
              .default[IO]
              .withHost(application.httpConfig.host)
              .withPort(application.httpConfig.port)
+             .withShutdownTimeout(application.httpConfig.shutdownTimeout)
              .withHttpWebSocketApp { wsb =>
                val httpApp = serverMiddleware.wrapHttpApp(
                  EntityLimiter.httpApp(Metrics(metricsOps)(application.routes(wsb).toHttpRoutes).orNotFound, application.httpConfig.maxRequestSize)
