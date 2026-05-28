@@ -12,6 +12,7 @@ import org.typelevel.otel4s.metrics.Meter
 import org.typelevel.otel4s.trace.Tracer
 import pureconfig.ConfigSource
 
+import java.nio.charset.StandardCharsets.UTF_8
 import java.time.Instant
 import java.util.UUID
 
@@ -49,7 +50,7 @@ object SeedMain extends IOApp.Simple {
       now     <- Clock[IO].realTimeInstant
       results <- transactor.inTransaction(demoUsers.traverse(seedDemoUser(userRepository, userAuthRepository, now)))
       _       <- IO.println(s"Seeded: ${results.count(identity)} new, ${results.count(!_)} already present.")
-      _       <- IO.println("Log in as any of them via: POST /v1/auth/dev with body {\"token\":\"<email>\"}")
+      _       <- IO.println("Log in as any of them via: POST /auth/dev with body {\"email\":\"<email>\"}")
     } yield ()
   }
 
@@ -60,30 +61,33 @@ object SeedMain extends IOApp.Simple {
   )(
     d: DemoUser
   ): DBInTransaction[Boolean] = {
-    val userId     = UserId(d.id)
-    val userAuthId = UserAuthId(deriveUuid(d.id, "user-auth"))
-    val email      = EmailAddress(d.email)
+    val userId         = UserId(d.id)
+    val userAuthId     = UserAuthId(deriveUuid(d.id, "user-auth"))
+    val email          = EmailAddress(d.email)
+    val providerUserId = ProviderUserId(email.unwrap)
     val user =
       User(id = userId, fullName = Some(FullName(d.fullName)), emailAddress = Some(email), emailVerified = true, avatarUrl = None, blockedAt = None)
     val userAuth = UserAuth(
       id = userAuthId,
       userId = userId,
       provider = Provider.Dev,
-      providerUserId = ProviderUserId(d.email),
-      credential = Credential(d.email),
+      providerUserId = providerUserId,
+      credential = Credential(email.unwrap),
       metadata = Metadata(Json.obj())
     )
     for {
-      userCreated <- findOrCreate(userRepository.findIncludingDeleted(userId))(userRepository.create(user, now))
-      _           <- findOrCreate(userAuthRepository.findForUpdate(Provider.Dev, userAuth.providerUserId))(userAuthRepository.save(userAuth, now))
+      userCreated <- userRepository.findIncludingDeleted(userId).flatMap {
+                       case Some(_) => IO.pure(false)
+                       case None    => userRepository.create(user, now).as(true)
+                     }
+      _ <- userAuthRepository.findForUpdate(Provider.Dev, providerUserId).flatMap {
+             case Some(existing) if existing.userId == userId => IO.unit
+             case Some(existing) =>
+               userAuthRepository.softDelete(existing.id, now) *> userAuthRepository.save(userAuth, now).void
+             case None => userAuthRepository.save(userAuth, now).void
+           }
     } yield userCreated
   }
-
-  private def findOrCreate[A, B](find: DBInTransaction[Option[A]])(create: => DBInTransaction[B]): DBInTransaction[Boolean] =
-    find.flatMap {
-      case Some(_) => IO.pure(false)
-      case None    => create.as(true)
-    }
 
   private final case class DemoUser(
     id: UUID,
@@ -93,5 +97,5 @@ object SeedMain extends IOApp.Simple {
   private def uuid(s: String): UUID = UUID.fromString(s)
 
   private def deriveUuid(parent: UUID, kind: String): UUID =
-    UUID.nameUUIDFromBytes(s"$parent:$kind".getBytes(java.nio.charset.StandardCharsets.UTF_8))
+    UUID.nameUUIDFromBytes(s"$parent:$kind".getBytes(UTF_8))
 }
