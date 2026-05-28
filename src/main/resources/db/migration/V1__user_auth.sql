@@ -22,6 +22,9 @@ create table user_auth(
     deleted_at TIMESTAMPTZ
 );
 
+create unique index user_auth_provider_user_id_active_uniq
+    on user_auth (provider, provider_user_id) WHERE deleted_at IS NULL;
+
 create table refresh_token(
     id UUID PRIMARY KEY,
     user_id UUID NOT NULL REFERENCES "user" (id),
