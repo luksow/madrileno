@@ -84,6 +84,30 @@ For zero-downtime rollouts, follow the standard expand/contract dance:
 2. Deploy new code that uses the new shape.
 3. Cleanup migration in a later deploy (drop old column, etc.).
 
+## Graceful shutdown
+
+On `SIGTERM` the app drains in-flight requests before exiting — rolling deploys don't cut active connections. This is mostly emergent behavior from cats-effect's resource composition; you don't need to do anything to get it.
+
+What happens, in order:
+
+1. The JVM receives `SIGTERM`.
+2. `IOApp.Simple` cancels the main fiber. The cancel propagates through the `Resource.use { IO.never }` in `Main.scala`.
+3. `Resource` finalizers run in reverse acquire order. So shutdown is **server → scheduler → object store → DB transactor → OTel SDK** — exactly the inverse of how they were started.
+4. The Ember HTTP server's release:
+   - Stops accepting new connections (new requests get `Connection refused`).
+   - Waits up to `http.shutdown-timeout` (default `30s`) for in-flight requests to complete.
+   - Any request still in flight after the timeout is force-closed.
+5. The scheduler stops polling for new task rows. Tasks already executing run to their next checkpoint.
+6. The DB transactor closes the connection pool.
+7. The OpenTelemetry SDK's shutdown is called — this flushes pending exporter batches (traces, metrics, logs).
+
+Configure the drain window with `HTTP_SHUTDOWN_TIMEOUT` (HOCON `http.shutdown-timeout`). Pick something a little longer than your worst-case request — for an app that serves p99 = 5s requests, `30s` is plenty. For long-polling or streaming endpoints, raise it. Whatever the orchestrator's "give the process this long to exit after SIGTERM" knob is, set it to at least the same value — otherwise it'll `SIGKILL` mid-drain.
+
+What's NOT done out of the box:
+
+- **In-flight scheduler tasks** are hard-canceled with the rest of the resource graph (whatever cats-effect cancellation lets them complete). If you have long-running tasks that need to checkpoint, they should do so frequently rather than relying on a graceful interrupt.
+- **OTel exporter flush timeout** is whatever the SDK defaults to. If you're seeing dropped traces at shutdown, configure `OTEL_BSP_EXPORT_TIMEOUT` (env var) higher.
+
 ## Health checks
 
 The deep `/admin/health-check` endpoint exists (Postgres + SMTP probe) but it's gated by Basic Auth — designed for human ops checks, not orchestrator probes. For Kubernetes-style probes, hit `/v1/health-check` (unauthenticated, lightweight). See [http.md](http.md) and the `HealthCheckModule` for what's wired.
