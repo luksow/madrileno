@@ -1,16 +1,18 @@
 package madrileno.utils.observability.admin
 
 import cats.effect.IO
+import ch.qos.logback.classic.LoggerContext
 import io.circe.Json
 import io.circe.syntax.*
 import madrileno.support.{BaseRouteSpec, TestApplicationLoader}
 import org.http4s.circe.CirceEntityCodec.*
 import org.http4s.headers.Authorization
 import org.http4s.{BasicCredentials, Headers, Method, Request, Status, Uri}
+import org.scalatest.BeforeAndAfterEach
 import org.slf4j.LoggerFactory
 import pl.iterators.stir.server.Route
 
-class LoggersAdminRouterSpec extends BaseRouteSpec with TestApplicationLoader {
+class LoggersAdminRouterSpec extends BaseRouteSpec with TestApplicationLoader with BeforeAndAfterEach {
   override def route: Route = application.routes(wsb)
 
   private val loggersUri                   = Uri.unsafeFromString("/admin/loggers")
@@ -19,6 +21,16 @@ class LoggersAdminRouterSpec extends BaseRouteSpec with TestApplicationLoader {
 
   private val testLoggerName = classOf[LoggersAdminRouterSpec].getName
   LoggerFactory.getLogger(testLoggerName)
+
+  override def afterEach(): Unit = {
+    LoggerFactory.getILoggerFactory match {
+      case ctx: LoggerContext =>
+        val logger = ctx.exists(testLoggerName)
+        if (logger != null) logger.setLevel(null) // scalafix:ok DisableSyntax.null
+      case _ => ()
+    }
+    super.afterEach()
+  }
 
   describe("/admin/loggers") {
     it("returns a list of configured loggers when authenticated") {
