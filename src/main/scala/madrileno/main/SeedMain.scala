@@ -2,7 +2,6 @@ package madrileno.main
 
 import cats.effect.{Clock, IO, IOApp}
 import cats.syntax.all.*
-import io.circe.Json
 import madrileno.auth.domain.*
 import madrileno.auth.repositories.UserAuthRepository
 import madrileno.user.domain.*
@@ -73,7 +72,7 @@ object SeedMain extends IOApp.Simple {
       provider = Provider.Dev,
       providerUserId = providerUserId,
       credential = Credential(email.unwrap),
-      metadata = Metadata(Json.obj())
+      metadata = Metadata.empty
     )
     for {
       userCreated <- findOrCreate(userRepository.find(userId))(userRepository.create(user, now))
