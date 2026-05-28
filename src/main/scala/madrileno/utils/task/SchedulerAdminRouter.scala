@@ -16,7 +16,7 @@ class SchedulerAdminRouter(
   schedulerClient: SchedulerClient)
     extends BaseRouter {
 
-  val routes: Route = (get & path("jobs") & pathEndOrSingleSlash) {
+  val routes: Route = (get & pathPrefix("jobs") & pathEndOrSingleSlash) {
     complete {
       schedulerClient.listTasks.map { taskRows =>
         Response[IO]()
