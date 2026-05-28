@@ -1,15 +1,17 @@
 package madrileno.utils.observability.admin
 
 import cats.effect.IO
-import ch.qos.logback.classic.{Level, Logger, LoggerContext}
+import ch.qos.logback.classic.{Level, LoggerContext}
 import madrileno.utils.http.BaseRouter
-import org.slf4j.{Logger as Slf4jLogger, LoggerFactory}
+import madrileno.utils.observability.TelemetryContext
+import org.slf4j.LoggerFactory
 import pl.iterators.stir.marshalling.ToResponseMarshallable
 import pl.iterators.stir.server.Route
 
+import java.util.Locale
 import scala.jdk.CollectionConverters.*
 
-class LoggersAdminRouter extends BaseRouter {
+class LoggersAdminRouter(using TelemetryContext) extends BaseRouter {
 
   val routes: Route =
     (get & pathPrefix("loggers") & pathEndOrSingleSlash) {
@@ -17,18 +19,18 @@ class LoggersAdminRouter extends BaseRouter {
     } ~
       (get & pathPrefix("loggers" / Segment) & pathEndOrSingleSlash) { name =>
         complete {
-          IO.delay(getLogger(name)).map[ToResponseMarshallable] {
-            case Some(dto) => Ok       -> dto
-            case None      => NotFound -> ""
+          IO.delay(findLogger(name)).map[ToResponseMarshallable] {
+            case Some(dto) => Ok -> dto
+            case None      => error(NotFound, "logger-not-found", s"No logger named '$name' is registered")
           }
         }
       } ~
       (post & pathPrefix("loggers" / Segment) & pathEndOrSingleSlash & entity(as[SetLoggerLevelRequest])) { (name, request) =>
         complete {
           IO.delay(setLoggerLevel(name, request.level)).map[ToResponseMarshallable] {
-            case Right(Some(dto)) => Ok         -> dto
-            case Right(None)      => NotFound   -> ""
-            case Left(error)      => BadRequest -> error
+            case Right(Some(dto)) => Ok -> dto
+            case Right(None)      => error(NotFound, "logger-not-found", s"No logger named '$name' is registered")
+            case Left(msg)        => error(BadRequest, "invalid-log-level", msg)
           }
         }
       }
@@ -40,10 +42,10 @@ class LoggersAdminRouter extends BaseRouter {
     }
 
   private def listLoggers(): List[LoggerLevelDto] =
-    loggerContext.getLoggerList.asScala.toList.map(toDto).sortBy(_.name)
+    loggerContext.getLoggerList.asScala.toList.map(LoggerLevelDto(_)).sortBy(_.name)
 
-  private def getLogger(name: String): Option[LoggerLevelDto] =
-    Option(loggerContext.exists(name)).map(toDto)
+  private def findLogger(name: String): Option[LoggerLevelDto] =
+    Option(loggerContext.exists(name)).map(LoggerLevelDto(_))
 
   private def setLoggerLevel(name: String, levelStr: Option[String]): Either[String, Option[LoggerLevelDto]] = {
     Option(loggerContext.exists(name)) match {
@@ -52,12 +54,12 @@ class LoggersAdminRouter extends BaseRouter {
         levelStr match {
           case None =>
             logger.setLevel(null) // scalafix:ok DisableSyntax.null
-            Right(Some(toDto(logger)))
+            Right(Some(LoggerLevelDto(logger)))
           case Some(s) =>
             parseLevel(s) match {
               case Some(level) =>
                 logger.setLevel(level)
-                Right(Some(toDto(logger)))
+                Right(Some(LoggerLevelDto(logger)))
               case None =>
                 Left(s"unknown log level: '$s' (valid: TRACE, DEBUG, INFO, WARN, ERROR, OFF)")
             }
@@ -67,12 +69,5 @@ class LoggersAdminRouter extends BaseRouter {
 
   private val ValidLevelNames: Set[String] = Set("TRACE", "DEBUG", "INFO", "WARN", "ERROR", "OFF")
   private def parseLevel(s: String): Option[Level] =
-    Option(s).map(_.toUpperCase).filter(ValidLevelNames.contains).map(Level.toLevel)
-
-  private def toDto(logger: Logger): LoggerLevelDto = {
-    val configured = Option(logger.getLevel).map(_.toString)
-    val effective  = logger.getEffectiveLevel.toString
-    val name       = if (logger.getName == Slf4jLogger.ROOT_LOGGER_NAME) "ROOT" else logger.getName
-    LoggerLevelDto(name = name, configuredLevel = configured, effectiveLevel = effective)
-  }
+    Option(s).map(_.toUpperCase(Locale.ROOT)).filter(ValidLevelNames.contains).map(Level.toLevel)
 }
