@@ -19,7 +19,8 @@ private[repositories] final case class RefreshTokenRow(
   ipAddress: IpAddress,
   createdAt: Instant,
   usedAt: Option[Instant],
-  deletedAt: Option[Instant]) {
+  deletedAt: Option[Instant],
+  expiresAt: Option[Instant]) {
   def toRefreshToken: RefreshToken = {
     import io.scalaland.chimney.dsl.*
     this.into[RefreshToken].transform
@@ -50,10 +51,12 @@ private[repositories] object RefreshTokenRowTable
   val createdAt: Column[Instant]                  = column("created_at", timestamptz.asInstant)
   val usedAt: Column[Option[Instant]]             = column("used_at", timestamptz.asInstant.opt)
   override val deletedAt: Column[Option[Instant]] = column("deleted_at", timestamptz.asInstant.opt)
+  val expiresAt: Column[Option[Instant]]          = column("expires_at", timestamptz.asInstant.opt)
 
   override val foreignId: Column[UserId] = userId
 
-  override def mapping: (List[Column[?]], Codec[RefreshTokenRow]) = (id, userId, userAgent, ipAddress, createdAt, usedAt, deletedAt)
+  override def mapping: (List[Column[?]], Codec[RefreshTokenRow]) =
+    (id, userId, userAgent, ipAddress, createdAt, usedAt, deletedAt, expiresAt)
 }
 
 private[repositories] final case class RefreshTokenRowFilter(
@@ -81,14 +84,18 @@ class RefreshTokenRepository {
     repository.create(RefreshTokenRow(refreshToken)).map(_.toRefreshToken)
   }
 
-  def listActive(userId: UserId): DB[List[RefreshToken]] = {
-    repository.findByFilter(RefreshTokenRowFilter(userId = p.equal(userId))).map(_.map(_.toRefreshToken).filter(_.isValid))
+  def listActive(userId: UserId, now: Instant): DB[List[RefreshToken]] = {
+    repository.findByFilter(RefreshTokenRowFilter(userId = p.equal(userId))).map(_.map(_.toRefreshToken).filter(_.isValid(now)))
   }
 
-  def listActiveForUpdate(userId: UserId, userAgent: UserAgent): DBInTransaction[List[RefreshToken]] = {
+  def listActiveForUpdate(
+    userId: UserId,
+    userAgent: UserAgent,
+    now: Instant
+  ): DBInTransaction[List[RefreshToken]] = {
     repository
       .findByFilter(RefreshTokenRowFilter(userId = p.equal(userId), userAgent = p.equal(userAgent)), Lock.ForUpdate)
-      .map(_.map(_.toRefreshToken).filter(_.isValid))
+      .map(_.map(_.toRefreshToken).filter(_.isValid(now)))
   }
 
   def findForUpdate(id: RefreshTokenId): DBInTransaction[Option[RefreshToken]] = {
@@ -103,14 +110,15 @@ class RefreshTokenRepository {
     repository.update(RefreshTokenRow(refreshToken))
   }
 
-  def deleteUsedOrDeletedBefore(cutoff: Instant): DB[Unit] = {
+  def deleteStaleBefore(cutoff: Instant): DB[Unit] = {
     val session = summon[Session[IO]]
     val table   = RefreshTokenRowTable
     session
       .execute(sql"""DELETE FROM ${table.n}
           WHERE ${table.usedAt.n} < ${table.usedAt.c}
              OR ${table.deletedAt.n} < ${table.deletedAt.c}
-        """.command)((Some(cutoff), Some(cutoff)))
+             OR ${table.expiresAt.n} < ${table.expiresAt.c}
+        """.command)((Some(cutoff), Some(cutoff), Some(cutoff)))
       .void
   }
 

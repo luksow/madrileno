@@ -22,7 +22,9 @@ import sttp.client4.WebSocketStreamBackend
 trait AuthModule extends RouteProvider with AuthRouteProvider with RecurringTaskProvider with MailPreviewProvider {
   val config: ConfigSource
   val jwtConfig: JwtService.Config = config.at("jwt").loadOrThrow[JwtService.Config]
-  private val jwtService           = wire[JwtService]
+  val authenticationServiceConfig: AuthenticationService.Config =
+    config.at("refresh-token").loadOrThrow[AuthenticationService.Config]
+  private val jwtService = wire[JwtService]
   given telemetryContext: TelemetryContext
   val transactor: Transactor
   val cacheRuntime: CacheRuntime

@@ -15,6 +15,7 @@ import madrileno.utils.mailer.{Language, Mailer}
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
 import madrileno.utils.task.{CronExpression, Schedule, Task}
 import pl.iterators.sealedmonad.syntax.*
+import pureconfig.*
 
 import java.time.{Duration, Instant}
 
@@ -25,7 +26,8 @@ class AuthenticationService(
   verifiers: AuthVerifiers,
   jwtService: JwtService,
   transactor: Transactor,
-  mailer: Mailer
+  mailer: Mailer,
+  config: AuthenticationService.Config
 )(using
   TelemetryContext,
   UUIDGen[IO],
@@ -97,11 +99,11 @@ class AuthenticationService(
         refreshTokenRepository
           .findForUpdate(command.refreshToken)
           .flatMap {
-            case Some(refreshToken) if refreshToken.isValid =>
+            case Some(refreshToken) if refreshToken.isValid(now) =>
               refreshTokenRepository.update(refreshToken.id, _.usedAt(now)) *>
                 generateTokens(refreshToken.userId, command.userAgent, command.ipAddress, now, AuthenticationResult.Authenticated.apply)
             case Some(refreshToken) =>
-              logger.warn(s"Refresh token $refreshToken is already used or deleted").as(AuthenticationResult.InvalidToken)
+              logger.warn(s"Refresh token $refreshToken is already used, deleted, or expired").as(AuthenticationResult.InvalidToken)
             case None =>
               logger.warn(s"Refresh token ${command.refreshToken} not found").as(AuthenticationResult.InvalidToken)
           }
@@ -110,8 +112,10 @@ class AuthenticationService(
   }
 
   def listRefreshTokens(command: ListRefreshTokensCommand): IO[List[RefreshToken]] = {
-    transactor.inSession {
-      refreshTokenRepository.listActive(command.userId)
+    Clock[IO].realTimeInstant.flatMap { now =>
+      transactor.inSession {
+        refreshTokenRepository.listActive(command.userId, now)
+      }
     }
   }
 
@@ -125,8 +129,8 @@ class AuthenticationService(
                 s"Attempt to revoke refresh token ${command.refreshTokenId} for user ${command.userId} which belongs to another user ${refreshToken.userId}"
               )
               .as(None)
-          case Some(refreshToken) if !refreshToken.isValid =>
-            logger.warn(s"Refresh token ${command.refreshTokenId} for user ${command.userId} is already deleted or used").as(None)
+          case Some(refreshToken) if !refreshToken.isValid(now) =>
+            logger.warn(s"Refresh token ${command.refreshTokenId} for user ${command.userId} is already deleted, used, or expired").as(None)
           case Some(refreshToken) =>
             val deleted = refreshToken.deletedAt(now)
             refreshTokenRepository.update(deleted) *>
@@ -142,7 +146,7 @@ class AuthenticationService(
     Clock[IO].realTimeInstant.flatMap { now =>
       transactor.inTransaction {
         refreshTokenRepository
-          .listActiveForUpdate(command.userId, command.userAgent)
+          .listActiveForUpdate(command.userId, command.userAgent, now)
           .flatMap { tokens =>
             val updatedTokens = tokens.map(_.deletedAt(now))
             updatedTokens.map(refreshTokenRepository.update).sequence.flatMap { updateResults =>
@@ -163,7 +167,7 @@ class AuthenticationService(
       Clock[IO].realTimeInstant.flatMap { now =>
         val cutoff = now.minus(Duration.ofDays(60))
         transactor.inSession {
-          refreshTokenRepository.deleteUsedOrDeletedBefore(cutoff)
+          refreshTokenRepository.deleteStaleBefore(cutoff)
         }
       }
     }
@@ -180,9 +184,12 @@ class AuthenticationService(
                 .get(userId)
                 .ensure(_.isActive, AuthenticationResult.UserBlocked)
       jwt = jwtService.encode(AuthContext(user), now)
-      refreshToken <- IdGenerator.generateId(RefreshTokenId).map(id => RefreshToken.mint(id, now, user.id, userAgent, ipAddress)).seal
-      _            <- refreshTokenRepository.save(refreshToken).seal
-      _            <- logger.debug(s"Generated JWT: $jwt and RefreshToken: $refreshToken for user: $userId").seal
+      refreshToken <- IdGenerator
+                        .generateId(RefreshTokenId)
+                        .map(id => RefreshToken.mint(id, now, user.id, userAgent, ipAddress, config.validFor))
+                        .seal
+      _ <- refreshTokenRepository.save(refreshToken).seal
+      _ <- logger.debug(s"Generated JWT: $jwt and RefreshToken: $refreshToken for user: $userId").seal
     } yield {
       success(jwt, refreshToken)
     }).run
@@ -212,3 +219,7 @@ final case class ListRefreshTokensCommand(userId: UserId)
 final case class RevokeRefreshTokenCommand(userId: UserId, refreshTokenId: RefreshTokenId)
 
 final case class RevokeRefreshTokensCommand(userId: UserId, userAgent: UserAgent)
+
+object AuthenticationService {
+  final case class Config(validFor: Option[Duration]) derives ConfigReader
+}

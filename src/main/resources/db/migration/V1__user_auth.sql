@@ -29,5 +29,6 @@ create table refresh_token(
     ip_address TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL,
     used_at TIMESTAMPTZ,
-    deleted_at TIMESTAMPTZ
-);  
+    deleted_at TIMESTAMPTZ,
+    expires_at TIMESTAMPTZ
+);

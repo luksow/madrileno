@@ -30,7 +30,7 @@ class RefreshTokenRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Mat
     "save and list active tokens" in withRollback {
       for {
         (userId, token) <- createUserAndToken()
-        active          <- tokenRepo.listActive(userId)
+        active          <- tokenRepo.listActive(userId, Instant.now())
       } yield {
         active.size shouldBe 1
         active.head.id shouldBe token.id
@@ -41,7 +41,7 @@ class RefreshTokenRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Mat
       for {
         (userId, token) <- createUserAndToken()
         _               <- tokenRepo.update(token.id, _.usedAt(Instant.now()))
-        active          <- tokenRepo.listActive(userId)
+        active          <- tokenRepo.listActive(userId, Instant.now())
       } yield active shouldBe empty
     }
 
@@ -49,12 +49,12 @@ class RefreshTokenRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Mat
       for {
         (userId, token) <- createUserAndToken()
         _               <- tokenRepo.update(token.id, _.deletedAt(Instant.now()))
-        active          <- tokenRepo.listActive(userId)
+        active          <- tokenRepo.listActive(userId, Instant.now())
       } yield active shouldBe empty
     }
 
     "listActive returns empty for unknown user" in withRollback {
-      tokenRepo.listActive(TestData.randomUserId()).map(_ shouldBe empty)
+      tokenRepo.listActive(TestData.randomUserId(), Instant.now()).map(_ shouldBe empty)
     }
 
     "findForUpdate returns token" in withRollback {
@@ -77,14 +77,14 @@ class RefreshTokenRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Mat
     }
   }
 
-  "deleteUsedOrDeletedBefore" should {
+  "deleteStaleBefore" should {
     "delete tokens used before cutoff" in withRollback {
       val cutoff = Instant.now()
       val old    = cutoff.minus(1, ChronoUnit.DAYS)
       for {
         (userId, _) <- createUserAndToken(usedAt = Some(old))
-        _           <- tokenRepo.deleteUsedOrDeletedBefore(cutoff)
-        active      <- tokenRepo.listActive(userId)
+        _           <- tokenRepo.deleteStaleBefore(cutoff)
+        active      <- tokenRepo.listActive(userId, Instant.now())
       } yield active shouldBe empty
     }
 
@@ -93,8 +93,8 @@ class RefreshTokenRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Mat
       val old    = cutoff.minus(1, ChronoUnit.DAYS)
       for {
         (userId, _) <- createUserAndToken(deletedAt = Some(old))
-        _           <- tokenRepo.deleteUsedOrDeletedBefore(cutoff)
-        active      <- tokenRepo.listActive(userId)
+        _           <- tokenRepo.deleteStaleBefore(cutoff)
+        active      <- tokenRepo.listActive(userId, Instant.now())
       } yield active shouldBe empty
     }
 
@@ -102,8 +102,8 @@ class RefreshTokenRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Mat
       val cutoff = Instant.now()
       for {
         (userId, _) <- createUserAndToken()
-        _           <- tokenRepo.deleteUsedOrDeletedBefore(cutoff)
-        active      <- tokenRepo.listActive(userId)
+        _           <- tokenRepo.deleteStaleBefore(cutoff)
+        active      <- tokenRepo.listActive(userId, Instant.now())
       } yield active.size shouldBe 1
     }
 
@@ -111,9 +111,35 @@ class RefreshTokenRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Mat
       val cutoff = Instant.now()
       val future = cutoff.plus(1, ChronoUnit.DAYS)
       for {
-        (userId, token) <- createUserAndToken(usedAt = Some(future))
-        _               <- tokenRepo.deleteUsedOrDeletedBefore(cutoff)
-        found           <- tokenRepo.findForUpdate(token.id)
+        (_, token) <- createUserAndToken(usedAt = Some(future))
+        _          <- tokenRepo.deleteStaleBefore(cutoff)
+        found      <- tokenRepo.findForUpdate(token.id)
+      } yield found shouldBe defined
+    }
+
+    "delete tokens expired before cutoff" in withRollback {
+      val cutoff       = Instant.now()
+      val oldExpiresAt = cutoff.minus(1, ChronoUnit.DAYS)
+      val user         = TestData.user()
+      val token        = TestData.refreshToken(userId = user.id, expiresAt = Some(oldExpiresAt))
+      for {
+        _     <- userRepo.create(user, Instant.now())
+        _     <- tokenRepo.save(token)
+        _     <- tokenRepo.deleteStaleBefore(cutoff)
+        found <- tokenRepo.findForUpdate(token.id)
+      } yield found shouldBe None
+    }
+
+    "NOT delete tokens that expire after cutoff" in withRollback {
+      val cutoff          = Instant.now()
+      val futureExpiresAt = cutoff.plus(1, ChronoUnit.DAYS)
+      val user            = TestData.user()
+      val token           = TestData.refreshToken(userId = user.id, expiresAt = Some(futureExpiresAt))
+      for {
+        _     <- userRepo.create(user, Instant.now())
+        _     <- tokenRepo.save(token)
+        _     <- tokenRepo.deleteStaleBefore(cutoff)
+        found <- tokenRepo.findForUpdate(token.id)
       } yield found shouldBe defined
     }
   }

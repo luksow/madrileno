@@ -42,10 +42,19 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
 
   private def freshVerifiedToken() = TestData.verifiedExternalToken()
 
-  private def serviceWithFreshAuth() = {
+  private def serviceWithFreshAuth(validFor: Option[java.time.Duration] = None) = {
     val token     = freshVerifiedToken()
     val verifiers = AuthVerifiers(Map(Provider.Firebase -> new FakeAuthVerifier(token)))
-    val svc       = new AuthenticationService(userAuthRepo, refreshTokenRepo, userRepo, verifiers, jwtService, transactor, mailer)
+    val svc = new AuthenticationService(
+      userAuthRepo,
+      refreshTokenRepo,
+      userRepo,
+      verifiers,
+      jwtService,
+      transactor,
+      mailer,
+      AuthenticationService.Config(validFor)
+    )
     (svc, token)
   }
 
@@ -156,6 +165,21 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
           AuthenticateWithRefreshTokenCommand(TestData.randomRefreshTokenId(), UserAgent("test-agent"), TestData.defaultIpAddress)
         )
         .map(_ shouldBe AuthenticationResult.InvalidToken)
+    }
+
+    "reject an expired refresh token when validFor is configured" in {
+      val (service, _) = serviceWithFreshAuth(validFor = Some(Duration.ofMinutes(5)))
+      for {
+        created <- service.authenticateWithProvider(Provider.Firebase, command)
+        refreshTokenId = created match {
+                           case AuthenticationResult.UserCreated(_, rt) => rt.id
+                           case other                                   => fail(s"Expected UserCreated, got $other")
+                         }
+        _ = testClock.advance(Duration.ofMinutes(10).toMillis)
+        result <- service.authenticateWithRefreshToken(
+                    AuthenticateWithRefreshTokenCommand(refreshTokenId, UserAgent("test-agent"), TestData.defaultIpAddress)
+                  )
+      } yield result shouldBe AuthenticationResult.InvalidToken
     }
   }
 }

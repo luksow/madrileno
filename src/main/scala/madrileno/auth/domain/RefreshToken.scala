@@ -4,7 +4,7 @@ import com.comcast.ip4s.IpAddress
 import madrileno.user.domain.UserId
 import pl.iterators.kebs.opaque.Opaque
 
-import java.time.Instant
+import java.time.{Duration, Instant}
 import java.util.UUID
 
 opaque type RefreshTokenId = UUID
@@ -25,9 +25,10 @@ final case class RefreshToken(
   ipAddress: IpAddress,
   createdAt: Instant,
   usedAt: Option[Instant],
-  deletedAt: Option[Instant]) {
-  def isValid: Boolean = {
-    deletedAt.isEmpty && usedAt.isEmpty
+  deletedAt: Option[Instant],
+  expiresAt: Option[Instant]) {
+  def isValid(now: Instant): Boolean = {
+    deletedAt.isEmpty && usedAt.isEmpty && expiresAt.forall(now.isBefore)
   }
 
   def usedAt(instant: Instant): RefreshToken = {
@@ -45,7 +46,17 @@ object RefreshToken {
     now: Instant,
     userId: UserId,
     userAgent: UserAgent,
-    ipAddress: IpAddress
+    ipAddress: IpAddress,
+    validFor: Option[Duration]
   ): RefreshToken =
-    RefreshToken(id, userId, userAgent, ipAddress, createdAt = now, usedAt = None, deletedAt = None)
+    RefreshToken(
+      id = id,
+      userId = userId,
+      userAgent = userAgent,
+      ipAddress = ipAddress,
+      createdAt = now,
+      usedAt = None,
+      deletedAt = None,
+      expiresAt = validFor.map(now.plus)
+    )
 }
