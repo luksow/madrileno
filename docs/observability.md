@@ -169,6 +169,32 @@ ServerSpanDataProvider
 
 Root level defaults to `DEBUG`, override with `LOG_LEVEL` (env). Per-logger overrides go in `<logger name="..." level="..."/>` — there's a `WARN` for `org.apache.hc` to silence Apache HttpClient noise.
 
+### Runtime log level toggling — `/admin/loggers`
+
+Gated by the same admin Basic-Auth as `/admin/jobs`. Useful for cranking a logger to `DEBUG` during an incident without redeploying, then restoring afterwards.
+
+```bash
+# List all configured loggers (effective vs configured level for each)
+curl -u admin:admin http://localhost:9000/admin/loggers
+
+# Inspect one logger
+curl -u admin:admin http://localhost:9000/admin/loggers/madrileno.auth.services.AuthenticationService
+
+# Crank it to DEBUG
+curl -u admin:admin -X POST -H 'Content-Type: application/json' \
+  -d '{"level":"DEBUG"}' \
+  http://localhost:9000/admin/loggers/madrileno.auth.services.AuthenticationService
+
+# Restore (clear the override; inherit from parent)
+curl -u admin:admin -X POST -H 'Content-Type: application/json' \
+  -d '{"level":null}' \
+  http://localhost:9000/admin/loggers/madrileno.auth.services.AuthenticationService
+```
+
+The DTO distinguishes `configuredLevel` (`null` when inherited) from `effectiveLevel` (what's actually applied after the parent-chain walk). Levels: `TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR`, `OFF`. The root logger is addressable as `ROOT`. Unknown loggers return 404 — Logback only knows about a logger after something has named it (in code or `logback.xml`), so you can't preemptively crank one that hasn't logged yet; trigger it once first.
+
+Changes are in-memory only — they revert on restart. Use `<logger>` entries in `logback.xml` for persistent overrides.
+
 ## Outbound-HTTP request/response logging
 
 Separate from the OTel layer: sttp's `LoggingBackend` is also wired into the shared `httpClient`. It writes each request and response to the project logger using the configured level (`logging.loglevel-request-response` in `application.conf`, default 4 = `DEBUG`). With `logRequestBody = true, logResponseBody = true`, you get the full body in dev — invaluable for debugging gateway integrations. Drop the level (or set request/response body to `false`) before shipping to production unless you really want every JSON payload in your logs.

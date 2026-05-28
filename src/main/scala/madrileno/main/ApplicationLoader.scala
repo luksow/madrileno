@@ -12,6 +12,7 @@ import madrileno.utils.events.EventBusRuntime
 import madrileno.utils.http.{ApplicationRouteProvider, Handlers, RateLimiterRuntime}
 import madrileno.utils.mailer.{MailContext, MailPreviewProvider, MailPreviewRouter, Mailer, MailerConfig, SmtpSender}
 import madrileno.utils.observability.*
+import madrileno.utils.observability.admin.LoggersAdminRouter
 import madrileno.utils.storage.{ObjectStore, ObjectStoreRuntime}
 import madrileno.utils.task.{ApplicationTaskProvider, OneTimeTask, SchedulerAdminRouter, SchedulerClient}
 import org.http4s.headers.`Content-Type`
@@ -114,10 +115,11 @@ class ApplicationLoader(
   }
 
   lazy val schedulerAdminRouter: SchedulerAdminRouter = new SchedulerAdminRouter(recurringTasks, oneTimeTasks, customTasks, schedulerClient)
+  lazy val loggersAdminRouter: LoggersAdminRouter     = new LoggersAdminRouter
 
   lazy val adminRoutes: Route = pathPrefix("admin") {
     authenticateBasic(realm = "madrileno-admin", authenticator = adminAuthenticator) { _ =>
-      adminRoute ~ schedulerAdminRouter.routes
+      adminRoute ~ schedulerAdminRouter.routes ~ loggersAdminRouter.routes
     }
   }
 
