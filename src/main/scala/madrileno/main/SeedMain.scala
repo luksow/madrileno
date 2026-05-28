@@ -50,7 +50,7 @@ object SeedMain extends IOApp.Simple {
       now     <- Clock[IO].realTimeInstant
       results <- transactor.inTransaction(demoUsers.traverse(seedDemoUser(userRepository, userAuthRepository, now)))
       _       <- IO.println(s"Seeded: ${results.count(identity)} new, ${results.count(!_)} already present.")
-      _       <- IO.println("Log in as any of them via: POST /auth/dev with body {\"email\":\"<email>\"}")
+      _       <- IO.println("Log in as any of them via: POST /v1/auth/dev with body {\"email\":\"<email>\"}")
     } yield ()
   }
 
@@ -76,7 +76,7 @@ object SeedMain extends IOApp.Simple {
       metadata = Metadata(Json.obj())
     )
     for {
-      userCreated <- findOrCreate(userRepository.findIncludingDeleted(userId))(userRepository.create(user, now))
+      userCreated <- findOrCreate(userRepository.find(userId))(userRepository.create(user, now))
       _ <- userAuthRepository.findForUpdate(Provider.Dev, providerUserId).flatMap {
              case Some(existing) if existing.userId == userId => IO.unit
              case Some(existing) =>

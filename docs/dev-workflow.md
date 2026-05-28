@@ -121,7 +121,7 @@ Seed dev data:
 > runMain madrileno.main.SeedMain
 ```
 
-`SeedMain` is an `IOApp` mirroring `MigrateMain`'s shape. Refuses to run unless `app.environment == Environment.Dev`. The seed body is at the bottom of `SeedMain.scala` — idempotent (find-or-create on stable UUIDs). Edit it to add your own records.
+`SeedMain` is an `IOApp` mirroring `MigrateMain`'s shape. Refuses to run unless `app.environment == Environment.Dev`. Ships with 3 demo users (`demo@`, `alice@`, `bob@` at example.com) each with a matching `UserAuth` row for `Provider.Dev`, so `POST /v1/auth/dev` with body `{"email": "demo@example.com"}` logs you in as the seeded UUID immediately — no auto-creation needed. The seed body is at the bottom of `SeedMain.scala` — idempotent (find-or-create on stable UUIDs, with reconciliation for pre-existing `UserAuth` rows pointing at different user_ids). Edit it to add your own records.
 
 Run a migration after:
 - Adding a migration under `src/main/resources/db/migration/`.
