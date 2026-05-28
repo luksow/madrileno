@@ -12,7 +12,7 @@ import madrileno.utils.events.EventBusRuntime
 import madrileno.utils.http.{ApplicationRouteProvider, Handlers, RateLimiterRuntime}
 import madrileno.utils.mailer.{MailContext, MailPreviewProvider, MailPreviewRouter, Mailer, MailerConfig, SmtpSender}
 import madrileno.utils.observability.*
-import madrileno.utils.observability.admin.LoggersAdminRouter
+import madrileno.utils.observability.admin.{ConfigAdminRouter, LoggersAdminRouter}
 import madrileno.utils.storage.{ObjectStore, ObjectStoreRuntime}
 import madrileno.utils.task.{ApplicationTaskProvider, OneTimeTask, SchedulerAdminRouter, SchedulerClient}
 import org.http4s.headers.`Content-Type`
@@ -53,7 +53,13 @@ final case class AppConfig(
   version: String,
   apiVersion: String)
     derives ConfigReader
-final case class AdminConfig(user: String, password: String) derives ConfigReader
+final case class AdminConfig(
+  user: String,
+  password: String,
+  config: AdminInspectConfig)
+    derives ConfigReader
+
+final case class AdminInspectConfig(redactedPaths: Set[String]) derives ConfigReader
 
 class ApplicationLoader(
   val config: ConfigSource,
@@ -118,10 +124,18 @@ class ApplicationLoader(
 
   lazy val schedulerAdminRouter: SchedulerAdminRouter = new SchedulerAdminRouter(recurringTasks, oneTimeTasks, customTasks, schedulerClient)
   lazy val loggersAdminRouter: LoggersAdminRouter     = new LoggersAdminRouter
+  // application.conf only (resolved against env vars), not the full ConfigFactory.load() merge —
+  // we don't want java/os system properties leaking into the introspection endpoint.
+  lazy val configAdminRouter: ConfigAdminRouter = {
+    val rawConfig = com.typesafe.config.ConfigFactory
+      .parseResources("application.conf")
+      .resolve(com.typesafe.config.ConfigResolveOptions.defaults().setUseSystemEnvironment(true))
+    new ConfigAdminRouter(rawConfig, adminConfig.config.redactedPaths)
+  }
 
   lazy val adminRoutes: Route = pathPrefix("admin") {
     authenticateBasic(realm = "madrileno-admin", authenticator = adminAuthenticator) { _ =>
-      adminRoute ~ schedulerAdminRouter.routes ~ loggersAdminRouter.routes
+      adminRoute ~ schedulerAdminRouter.routes ~ loggersAdminRouter.routes ~ configAdminRouter.routes
     }
   }
 
