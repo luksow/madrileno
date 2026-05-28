@@ -2,7 +2,7 @@ package madrileno.auth.routers
 
 import cats.effect.IO
 import madrileno.auth.domain.AuthContext
-import madrileno.auth.services.JwtService
+import madrileno.auth.services.{DecodingResult, JwtService}
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
 import org.http4s
 import org.http4s.*
@@ -16,12 +16,12 @@ class UserAuthenticator(jwtService: JwtService)(using TelemetryContext)
     credentialsOpt match {
       case Some(credentials: Credentials.Token) if credentials.authScheme == AuthScheme.Bearer =>
         jwtService.decode[AuthContext](credentials.token) match {
-          case JwtService.DecodingResult.Decoded(authContext) => IO.pure(Right(authContext))
-          case JwtService.DecodingResult.InvalidToken(t) =>
+          case DecodingResult.Decoded(authContext) => IO.pure(Right(authContext))
+          case DecodingResult.InvalidToken(t) =>
             logger.warn(t)(s"Invalid token: $credentials").as(AppChallenge)
-          case JwtService.DecodingResult.ParsingFailure(t) =>
+          case DecodingResult.ParsingFailure(t) =>
             logger.warn(t)(s"Token parsing failure: $credentials").as(AppChallenge)
-          case JwtService.DecodingResult.Expired(_) =>
+          case DecodingResult.Expired(_) =>
             logger.warn(s"Expired token: $credentials").as(AppChallenge)
         }
       case _ => AppChallengeIO
