@@ -36,9 +36,9 @@ object SeedMain extends IOApp.Simple {
   }
 
   private val demoUsers: List[DemoUser] = List(
-    DemoUser(uuid("00000000-0000-0000-0000-000000000001"), "Demo User", "demo@example.com"),
-    DemoUser(uuid("00000000-0000-0000-0000-000000000002"), "Alice Admin", "alice@example.com"),
-    DemoUser(uuid("00000000-0000-0000-0000-000000000003"), "Bob Builder", "bob@example.com")
+    DemoUser(UUID.fromString("00000000-0000-0000-0000-000000000001"), "Demo User", "demo@example.com"),
+    DemoUser(UUID.fromString("00000000-0000-0000-0000-000000000002"), "Alice Admin", "alice@example.com"),
+    DemoUser(UUID.fromString("00000000-0000-0000-0000-000000000003"), "Bob Builder", "bob@example.com")
   )
 
   private def seed(
@@ -76,10 +76,7 @@ object SeedMain extends IOApp.Simple {
       metadata = Metadata(Json.obj())
     )
     for {
-      userCreated <- userRepository.findIncludingDeleted(userId).flatMap {
-                       case Some(_) => IO.pure(false)
-                       case None    => userRepository.create(user, now).as(true)
-                     }
+      userCreated <- findOrCreate(userRepository.findIncludingDeleted(userId))(userRepository.create(user, now))
       _ <- userAuthRepository.findForUpdate(Provider.Dev, providerUserId).flatMap {
              case Some(existing) if existing.userId == userId => IO.unit
              case Some(existing) =>
@@ -89,12 +86,16 @@ object SeedMain extends IOApp.Simple {
     } yield userCreated
   }
 
+  private def findOrCreate[A, B](find: DBInTransaction[Option[A]])(create: => DBInTransaction[B]): DBInTransaction[Boolean] =
+    find.flatMap {
+      case Some(_) => IO.pure(false)
+      case None    => create.as(true)
+    }
+
   private final case class DemoUser(
     id: UUID,
     fullName: String,
     email: String)
-
-  private def uuid(s: String): UUID = UUID.fromString(s)
 
   private def deriveUuid(parent: UUID, kind: String): UUID =
     UUID.nameUUIDFromBytes(s"$parent:$kind".getBytes(UTF_8))
