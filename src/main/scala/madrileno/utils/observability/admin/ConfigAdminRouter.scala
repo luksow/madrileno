@@ -1,7 +1,7 @@
 package madrileno.utils.observability.admin
 
 import cats.effect.IO
-import com.typesafe.config.{ConfigList, ConfigObject, ConfigValue, ConfigValueType}
+import com.typesafe.config.{Config, ConfigFactory, ConfigList, ConfigObject, ConfigResolveOptions, ConfigValue, ConfigValueType}
 import io.circe.Json
 import madrileno.utils.http.BaseRouter
 import pl.iterators.stir.marshalling.ToResponseMarshallable
@@ -10,7 +10,10 @@ import pl.iterators.stir.server.Route
 import java.util.Locale
 import scala.jdk.CollectionConverters.*
 
-class ConfigAdminRouter(appConfig: com.typesafe.config.Config, redactedPaths: Set[String]) extends BaseRouter {
+class ConfigAdminRouter(redactedPaths: Set[String]) extends BaseRouter {
+
+  private val appConfig: Config =
+    ConfigFactory.parseResources("application.conf").resolve(ConfigResolveOptions.defaults().setUseSystemEnvironment(true))
 
   val routes: Route =
     (get & pathPrefix("config") & pathEndOrSingleSlash) {
@@ -22,7 +25,7 @@ object ConfigAdminRouter {
   private val Redacted                     = Json.fromString("[REDACTED]")
   private val DefaultKeywords: Set[String] = Set("password", "secret", "credential", "access-key", "token")
 
-  def redact(config: com.typesafe.config.Config, redactedPaths: Set[String]): Json =
+  def redact(config: Config, redactedPaths: Set[String]): Json =
     walk(config.root(), "", redactedPaths)
 
   private def shouldRedact(
@@ -46,8 +49,6 @@ object ConfigAdminRouter {
       }
       val entries = obj.asScala.toList.sortBy(_._1).map { case (k, v) =>
         val childPath = if (path.isEmpty) k else s"$path.$k"
-        // Only redact primitive leaf values — sub-objects/lists get walked normally,
-        // even if their key matches (e.g. `refresh-token: { valid-for: ... }` is fine).
         val isPrimitive = v.valueType match {
           case ConfigValueType.OBJECT | ConfigValueType.LIST => false
           case _                                             => true

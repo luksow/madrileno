@@ -124,14 +124,7 @@ class ApplicationLoader(
 
   lazy val schedulerAdminRouter: SchedulerAdminRouter = new SchedulerAdminRouter(recurringTasks, oneTimeTasks, customTasks, schedulerClient)
   lazy val loggersAdminRouter: LoggersAdminRouter     = new LoggersAdminRouter
-  // application.conf only (resolved against env vars), not the full ConfigFactory.load() merge —
-  // we don't want java/os system properties leaking into the introspection endpoint.
-  lazy val configAdminRouter: ConfigAdminRouter = {
-    val rawConfig = com.typesafe.config.ConfigFactory
-      .parseResources("application.conf")
-      .resolve(com.typesafe.config.ConfigResolveOptions.defaults().setUseSystemEnvironment(true))
-    new ConfigAdminRouter(rawConfig, adminConfig.config.redactedPaths)
-  }
+  lazy val configAdminRouter: ConfigAdminRouter       = new ConfigAdminRouter(adminConfig.config.redactedPaths)
 
   lazy val adminRoutes: Route = pathPrefix("admin") {
     authenticateBasic(realm = "madrileno-admin", authenticator = adminAuthenticator) { _ =>

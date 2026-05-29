@@ -12,8 +12,6 @@ import pl.iterators.stir.server.Route
 class ConfigAdminRouterSpec extends BaseRouteSpec with TestApplicationLoader {
   override def route: Route = application.routes(wsb)
 
-  // The config tree is dynamic — its keys depend on application.conf. FreeFormSchema is
-  // OpenAPI's "any JSON object" shape.
   private given Schema[Json] = FreeFormSchema("ConfigTree")
 
   private val basic       = HttpBasic()
