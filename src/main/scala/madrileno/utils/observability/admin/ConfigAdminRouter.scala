@@ -15,9 +15,11 @@ class ConfigAdminRouter(redactedPaths: Set[String]) extends BaseRouter {
   private val appConfig: Config =
     ConfigFactory.parseResources("application.conf").resolve(ConfigResolveOptions.defaults().setUseSystemEnvironment(true))
 
+  private lazy val redactedTree: Json = ConfigAdminRouter.redact(appConfig, redactedPaths)
+
   val routes: Route =
     (get & pathPrefix("config") & pathEndOrSingleSlash) {
-      complete(IO.delay(ConfigAdminRouter.redact(appConfig, redactedPaths)).map[ToResponseMarshallable](Ok -> _))
+      complete(IO.pure[ToResponseMarshallable](Ok -> redactedTree))
     }
 }
 
@@ -25,8 +27,8 @@ object ConfigAdminRouter {
   private val Redacted                     = Json.fromString("[REDACTED]")
   private val DefaultKeywords: Set[String] = Set("password", "secret", "credential", "access-key", "token")
 
-  def redact(config: Config, redactedPaths: Set[String]): Json =
-    walk(config.root(), "", redactedPaths)
+  private[admin] def redact(config: Config, redactedPaths: Set[String]): Json =
+    walk(config.root(), "", redactedPaths, parentRedactsPrimitives = false)
 
   private def shouldRedact(
     key: String,
@@ -40,7 +42,8 @@ object ConfigAdminRouter {
   private def walk(
     value: ConfigValue,
     path: String,
-    redactedPaths: Set[String]
+    redactedPaths: Set[String],
+    parentRedactsPrimitives: Boolean
   ): Json = value.valueType match {
     case ConfigValueType.OBJECT =>
       val obj = value match {
@@ -48,14 +51,13 @@ object ConfigAdminRouter {
         case other           => throw new IllegalStateException(s"expected ConfigObject for OBJECT, got ${other.getClass.getName}")
       }
       val entries = obj.asScala.toList.sortBy(_._1).map { case (k, v) =>
-        val childPath = if (path.isEmpty) k else s"$path.$k"
-        val isPrimitive = v.valueType match {
-          case ConfigValueType.OBJECT | ConfigValueType.LIST => false
-          case _                                             => true
+        val childPath  = if (path.isEmpty) k else s"$path.$k"
+        val keyRedacts = shouldRedact(k, childPath, redactedPaths)
+        val rendered = v.valueType match {
+          case ConfigValueType.OBJECT => walk(v, childPath, redactedPaths, parentRedactsPrimitives = false)
+          case ConfigValueType.LIST   => walk(v, childPath, redactedPaths, parentRedactsPrimitives = keyRedacts)
+          case _                      => if (keyRedacts) Redacted else walk(v, childPath, redactedPaths, parentRedactsPrimitives = false)
         }
-        val rendered =
-          if (isPrimitive && shouldRedact(k, childPath, redactedPaths)) Redacted
-          else walk(v, childPath, redactedPaths)
         k -> rendered
       }
       Json.obj(entries*)
@@ -64,8 +66,11 @@ object ConfigAdminRouter {
         case l: ConfigList => l
         case other         => throw new IllegalStateException(s"expected ConfigList for LIST, got ${other.getClass.getName}")
       }
-      Json.fromValues(list.asScala.toList.zipWithIndex.map { case (v, i) => walk(v, s"$path[$i]", redactedPaths) })
-    case ConfigValueType.STRING => Json.fromString(String.valueOf(value.unwrapped()))
+      Json.fromValues(list.asScala.toList.zipWithIndex.map { case (v, i) =>
+        walk(v, s"$path[$i]", redactedPaths, parentRedactsPrimitives)
+      })
+    case _ if parentRedactsPrimitives => Redacted
+    case ConfigValueType.STRING       => Json.fromString(String.valueOf(value.unwrapped()))
     case ConfigValueType.BOOLEAN =>
       value.unwrapped() match {
         case b: java.lang.Boolean => Json.fromBoolean(b)

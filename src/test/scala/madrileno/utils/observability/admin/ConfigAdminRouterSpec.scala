@@ -1,5 +1,6 @@
 package madrileno.utils.observability.admin
 
+import com.typesafe.config.ConfigFactory
 import io.circe.Json
 import madrileno.support.{BaseRouteSpec, TestApplicationLoader}
 import madrileno.utils.http.Error
@@ -21,6 +22,31 @@ class ConfigAdminRouterSpec extends BaseRouteSpec with TestApplicationLoader {
 
   private def at(json: Json, path: String*): Option[Json] =
     path.foldLeft(Option(json))((acc, key) => acc.flatMap(_.asObject).flatMap(_(key)))
+
+  describe("ConfigAdminRouter.redact") {
+    it("redacts primitive elements of a list whose parent key matches the heuristic") {
+      val cfg  = ConfigFactory.parseString("""tokens = ["alpha", "beta", "gamma"]""")
+      val out  = ConfigAdminRouter.redact(cfg, Set.empty)
+      val list = at(out, "tokens").flatMap(_.asArray).get
+      list.flatMap(_.asString).toList shouldBe List("[REDACTED]", "[REDACTED]", "[REDACTED]")
+    }
+
+    it("walks into object elements of a secret-keyed list and only redacts matching keys inside") {
+      val cfg  = ConfigFactory.parseString("""tokens = [{ name = "alpha", secret = "abc" }, { name = "beta", secret = "def" }]""")
+      val out  = ConfigAdminRouter.redact(cfg, Set.empty)
+      val list = at(out, "tokens").flatMap(_.asArray).get
+      at(list(0), "name").flatMap(_.asString) shouldBe Some("alpha")
+      at(list(0), "secret").flatMap(_.asString) shouldBe Some("[REDACTED]")
+      at(list(1), "name").flatMap(_.asString) shouldBe Some("beta")
+      at(list(1), "secret").flatMap(_.asString) shouldBe Some("[REDACTED]")
+    }
+
+    it("respects an explicit redacted-paths entry for a non-keyword key") {
+      val cfg = ConfigFactory.parseString("""custom { boring-field = "shh" }""")
+      val out = ConfigAdminRouter.redact(cfg, Set("custom.boring-field"))
+      at(out, "custom", "boring-field").flatMap(_.asString) shouldBe Some("[REDACTED]")
+    }
+  }
 
   path("/admin/config")(
     supports(
