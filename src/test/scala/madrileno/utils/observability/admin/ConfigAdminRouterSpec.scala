@@ -26,14 +26,14 @@ class ConfigAdminRouterSpec extends BaseRouteSpec with TestApplicationLoader {
   describe("ConfigAdminRouter.redact") {
     it("redacts primitive elements of a list whose parent key matches the heuristic") {
       val cfg  = ConfigFactory.parseString("""tokens = ["alpha", "beta", "gamma"]""")
-      val out  = ConfigAdminRouter.redact(cfg, Set.empty)
+      val out  = ConfigAdminRouter.redact(cfg, declaredKeys = Set("tokens"), redactedPaths = Set.empty)
       val list = at(out, "tokens").flatMap(_.asArray).get
       list.flatMap(_.asString).toList shouldBe List("[REDACTED]", "[REDACTED]", "[REDACTED]")
     }
 
     it("walks into object elements of a secret-keyed list and only redacts matching keys inside") {
       val cfg  = ConfigFactory.parseString("""tokens = [{ name = "alpha", secret = "abc" }, { name = "beta", secret = "def" }]""")
-      val out  = ConfigAdminRouter.redact(cfg, Set.empty)
+      val out  = ConfigAdminRouter.redact(cfg, declaredKeys = Set("tokens"), redactedPaths = Set.empty)
       val list = at(out, "tokens").flatMap(_.asArray).get
       at(list(0), "name").flatMap(_.asString) shouldBe Some("alpha")
       at(list(0), "secret").flatMap(_.asString) shouldBe Some("[REDACTED]")
@@ -43,8 +43,26 @@ class ConfigAdminRouterSpec extends BaseRouteSpec with TestApplicationLoader {
 
     it("respects an explicit redacted-paths entry for a non-keyword key") {
       val cfg = ConfigFactory.parseString("""custom { boring-field = "shh" }""")
-      val out = ConfigAdminRouter.redact(cfg, Set("custom.boring-field"))
+      val out = ConfigAdminRouter.redact(cfg, declaredKeys = Set("custom"), redactedPaths = Set("custom.boring-field"))
       at(out, "custom", "boring-field").flatMap(_.asString) shouldBe Some("[REDACTED]")
+    }
+
+    it("filters top-level keys to the declared allowlist (keeps JVM/system noise out)") {
+      val cfg = ConfigFactory.parseString("""
+        |declared { x = 1 }
+        |sneaky { y = 2 }
+        """.stripMargin)
+      val out = ConfigAdminRouter.redact(cfg, declaredKeys = Set("declared"), redactedPaths = Set.empty)
+      out.asObject.map(_.keys.toSet) shouldBe Some(Set("declared"))
+    }
+
+    it("shows JVM -D overrides through the merged Config (truth, not file-on-disk)") {
+      val merged = ConfigFactory
+        .parseString("""http { port = 9000 }""")
+        .withFallback(ConfigFactory.parseString("http.port = 8080"))
+        .resolve()
+      val out = ConfigAdminRouter.redact(merged, declaredKeys = Set("http"), redactedPaths = Set.empty)
+      at(out, "http", "port").flatMap(_.asNumber).flatMap(_.toInt) shouldBe Some(9000)
     }
   }
 

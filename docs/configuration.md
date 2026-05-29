@@ -201,7 +201,7 @@ admin {
 }
 ```
 
-The endpoint serves only what's defined in `application.conf` (resolved against env vars). It does NOT include JVM system properties, OS env vars not referenced from HOCON, or `reference.conf` defaults from libraries — the goal is to show your app's contract, not the JVM's.
+The tree shows what the process is actually running with — `ConfigFactory.load()` is used, so `-Dpg.host=...` JVM flag overrides, layered `application.json`/`application.properties`, and env-var substitutions all show through. The top-level keys are then filtered to those declared in `application.conf`, which keeps JVM internals (`java.*`, `os.*`, `awt.*`) and library `reference.conf` defaults out of the response.
 
 ## Refresh in production
 

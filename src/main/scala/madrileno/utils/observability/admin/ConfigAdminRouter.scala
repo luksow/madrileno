@@ -1,7 +1,7 @@
 package madrileno.utils.observability.admin
 
 import cats.effect.IO
-import com.typesafe.config.{Config, ConfigFactory, ConfigList, ConfigObject, ConfigResolveOptions, ConfigValue, ConfigValueType}
+import com.typesafe.config.{Config, ConfigFactory, ConfigList, ConfigObject, ConfigValue, ConfigValueType}
 import io.circe.Json
 import madrileno.utils.http.BaseRouter
 import pl.iterators.stir.marshalling.ToResponseMarshallable
@@ -12,10 +12,11 @@ import scala.jdk.CollectionConverters.*
 
 class ConfigAdminRouter(redactedPaths: Set[String]) extends BaseRouter {
 
-  private val appConfig: Config =
-    ConfigFactory.parseResources("application.conf").resolve(ConfigResolveOptions.defaults().setUseSystemEnvironment(true))
+  private val merged: Config = ConfigFactory.load()
+  private val declaredKeys: Set[String] =
+    ConfigFactory.parseResources("application.conf").root().keySet().asScala.toSet
 
-  private lazy val redactedTree: Json = ConfigAdminRouter.redact(appConfig, redactedPaths)
+  private lazy val redactedTree: Json = ConfigAdminRouter.redact(merged, declaredKeys, redactedPaths)
 
   val routes: Route =
     (get & pathPrefix("config") & pathEndOrSingleSlash) {
@@ -27,8 +28,12 @@ object ConfigAdminRouter {
   private val Redacted                     = Json.fromString("[REDACTED]")
   private val DefaultKeywords: Set[String] = Set("password", "secret", "credential", "access-key", "token")
 
-  private[admin] def redact(config: Config, redactedPaths: Set[String]): Json =
-    walk(config.root(), "", redactedPaths, parentRedactsPrimitives = false)
+  private[admin] def redact(
+    config: Config,
+    declaredKeys: Set[String],
+    redactedPaths: Set[String]
+  ): Json =
+    walkObject(config.root(), "", redactedPaths, keyFilter = Some(declaredKeys))
 
   private def shouldRedact(
     key: String,
@@ -39,18 +44,16 @@ object ConfigAdminRouter {
     DefaultKeywords.exists(lower.contains) || redactedPaths.contains(path)
   }
 
-  private def walk(
-    value: ConfigValue,
+  private def walkObject(
+    obj: ConfigObject,
     path: String,
     redactedPaths: Set[String],
-    parentRedactsPrimitives: Boolean
-  ): Json = value.valueType match {
-    case ConfigValueType.OBJECT =>
-      val obj = value match {
-        case o: ConfigObject => o
-        case other           => throw new IllegalStateException(s"expected ConfigObject for OBJECT, got ${other.getClass.getName}")
-      }
-      val entries = obj.asScala.toList.sortBy(_._1).map { case (k, v) =>
+    keyFilter: Option[Set[String]] = None
+  ): Json = {
+    val entries = obj.asScala.toList
+      .filter { case (k, _) => keyFilter.forall(_.contains(k)) }
+      .sortBy(_._1)
+      .map { case (k, v) =>
         val childPath  = if (path.isEmpty) k else s"$path.$k"
         val keyRedacts = shouldRedact(k, childPath, redactedPaths)
         val rendered = v.valueType match {
@@ -60,7 +63,20 @@ object ConfigAdminRouter {
         }
         k -> rendered
       }
-      Json.obj(entries*)
+    Json.obj(entries*)
+  }
+
+  private def walk(
+    value: ConfigValue,
+    path: String,
+    redactedPaths: Set[String],
+    parentRedactsPrimitives: Boolean
+  ): Json = value.valueType match {
+    case ConfigValueType.OBJECT =>
+      value match {
+        case o: ConfigObject => walkObject(o, path, redactedPaths)
+        case other           => throw new IllegalStateException(s"expected ConfigObject for OBJECT, got ${other.getClass.getName}")
+      }
     case ConfigValueType.LIST =>
       val list = value match {
         case l: ConfigList => l
