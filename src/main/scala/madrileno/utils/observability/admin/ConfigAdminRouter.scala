@@ -10,9 +10,10 @@ import pl.iterators.stir.server.Route
 import java.util.Locale
 import scala.jdk.CollectionConverters.*
 
-class ConfigAdminRouter(redactedPaths: Set[String]) extends BaseRouter {
+class ConfigAdminRouter(merged: Config, redactedPaths: Set[String]) extends BaseRouter {
 
-  private val merged: Config = ConfigFactory.load()
+  // The set of top-level keys that the project actually declares — used as an allowlist so the
+  // response excludes library reference.conf defaults and JVM internals (java.*, os.*, awt.*).
   private val declaredKeys: Set[String] =
     ConfigFactory.parseResources("application.conf").root().keySet().asScala.toSet
 

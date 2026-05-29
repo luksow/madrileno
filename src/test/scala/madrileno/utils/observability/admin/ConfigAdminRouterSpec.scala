@@ -56,13 +56,23 @@ class ConfigAdminRouterSpec extends BaseRouteSpec with TestApplicationLoader {
       out.asObject.map(_.keys.toSet) shouldBe Some(Set("declared"))
     }
 
-    it("shows JVM -D overrides through the merged Config (truth, not file-on-disk)") {
+    it("preserves merge override priority — the front layer wins") {
       val merged = ConfigFactory
         .parseString("""http { port = 9000 }""")
         .withFallback(ConfigFactory.parseString("http.port = 8080"))
         .resolve()
       val out = ConfigAdminRouter.redact(merged, declaredKeys = Set("http"), redactedPaths = Set.empty)
       at(out, "http", "port").flatMap(_.asNumber).flatMap(_.toInt) shouldBe Some(9000)
+    }
+
+    it("walks an object under a secret-keyed parent — only fields whose own key matches redact") {
+      val cfg = ConfigFactory.parseString("""secret-store { host = "vault.example.com", token = "abc", port = 8200 }""")
+      val out = ConfigAdminRouter.redact(cfg, declaredKeys = Set("secret-store"), redactedPaths = Set.empty)
+      // host/port are not secret-keyword fields — visible
+      at(out, "secret-store", "host").flatMap(_.asString) shouldBe Some("vault.example.com")
+      at(out, "secret-store", "port").flatMap(_.asNumber).flatMap(_.toInt) shouldBe Some(8200)
+      // token matches the keyword — redacted
+      at(out, "secret-store", "token").flatMap(_.asString) shouldBe Some("[REDACTED]")
     }
   }
 
