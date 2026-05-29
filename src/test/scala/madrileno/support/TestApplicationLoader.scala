@@ -1,5 +1,6 @@
 package madrileno.support
 
+import cats.effect.unsafe.IORuntime
 import cats.effect.unsafe.implicits.global
 import cats.effect.{Clock, IO}
 import com.dimafeng.testcontainers.PostgreSQLContainer
@@ -65,7 +66,8 @@ trait TestApplicationLoader extends TestContainersForAll with TestMailpit { self
       TestCacheRuntime.unbounded,
       TestRateLimiterRuntime.unbounded,
       TestObjectStoreRuntime.inMemory,
-      EventBusRuntime.local
+      EventBusRuntime.local,
+      IORuntime.global
     ) {
       override protected lazy val externalAuthVerifiers: AuthVerifiers =
         AuthVerifiers(Map(Provider.Firebase -> FakeAuthVerifier(firebaseToken), Provider("test-oidc") -> FakeAuthVerifier(oidcToken)))

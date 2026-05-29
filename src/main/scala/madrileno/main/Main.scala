@@ -60,7 +60,8 @@ object Main extends IOApp.Simple {
           cacheRuntime,
           rateLimiterRuntime,
           objectStoreRuntime,
-          eventBusRuntime
+          eventBusRuntime,
+          runtime
         )
       _ <- scheduler.run(recurringTasks = application.recurringTasks, oneTimeTasks = application.oneTimeTasks, customTasks = application.customTasks)
       metricsOps <- OtelMetrics.serverMetricsOps[IO]().toResource
