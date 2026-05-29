@@ -2,6 +2,7 @@ package madrileno.main
 
 import cats.effect.{Clock, IO}
 import com.comcast.ip4s.{Ipv4Address, Port}
+import com.typesafe.config.Config
 import madrileno.auction.AuctionModule
 import madrileno.auth.AuthModule
 import madrileno.healthcheck.HealthCheckModule
@@ -12,7 +13,7 @@ import madrileno.utils.events.EventBusRuntime
 import madrileno.utils.http.{ApplicationRouteProvider, Handlers, RateLimiterRuntime}
 import madrileno.utils.mailer.{MailContext, MailPreviewProvider, MailPreviewRouter, Mailer, MailerConfig, SmtpSender}
 import madrileno.utils.observability.*
-import madrileno.utils.observability.admin.LoggersAdminRouter
+import madrileno.utils.observability.admin.{ConfigAdminRouter, LoggersAdminRouter}
 import madrileno.utils.storage.{ObjectStore, ObjectStoreRuntime}
 import madrileno.utils.task.{ApplicationTaskProvider, OneTimeTask, SchedulerAdminRouter, SchedulerClient}
 import org.http4s.headers.`Content-Type`
@@ -24,6 +25,7 @@ import pl.iterators.baklava.http4s.routes.BaklavaRoutes
 import pl.iterators.stir.server.directives.{CredentialsHelper, RouteDirectives}
 import pl.iterators.stir.server.{PathMatcher, Route}
 import pureconfig.*
+import pureconfig.error.ConfigReaderException
 import pureconfig.generic.derivation.EnumConfigReader
 import pureconfig.module.ip4s.*
 import sttp.capabilities.fs2.Fs2Streams
@@ -53,10 +55,16 @@ final case class AppConfig(
   version: String,
   apiVersion: String)
     derives ConfigReader
-final case class AdminConfig(user: String, password: String) derives ConfigReader
+final case class AdminConfig(
+  user: String,
+  password: String,
+  config: AdminInspectConfig)
+    derives ConfigReader
+
+final case class AdminInspectConfig(redactedPaths: Set[String]) derives ConfigReader
 
 class ApplicationLoader(
-  val config: ConfigSource,
+  val config: ConfigObjectSource,
   httpBackend: WebSocketStreamBackend[IO, Fs2Streams[IO]],
   val transactor: Transactor,
   val clock: Clock[IO],
@@ -116,12 +124,15 @@ class ApplicationLoader(
     case _                                                                                              => None
   }
 
+  private lazy val rawConfig: Config = config.config().fold(f => throw new ConfigReaderException[Config](f), identity)
+
   lazy val schedulerAdminRouter: SchedulerAdminRouter = new SchedulerAdminRouter(recurringTasks, oneTimeTasks, customTasks, schedulerClient)
   lazy val loggersAdminRouter: LoggersAdminRouter     = new LoggersAdminRouter
+  lazy val configAdminRouter: ConfigAdminRouter       = new ConfigAdminRouter(rawConfig, adminConfig.config.redactedPaths)
 
   lazy val adminRoutes: Route = pathPrefix("admin") {
     authenticateBasic(realm = "madrileno-admin", authenticator = adminAuthenticator) { _ =>
-      adminRoute ~ schedulerAdminRouter.routes ~ loggersAdminRouter.routes
+      adminRoute ~ schedulerAdminRouter.routes ~ loggersAdminRouter.routes ~ configAdminRouter.routes
     }
   }
 

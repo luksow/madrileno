@@ -181,6 +181,28 @@ Two consequences:
 
 `.env.sample` is what's checked in. Copy to `.env` for local work. Don't commit `.env` itself — it's in `.gitignore`.
 
+## Inspecting at runtime — `/admin/config`
+
+The merged config (after HOCON layering + env substitution) is exposed at `GET /admin/config` — Basic-Auth gated like the other `/admin/*` endpoints. Useful for the "what is this process actually running with?" question that's otherwise impossible to answer without SSHing in and grepping.
+
+```bash
+curl -u admin:admin http://localhost:9000/admin/config
+```
+
+Returns a JSON tree mirroring the HOCON structure. **Secrets are redacted**: leaf values whose key name contains `password`, `passphrase`, `secret`, `credential`, `access-key`, `api-key`, `private-key`, or `token` (case-insensitive) come back as `"[REDACTED]"`. Sub-objects under keys like `refresh-token` are walked, not redacted wholesale — only primitive leaves get replaced.
+
+For project-specific secrets that don't match the heuristic, add their dotted path to `admin.config.redacted-paths`:
+
+```hocon
+admin {
+  config {
+    redacted-paths = ["custom.api.special-credential", "third-party.client-id"]
+  }
+}
+```
+
+The tree shows what the process is actually running with — `ConfigFactory.load()` is used, so `-Dpg.host=...` JVM flag overrides, layered `application.json`/`application.properties`, and env-var substitutions all show through. The top-level keys are then filtered to those declared in `application.conf`, which keeps JVM internals (`java.*`, `os.*`, `awt.*`) and library `reference.conf` defaults out of the response.
+
 ## Refresh in production
 
 There's no live config reload. To change a setting:
