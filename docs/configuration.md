@@ -189,7 +189,7 @@ The merged config (after HOCON layering + env substitution) is exposed at `GET /
 curl -u admin:admin http://localhost:9000/admin/config
 ```
 
-Returns a JSON tree mirroring the HOCON structure. **Secrets are redacted**: leaf values whose key name contains `password`, `secret`, `credential`, `access-key`, or `token` (case-insensitive) come back as `"[REDACTED]"`. Sub-objects under keys like `refresh-token` are walked, not redacted wholesale — only primitive leaves get replaced.
+Returns a JSON tree mirroring the HOCON structure. **Secrets are redacted**: leaf values whose key name contains `password`, `passphrase`, `secret`, `credential`, `access-key`, `api-key`, `private-key`, or `token` (case-insensitive) come back as `"[REDACTED]"`. Sub-objects under keys like `refresh-token` are walked, not redacted wholesale — only primitive leaves get replaced.
 
 For project-specific secrets that don't match the heuristic, add their dotted path to `admin.config.redacted-paths`:
 

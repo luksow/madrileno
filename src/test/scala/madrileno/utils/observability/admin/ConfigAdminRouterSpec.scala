@@ -65,6 +65,20 @@ class ConfigAdminRouterSpec extends BaseRouteSpec with TestApplicationLoader {
       at(out, "http", "port").flatMap(_.asNumber).flatMap(_.toInt) shouldBe Some(9000)
     }
 
+    it("redacts widened keyword family — api-key, private-key, passphrase") {
+      val cfg = ConfigFactory.parseString("""service {
+        |  api-key = "abc"
+        |  private-key = "PEM..."
+        |  passphrase = "hunter2"
+        |  region = "us-east-1"
+        |}""".stripMargin)
+      val out = ConfigAdminRouter.redact(cfg, declaredKeys = Set("service"), redactedPaths = Set.empty)
+      at(out, "service", "api-key").flatMap(_.asString) shouldBe Some("[REDACTED]")
+      at(out, "service", "private-key").flatMap(_.asString) shouldBe Some("[REDACTED]")
+      at(out, "service", "passphrase").flatMap(_.asString) shouldBe Some("[REDACTED]")
+      at(out, "service", "region").flatMap(_.asString) shouldBe Some("us-east-1")
+    }
+
     it("walks an object under a secret-keyed parent — only fields whose own key matches redact") {
       val cfg = ConfigFactory.parseString("""secret-store { host = "vault.example.com", token = "abc", port = 8200 }""")
       val out = ConfigAdminRouter.redact(cfg, declaredKeys = Set("secret-store"), redactedPaths = Set.empty)
@@ -80,7 +94,7 @@ class ConfigAdminRouterSpec extends BaseRouteSpec with TestApplicationLoader {
     supports(
       GET,
       description = "Returns the merged application configuration (HOCON resolved against env vars) as a JSON tree. " +
-        "Leaf values whose key name contains `password`, `secret`, `credential`, `access-key`, or `token` are replaced with `\"[REDACTED]\"`. " +
+        "Leaf values whose key name contains `password`, `passphrase`, `secret`, `credential`, `access-key`, `api-key`, `private-key`, or `token` are replaced with `\"[REDACTED]\"`. " +
         "Project-specific secrets can be added via `admin.config.redacted-paths`.",
       summary = "Inspect merged configuration",
       securitySchemes = Seq(basicScheme),

@@ -12,10 +12,8 @@ import scala.jdk.CollectionConverters.*
 
 class ConfigAdminRouter(merged: Config, redactedPaths: Set[String]) extends BaseRouter {
 
-  // The set of top-level keys that the project actually declares — used as an allowlist so the
-  // response excludes library reference.conf defaults and JVM internals (java.*, os.*, awt.*).
   private val declaredKeys: Set[String] =
-    ConfigFactory.parseResources("application.conf").root().keySet().asScala.toSet
+    ConfigFactory.parseResourcesAnySyntax("application").root().keySet().asScala.toSet
 
   private lazy val redactedTree: Json = ConfigAdminRouter.redact(merged, declaredKeys, redactedPaths)
 
@@ -26,8 +24,9 @@ class ConfigAdminRouter(merged: Config, redactedPaths: Set[String]) extends Base
 }
 
 object ConfigAdminRouter {
-  private val Redacted                     = Json.fromString("[REDACTED]")
-  private val DefaultKeywords: Set[String] = Set("password", "secret", "credential", "access-key", "token")
+  private val Redacted = Json.fromString("[REDACTED]")
+  private val DefaultKeywords: Set[String] =
+    Set("password", "secret", "credential", "access-key", "api-key", "private-key", "token", "passphrase")
 
   private[admin] def redact(
     config: Config,
