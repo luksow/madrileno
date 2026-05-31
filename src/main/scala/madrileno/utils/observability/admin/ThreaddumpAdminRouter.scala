@@ -12,7 +12,7 @@ class ThreaddumpAdminRouter(runtime: IORuntime) extends BaseRouter {
 
   val routes: Route =
     (get & pathPrefix("threaddump") & pathEndOrSingleSlash) {
-      complete(IO.delay(dump()).map[ToResponseMarshallable](Ok -> _))
+      complete(IO.blocking(dump()).map[ToResponseMarshallable](Ok -> _))
     }
 
   private def dump(): ThreaddumpDto = {

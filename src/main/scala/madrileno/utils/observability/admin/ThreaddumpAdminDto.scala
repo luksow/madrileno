@@ -119,7 +119,10 @@ object FiberInfoDto {
   private def frameToString(ste: StackTraceElement): String = {
     val source =
       if (ste.isNativeMethod) "Native Method"
-      else Option(ste.getFileName).fold("Unknown Source")(f => s"$f:${ste.getLineNumber}")
+      else
+        Option(ste.getFileName).fold("Unknown Source") { f =>
+          if (ste.getLineNumber >= 0) s"$f:${ste.getLineNumber}" else f
+        }
     s"${ste.getClassName}.${ste.getMethodName} ($source)"
   }
 }
