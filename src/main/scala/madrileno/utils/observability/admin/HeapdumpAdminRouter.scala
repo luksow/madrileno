@@ -66,12 +66,12 @@ class HeapdumpAdminRouter(using TelemetryContext) extends BaseRouter {
 
 object HeapdumpAdminRouter {
   private[admin] def defaultPath: IO[String] =
-    for {
-      now <- IO.realTimeInstant
-      tmp <- IO.delay(System.getProperty("java.io.tmpdir"))
-      pid <- IO.delay(ProcessHandle.current().pid())
-      timestamp = now.toString.replace(':', '-').replace('.', '-')
-    } yield s"$tmp/madrileno-heap-$timestamp-$pid.hprof"
+    IO.realTimeInstant.map { now =>
+      val tmp       = System.getProperty("java.io.tmpdir")
+      val timestamp = now.toString.replace(':', '-').replace('.', '-')
+      val pid       = ProcessHandle.current().pid()
+      s"$tmp/madrileno-heap-$timestamp-$pid.hprof"
+    }
 }
 
 private sealed trait DumpFailure
