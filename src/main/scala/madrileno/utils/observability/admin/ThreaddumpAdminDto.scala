@@ -116,6 +116,10 @@ object FiberInfoDto {
   def apply(info: FiberInfo): FiberInfoDto =
     FiberInfoDto(id = System.identityHashCode(info.fiber).toHexString, state = info.state.toString, trace = info.trace.toList.map(frameToString))
 
-  private def frameToString(ste: StackTraceElement): String =
-    s"${ste.getClassName}.${ste.getMethodName} (${ste.getFileName}:${ste.getLineNumber})"
+  private def frameToString(ste: StackTraceElement): String = {
+    val source =
+      if (ste.isNativeMethod) "Native Method"
+      else Option(ste.getFileName).fold("Unknown Source")(f => s"$f:${ste.getLineNumber}")
+    s"${ste.getClassName}.${ste.getMethodName} ($source)"
+  }
 }
