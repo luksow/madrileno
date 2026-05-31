@@ -145,8 +145,55 @@ Boot time: `./scripts/dev-console.scala` returns a REPL prompt in ~5s (scala-cli
 - Doesn't emit OTel traces. `ConsoleApplication` wires noop `Tracer` / `Meter`, so REPL commands don't clutter the dev OTel pipeline.
 - Doesn't emit app logs. scala-cli's REPL launcher bundles `slf4j-api 1.7.x`, which loads ahead of the project's `2.0.x` and finds no matching binder (logback 1.5 ships the 2.x SPI). The `SLF4J: Defaulting to no-operation` warning at startup is the visible side; the practical effect is that logback-routed logs from your code are silently dropped in the REPL. For "what did this service do?" debugging, wrap calls in `run(...)` and inspect the return value directly.
 
+## `doctor.scala`
+
+Smoke-tests the dev setup. Run it after a fresh clone, or whenever something feels off ("which thing is broken?"). Diagnose only — does not start anything for you. Exit code 0 on all-green, 1 if any check fails (so CI can use it as a gate later).
+
+```bash
+./scripts/doctor.scala
+```
+
+Output on a healthy box:
+
+```
+✓ .env present
+✓ docker available (Docker version 25.0.2, build 29cf629)
+✓ docker compose services up
+    madrileno-postgres         Up About a minute (healthy)
+    madrileno-mailpit          Up About a minute (healthy)
+    madrileno-minio            Up About a minute (healthy)
+    madrileno-openobserve      Up About a minute (healthy)
+✓ postgres reachable (localhost:55432)
+✓ mailpit reachable (http://localhost:58025/api/v1/info → 200)
+✓ minio reachable (http://localhost:59000/minio/health/live → 200)
+✓ openobserve reachable (http://localhost:55080/healthz → 200)
+✓ app responding (http://localhost:9000/v1/health-check → 200)
+
+All 8 checks passed. Happy hacking.
+```
+
+On failure, each failed check prints a one-line `Hint:` pointing at the command that fixes it (`cp .env.sample .env`, `docker compose up -d`, `sbt "~reStart"`, etc.). Failures don't cascade — every independent check runs so you see the full picture in one shot, not iteratively.
+
+The checks:
+
+| # | Step | Notes |
+| - | ---- | ----- |
+| 1 | `.env` present | Hints `cp .env.sample .env`. |
+| 2 | `docker` CLI available | Skips compose-services check on failure. |
+| 3 | docker-compose services running | Reports each of postgres / mailpit / minio / openobserve and its status. |
+| 4 | Postgres TCP socket open on `PG_PORT` | Reads `.env` for the port (falls back to `.env.sample` if `.env` is missing). |
+| 5–7 | Mailpit / MinIO / OpenObserve HTTP health endpoints | `GET /api/v1/info`, `/minio/health/live`, `/healthz` respectively. |
+| 8 | App responding | `GET http://localhost:$PORT/v1/health-check`. Hints `sbt "~reStart"` on failure. |
+
+### What it doesn't do
+
+- Doesn't open a real JDBC connection — just a TCP socket. "Port answers" is enough to distinguish "compose down" from "compose up but something else wrong"; a real connect would need the JDBC driver as a script dep and adds little signal.
+- Doesn't auto-fix. "Doctor" is a smoke test, not a setup script. Copy-paste the hint; running the actual command is your call.
+- Doesn't check OS-level prereqs (sbt installed, JDK version, etc.). Those would have failed earlier (you couldn't have run this script). If you want a full bootstrap check, that's a different scope.
+
 ## File layout
 
 - `init-project.scala` — standalone, no companion files
 - `scaffold-module.scala` + `templates/module/` — generator + templates
 - `dev-console.scala` — wrapper. The REPL predef is embedded as a string inside the wrapper (top of the file), written to a temp file at launch and passed to scala-cli's REPL. One file, at the cost of no syntax highlighting on the predef section in most editors.
+- `doctor.scala` — standalone, no companion files
