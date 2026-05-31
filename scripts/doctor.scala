@@ -27,6 +27,10 @@ object Doctor {
     case Pass(detail: String = "")
     case Fail(detail: String, hint: String)
     case Skip(reason: String)
+
+    def isPass: Boolean = this match { case _: Pass => true; case _ => false }
+    def isFail: Boolean = this match { case _: Fail => true; case _ => false }
+    def isSkip: Boolean = this match { case _: Skip => true; case _ => false }
   }
 
   final case class Check(name: String, outcome: Outcome, sub: List[String] = Nil)
@@ -44,7 +48,7 @@ object Doctor {
     val env             = readEnv()
     val pgPort          = env.getOrElse("PG_PORT", "55432").toInt
     val appPort         = env.getOrElse("PORT", "9000").toInt
-    val apiVersion      = "v1" // matches application.conf `app.api-version` — not env-overridable
+    val apiVersion      = readApiVersion()
     val mailpitUiPort   = 58025
     val minioApiPort    = 59000
     val openobservePort = 55080
@@ -52,7 +56,7 @@ object Doctor {
     val envCheck    = checkEnvFile()
     val dockerCheck = checkDockerAvailable()
     val composeCheck =
-      if (dockerCheck.outcome.isInstanceOf[Outcome.Pass]) checkComposeServices()
+      if (dockerCheck.outcome.isPass) checkComposeServices()
       else Check("docker compose services up", Outcome.Skip("docker not available"))
 
     val results: List[Check] = List(
@@ -68,15 +72,15 @@ object Doctor {
 
     results.foreach(printCheck)
 
-    val (passed, failed) = results.partition(_.outcome.isInstanceOf[Outcome.Pass])
-    val skipped          = results.count(_.outcome.isInstanceOf[Outcome.Skip])
-    val realFailed       = failed.count(_.outcome.isInstanceOf[Outcome.Fail])
+    val passedCount  = results.count(_.outcome.isPass)
+    val failedCount  = results.count(_.outcome.isFail)
+    val skippedCount = results.count(_.outcome.isSkip)
 
     println()
-    if (realFailed == 0) println(s"${Green}All ${passed.size} checks passed. Happy hacking.${Reset}")
-    else println(s"${Red}$realFailed of ${results.size} checks failed${Reset}${if (skipped > 0) s" (${skipped} skipped)" else ""}. See hints above.")
+    if (failedCount == 0) println(s"${Green}All $passedCount checks passed. Happy hacking.${Reset}")
+    else println(s"${Red}$failedCount of ${results.size} checks failed${Reset}${if (skippedCount > 0) s" ($skippedCount skipped)" else ""}. See hints above.")
 
-    sys.exit(if (realFailed == 0) 0 else 1)
+    sys.exit(if (failedCount == 0) 0 else 1)
   }
 
   // ---- checks ----
@@ -109,9 +113,8 @@ object Doctor {
         val notUp    = rows.filterNot { case (_, status) => status.startsWith("Up") }.keys.toList.filter(ExpectedServices.contains)
         val sub      = ExpectedServices.map { svc =>
           rows.get(svc) match {
-            case Some(status) if status.startsWith("Up") => f"$svc%-26s $status"
-            case Some(status)                            => f"$svc%-26s $status"
-            case None                                    => f"$svc%-26s NOT RUNNING"
+            case Some(status) => f"$svc%-26s $status"
+            case None         => f"$svc%-26s NOT RUNNING"
           }
         }
         if (missing.isEmpty && notUp.isEmpty) Check("docker compose services up", Outcome.Pass(), sub)
@@ -137,6 +140,14 @@ object Doctor {
   }
 
   // ---- helpers ----
+
+  private val ApiVersionRegex = """api-version\s*=\s*"([^"]+)"""".r
+
+  private def readApiVersion(): String = {
+    val path = Paths.get("src/main/resources/application.conf")
+    if (!Files.isRegularFile(path)) "v1"
+    else ApiVersionRegex.findFirstMatchIn(Files.readString(path)).map(_.group(1)).getOrElse("v1")
+  }
 
   private def readEnv(): Map[String, String] = {
     val source = if (new File(".env").isFile) ".env" else ".env.sample"
