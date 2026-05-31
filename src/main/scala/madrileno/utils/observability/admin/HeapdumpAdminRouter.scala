@@ -10,6 +10,7 @@ import pl.iterators.stir.server.Route
 
 import java.io.{File, IOException}
 import java.lang.management.ManagementFactory
+import java.nio.file.FileAlreadyExistsException
 import java.time.Instant
 
 final case class HeapdumpResultDto(
@@ -29,6 +30,7 @@ class HeapdumpAdminRouter(using TelemetryContext) extends BaseRouter {
           case Right(dto)             => Ok -> dto
           case Left(FileExists)       => error(Conflict, "heapdump-file-exists", "Heap dump target file already exists; pick a different path")
           case Left(NotHotSpot)       => error(NotImplemented, "heapdump-not-supported", "HotSpotDiagnosticMXBean is not available on this JVM")
+          case Left(Rejected(msg))    => error(BadRequest, "heapdump-bad-request", msg)
           case Left(WriteFailed(msg)) => error(InternalServerError, "heapdump-write-failed", s"Heap dump failed: $msg")
         }
       }
@@ -48,14 +50,15 @@ class HeapdumpAdminRouter(using TelemetryContext) extends BaseRouter {
             val took = System.currentTimeMillis() - started
             Right(HeapdumpResultDto(path = targetPath, sizeBytes = file.length(), liveOnly = liveOnly, tookMillis = took))
           } catch {
-            case e: IOException => Left(WriteFailed(Option(e.getMessage).getOrElse(e.getClass.getName)))
+            case _: FileAlreadyExistsException => Left(FileExists)
+            case e: IllegalArgumentException   => Left(Rejected(Option(e.getMessage).getOrElse("invalid heapdump arguments")))
+            case e: IOException                => Left(WriteFailed(Option(e.getMessage).getOrElse(e.getClass.getName)))
           }
       }
   }
 
-  private def hotSpotBean: Option[HotSpotDiagnosticMXBean] =
-    try Some(ManagementFactory.getPlatformMXBean(classOf[HotSpotDiagnosticMXBean]))
-    catch { case _: IllegalArgumentException => None }
+  private lazy val hotSpotBean: Option[HotSpotDiagnosticMXBean] =
+    Option(ManagementFactory.getPlatformMXBean(classOf[HotSpotDiagnosticMXBean]))
 }
 
 object HeapdumpAdminRouter {
@@ -70,4 +73,5 @@ object HeapdumpAdminRouter {
 private sealed trait DumpFailure
 private case object FileExists                        extends DumpFailure
 private case object NotHotSpot                        extends DumpFailure
+private final case class Rejected(message: String)    extends DumpFailure
 private final case class WriteFailed(message: String) extends DumpFailure
