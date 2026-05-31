@@ -46,8 +46,8 @@ object Doctor {
 
   def main(args: Array[String]): Unit = {
     val env             = readEnv()
-    val pgPort          = env.getOrElse("PG_PORT", "55432").toInt
-    val appPort         = env.getOrElse("PORT", "9000").toInt
+    val pgPort          = env.get("PG_PORT").flatMap(_.toIntOption).getOrElse(55432)
+    val appPort         = env.get("PORT").flatMap(_.toIntOption).getOrElse(9000)
     val apiVersion      = readApiVersion()
     val mailpitUiPort   = 58025
     val minioApiPort    = 59000
@@ -97,11 +97,13 @@ object Doctor {
       case Left(_)    => Check("docker available", Outcome.Fail(detail = "not on PATH", hint = "install Docker or Docker Desktop"))
     }
 
+  // Compose *service* names (top-level keys in docker-compose.yml), not container names.
+  // Service names stay stable across `init-project.scala`'s rename; container names ("madrileno-*") get rewritten.
   private val ExpectedServices: List[String] =
-    List("madrileno-postgres", "madrileno-mailpit", "madrileno-minio", "madrileno-openobserve")
+    List("postgres", "mailpit", "minio", "openobserve")
 
   private def checkComposeServices(): Check = {
-    runCmd("docker", "compose", "ps", "--format", "{{.Name}}\t{{.Status}}") match {
+    runCmd("docker", "compose", "ps", "--format", "{{.Service}}\t{{.Status}}") match {
       case Left(err) =>
         Check("docker compose services up", Outcome.Fail(detail = err.trim.linesIterator.take(1).mkString, hint = "run from project root: docker compose up -d"))
       case Right(out) =>
@@ -113,8 +115,8 @@ object Doctor {
         val notUp    = rows.filterNot { case (_, status) => status.startsWith("Up") }.keys.toList.filter(ExpectedServices.contains)
         val sub      = ExpectedServices.map { svc =>
           rows.get(svc) match {
-            case Some(status) => f"$svc%-26s $status"
-            case None         => f"$svc%-26s NOT RUNNING"
+            case Some(status) => f"$svc%-14s $status"
+            case None         => f"$svc%-14s NOT RUNNING"
           }
         }
         if (missing.isEmpty && notUp.isEmpty) Check("docker compose services up", Outcome.Pass(), sub)

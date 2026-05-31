@@ -190,6 +190,7 @@ The checks:
 - Doesn't open a real JDBC connection — just a TCP socket. "Port answers" is enough to distinguish "compose down" from "compose up but something else wrong"; a real connect would need the JDBC driver as a script dep and adds little signal.
 - Doesn't auto-fix. "Doctor" is a smoke test, not a setup script. Copy-paste the hint; running the actual command is your call.
 - Doesn't check OS-level prereqs (sbt installed, JDK version, etc.). Those would have failed earlier (you couldn't have run this script). If you want a full bootstrap check, that's a different scope.
+- Doesn't follow `S3_ENDPOINT` / `OTEL_EXPORTER_OTLP_*_ENDPOINT` from `.env`. The MinIO / OpenObserve port checks use the host ports from `docker-compose.yml` (59000 / 55080). Doctor's scope is "is the local dev stack up", not "is whatever the app is configured to talk to up". If you've pointed the app at remote MinIO / OpenObserve, the local doctor checks are still meaningful for the dev stack itself; if you've also customised the compose port mappings, doctor needs a matching tweak.
 
 ## File layout
 
