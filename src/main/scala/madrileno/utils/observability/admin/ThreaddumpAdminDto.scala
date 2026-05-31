@@ -1,6 +1,9 @@
 package madrileno.utils.observability.admin
 
+import cats.effect.FiberInfo
 import madrileno.utils.json.JsonProtocol.*
+
+import java.lang.management.{LockInfo, MonitorInfo, ThreadInfo}
 
 final case class ThreaddumpDto(jvmThreads: List[JvmThreadDto], fibers: FiberDumpDto) derives Encoder.AsObject, Decoder
 
@@ -25,6 +28,29 @@ final case class JvmThreadDto(
     derives Encoder.AsObject,
       Decoder
 
+object JvmThreadDto {
+  def apply(info: ThreadInfo): JvmThreadDto =
+    JvmThreadDto(
+      threadName = info.getThreadName,
+      threadId = info.getThreadId,
+      threadState = info.getThreadState.name,
+      priority = info.getPriority,
+      daemon = info.isDaemon,
+      suspended = info.isSuspended,
+      inNative = info.isInNative,
+      blockedCount = info.getBlockedCount,
+      blockedTime = info.getBlockedTime,
+      waitedCount = info.getWaitedCount,
+      waitedTime = info.getWaitedTime,
+      lockName = Option(info.getLockName),
+      lockOwnerId = info.getLockOwnerId,
+      lockOwnerName = Option(info.getLockOwnerName),
+      stackTrace = info.getStackTrace.toList.map(StackFrameDto.apply),
+      lockedMonitors = info.getLockedMonitors.toList.map(MonitorInfoDto.apply),
+      lockedSynchronizers = info.getLockedSynchronizers.toList.map(LockInfoDto.apply)
+    )
+}
+
 final case class StackFrameDto(
   className: String,
   methodName: String,
@@ -34,7 +60,23 @@ final case class StackFrameDto(
     derives Encoder.AsObject,
       Decoder
 
+object StackFrameDto {
+  def apply(ste: StackTraceElement): StackFrameDto =
+    StackFrameDto(
+      className = ste.getClassName,
+      methodName = ste.getMethodName,
+      fileName = Option(ste.getFileName),
+      lineNumber = ste.getLineNumber,
+      nativeMethod = ste.isNativeMethod
+    )
+}
+
 final case class LockInfoDto(className: String, identityHashCode: Int) derives Encoder.AsObject, Decoder
+
+object LockInfoDto {
+  def apply(lock: LockInfo): LockInfoDto =
+    LockInfoDto(className = lock.getClassName, identityHashCode = lock.getIdentityHashCode)
+}
 
 final case class MonitorInfoDto(
   className: String,
@@ -43,6 +85,16 @@ final case class MonitorInfoDto(
   lockedStackFrame: Option[StackFrameDto])
     derives Encoder.AsObject,
       Decoder
+
+object MonitorInfoDto {
+  def apply(m: MonitorInfo): MonitorInfoDto =
+    MonitorInfoDto(
+      className = m.getClassName,
+      identityHashCode = m.getIdentityHashCode,
+      lockedStackDepth = m.getLockedStackDepth,
+      lockedStackFrame = Option(m.getLockedStackFrame).map(StackFrameDto.apply)
+    )
+}
 
 final case class FiberDumpDto(workers: List[WorkerFibersDto], external: List[FiberInfoDto]) derives Encoder.AsObject, Decoder
 
@@ -59,3 +111,11 @@ final case class FiberInfoDto(
   trace: List[String])
     derives Encoder.AsObject,
       Decoder
+
+object FiberInfoDto {
+  def apply(info: FiberInfo): FiberInfoDto =
+    FiberInfoDto(id = System.identityHashCode(info.fiber).toHexString, state = info.state.toString, trace = info.trace.toList.map(frameToString))
+
+  private def frameToString(ste: StackTraceElement): String =
+    s"${ste.getClassName}.${ste.getMethodName} (${ste.getFileName}:${ste.getLineNumber})"
+}
