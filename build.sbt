@@ -38,6 +38,7 @@ libraryDependencies ++= {
   val awsSdkV            = "2.34.9"
   val scrimageV          = "4.5.1"
   val scalatestV         = "3.2.20"
+  val reflectionsV       = "0.10.2"
   Seq(
     "org.http4s"                      %% "http4s-ember-server"                       % http4sV,
     "org.http4s"                      %% "http4s-dsl"                                % http4sV,
@@ -96,6 +97,7 @@ libraryDependencies ++= {
     "org.flywaydb"                     % "flyway-core"                               % flywayV,
     "org.flywaydb"                     % "flyway-database-postgresql"                % flywayV,
     "org.scalatest"                   %% "scalatest"                                 % scalatestV         % "test",
+    "org.reflections"                  % "reflections"                               % reflectionsV       % "test",
     "org.typelevel"                   %% "cats-effect-testkit"                       % catsEffectV        % "test",
     "org.typelevel"                   %% "cats-effect-testing-scalatest"             % catsEffectTestingV % "test"
   )

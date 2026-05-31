@@ -10,13 +10,17 @@ import scala.util.Try
 
 class ModuleWiringSpec extends AnyFunSpec with Matchers {
 
-  // Opt-out: FQCN + one-line reason per entry. Prefer an annotation if this grows past ~3.
-  private val intentionallyNotMixedIn: Set[String] = Set.empty
+  // Opt-out: FQCN → one-line reason. Prefer an annotation if this grows past ~3.
+  private val intentionallyNotMixedIn: Map[String, String] = Map.empty
 
   describe("ApplicationLoader") {
     it("mixes in every *Module trait defined under the project package") {
-      val pkg = classOf[ApplicationLoader].getPackage.getName.split('.').head
+      // Convention: ApplicationLoader lives in `<root>.main`, so drop the trailing segment.
+      // Works whether root is `madrileno` (single segment) or `com.acme.foo` (multi-segment after init-project rename).
+      val pkg = classOf[ApplicationLoader].getPackage.getName.split('.').dropRight(1).mkString(".")
 
+      // filterResultsBy(_ => true) overrides SubTypes' default exclusion of java.lang.Object as a
+      // store key — without it, traits directly extending only Object would be absent from getAll.
       val reflections = new Reflections(pkg, Scanners.SubTypes.filterResultsBy(_ => true))
       val candidates  = reflections.getAll(Scanners.SubTypes).asScala.toSet
 
@@ -25,14 +29,16 @@ class ModuleWiringSpec extends AnyFunSpec with Matchers {
       }
 
       val mixedIn = allInterfaces(classOf[ApplicationLoader]).map(_.getName)
-      val missing = (moduleTraits diff mixedIn) diff intentionallyNotMixedIn
+      val missing = (moduleTraits diff mixedIn) diff intentionallyNotMixedIn.keySet
 
       withClue(buildClue(missing)) { missing shouldBe empty }
     }
   }
 
+  private val loader = classOf[ApplicationLoader].getClassLoader
+
   private def isProjectTrait(fqn: String): Boolean =
-    Try(Class.forName(fqn)).toOption.exists(c => c.isInterface && !c.isAnnotation)
+    Try(Class.forName(fqn, false, loader)).toOption.exists(c => c.isInterface && !c.isAnnotation)
 
   private def allInterfaces(c: Class[?]): Set[Class[?]] = {
     val direct        = c.getInterfaces.toSet
@@ -49,7 +55,7 @@ class ModuleWiringSpec extends AnyFunSpec with Matchers {
           |${missing.toSeq.sorted.map(m => s"  - $m").mkString("\n")}
           |
           |Fix: add `with <ModuleName>` to ApplicationLoader's extends chain.
-          |If a module is intentionally excluded, add its FQCN to
-          |ModuleWiringSpec.intentionallyNotMixedIn with a one-line reason.
+          |If a module is intentionally excluded, add an entry to
+          |ModuleWiringSpec.intentionallyNotMixedIn (FQCN → reason).
           |""".stripMargin
 }
