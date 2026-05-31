@@ -80,20 +80,15 @@ This runs `scalafmtSbtCheck` + `scalafmtCheckAll` + `compile` + `test` in sequen
 
 ## Compiler strictness
 
-The build uses `sbt-tpolecat`. In CI, `-Werror` is on: any warning fails compilation. Locally, `SBT_TPOLECAT_DEV=true` (set in `.env.sample`) downgrades warnings to warnings, so `~reStart` doesn't blow up every time you have an unused import in flight.
+The build uses `sbt-tpolecat`. Default mode is `ci`: `-Werror` on, full warnings. Local and CI run the same flags, so warnings that fail CI also fail your local `~reStart`. This catches issues early — the alternative ("relaxed local, strict CI") regularly produced PRs that compiled on the author's machine and failed in CI on warnings they never saw.
 
-The cost: code that compiles locally can fail in CI on a warning you didn't see. Two ways to catch it before pushing:
+If the constant `-Werror` interruptions during exploratory work outweigh catching issues early, opt in to relaxed mode by uncommenting `SBT_TPOLECAT_DEV=true` in your `.env`. Remember to bounce sbt — `sbt-dotenv` reads `.env` only at startup, not on `~reStart`. And keep an eye on CI: anything you missed locally still fails there.
 
-- Run `verifyAll` (uses dev mode, but the test/compile output prints all warnings).
-- Temporarily unset the flag:
+To temporarily reproduce CI strictness when you're in relaxed mode and want a final sanity-check before pushing:
 
-  ```bash
-  SBT_TPOLECAT_DEV= sbt --client compile
-  ```
-
-  This reproduces CI's strictness without committing a change.
-
-The auto-memory has a note about this — `werror_in_ci` — because it's bitten more than once.
+```bash
+SBT_TPOLECAT_DEV= sbt --client compile
+```
 
 ## Database tasks
 
@@ -148,7 +143,7 @@ Stale incremental compile state. Run `clean` then `compile`. If it still fails, 
 The dotenv plugin reads `.env` once at JVM startup. Restart sbt.
 
 **A test that passes locally fails in CI on a warning.**
-You're hitting the dev-mode tpolecat issue above. Reproduce with `SBT_TPOLECAT_DEV= sbt --client compile`.
+You've opted into `SBT_TPOLECAT_DEV=true` and the local build is in relaxed mode. Reproduce CI strictness with `SBT_TPOLECAT_DEV= sbt --client compile`, or comment out `SBT_TPOLECAT_DEV` in your `.env` to revert to the strict default.
 
 **A migration fails with a checksum mismatch.**
 You edited a migration that's already been applied. Either roll back the file change or `flywayClean` your dev DB and re-migrate (only on dev — never on shared environments).
