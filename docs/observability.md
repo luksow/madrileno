@@ -219,6 +219,42 @@ Fiber traces are populated from cats-effect's internal trace ring buffer. The mo
 
 For 3am debugging a stuck endpoint: hit `/admin/threaddump`, scan `fibers.workers` for `RUNNING` fibers (what's the compute pool actually doing), then scan `fibers.external` for `WAITING` fibers grouped by what they're parked on (usually a `Deferred.get` you forgot to complete).
 
+### Memory-leak diagnosis — `/admin/heapdump`
+
+Triggers an HPROF heap dump via `HotSpotDiagnosticMXBean.dumpHeap(...)`. Same admin Basic-Auth. Written to a server-side path — **not** streamed in the response, because heap dumps can be multi-GB and an HTTP connection in flight for a few minutes is a fragile delivery mechanism.
+
+```bash
+# Default: live-only (reachable objects), auto-named under $TMPDIR
+curl -u admin:admin -X POST http://localhost:9000/admin/heapdump
+
+# Include unreachable / not-yet-collected objects (useful for "what was just freed?")
+curl -u admin:admin -X POST 'http://localhost:9000/admin/heapdump?live=false'
+
+# Custom path
+curl -u admin:admin -X POST 'http://localhost:9000/admin/heapdump?path=/var/dumps/leak-investigation.hprof'
+```
+
+Response:
+
+```json
+{
+  "path": "/tmp/madrileno-heap-2026-05-31T13-45-22-12345.hprof",
+  "sizeBytes": 124857600,
+  "liveOnly": true,
+  "tookMillis": 412
+}
+```
+
+Operator workflow: hit the endpoint → `scp` the file off the host → open in Eclipse MAT, VisualVM, or `jhat`. MAT is the most capable for leak suspect analysis; VisualVM is friendlier for casual browsing.
+
+Errors:
+
+- **409 `heapdump-file-exists`** — `HotSpotDiagnosticMXBean.dumpHeap` refuses to overwrite. Pick a different `path=` or delete the existing file.
+- **501 `heapdump-not-supported`** — the JVM doesn't ship `com.sun.management.HotSpotDiagnosticMXBean`. HotSpot does; some embedded JVMs don't. You'll almost never see this in practice.
+- **500 `heapdump-write-failed`** — out of disk, permission denied, etc. Message carries the underlying `IOException`.
+
+Cost: writing the hprof is `IO.blocking` (synchronous JNI write that streams the whole heap to disk). A few hundred ms for a small heap, tens of seconds for a multi-GB heap. The HTTP request holds the connection open for the duration — for very large heaps the client may time out; `scp` and inspect `/tmp` directly if that happens.
+
 ## Outbound-HTTP request/response logging
 
 Separate from the OTel layer: sttp's `LoggingBackend` is also wired into the shared `httpClient`. It writes each request and response to the project logger using the configured level (`logging.loglevel-request-response` in `application.conf`, default 4 = `DEBUG`). With `logRequestBody = true, logResponseBody = true`, you get the full body in dev — invaluable for debugging gateway integrations. Drop the level (or set request/response body to `false`) before shipping to production unless you really want every JSON payload in your logs.
