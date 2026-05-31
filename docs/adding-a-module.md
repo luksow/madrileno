@@ -1102,7 +1102,7 @@ Skim this list. Each item is something a reviewer (human or Copilot) has flagged
 **Module wiring**
 - [ ] Trait extends the right providers (`RouteProvider`, `AuthRouteProvider`, optionally `RecurringTaskProvider`, `MailPreviewProvider`)
 - [ ] `override abstract def` chains through `super` so other modules' contributions aren't lost
-- [ ] Module trait is mixed into `ApplicationLoader`
+- [ ] Module trait is mixed into `ApplicationLoader` — `ModuleWiringSpec` will fail in CI if you forget
 
 **Migration**
 - [ ] `NUMERIC` for money, `TIMESTAMPTZ` for time
