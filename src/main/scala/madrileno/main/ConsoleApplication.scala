@@ -1,6 +1,7 @@
 package madrileno.main
 
 import cats.effect.std.Supervisor
+import cats.effect.unsafe.IORuntime
 import cats.effect.unsafe.implicits.global
 import cats.effect.{Clock, IO, Resource}
 import io.opentelemetry.api.OpenTelemetry
@@ -52,7 +53,8 @@ object ConsoleApplication {
         cacheRuntime,
         rateLimiterRuntime,
         objectStoreRuntime,
-        eventBusRuntime
+        eventBusRuntime,
+        IORuntime.global
       )
     }
 

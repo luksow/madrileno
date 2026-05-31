@@ -195,6 +195,30 @@ The DTO distinguishes `configuredLevel` (`null` when inherited) from `effectiveL
 
 Changes are in-memory only — they revert on restart. Use `<logger>` entries in `logback.xml` for persistent overrides.
 
+### Stuck-process diagnosis — `/admin/threaddump`
+
+Same Basic-Auth gate. Answers "what is this process actually doing right now?". Two sections in one JSON payload:
+
+```bash
+curl -u admin:admin http://localhost:9000/admin/threaddump | jq
+```
+
+- **`jvmThreads`** — a Spring-Actuator-shaped dump from `ThreadMXBean.dumpAllThreads(...)`: every JVM thread with its state, daemon flag, blocked/waited counters, lock info, and full stack trace. Useful for non-fiber threads — the Netty event loop, the Skunk pool, the scheduler, the otel exporter, the blocking pool. In a cats-effect app the compute workers will almost always show up as `WAITING` parked in `LockSupport.park`; that's normal idle state, not a deadlock.
+
+- **`fibers.workers`** — the cats-effect live fiber snapshot grouped per compute worker. Each entry: `workerThread` (the JVM thread name), `workerIndex`, and the list of fibers (`{id, state, trace}`) currently queued or running on that worker.
+
+- **`fibers.external`** — fibers that are not bound to a worker: suspended on a `Deferred.get`/`Sleep`/`Semaphore`/etc., or running on an external `evalOn` executor. This is where most blocked work shows up.
+
+Fiber traces are populated from cats-effect's internal trace ring buffer. The mode is controlled by the `-Dcats.effect.tracing.mode` system property:
+
+| Mode | Effect |
+| ---- | ------ |
+| `none` | No traces. `trace` arrays in the response are empty. Lowest overhead. |
+| `cached` (default) | Async-boundary frames captured. Enough to see where each fiber is suspended. Small overhead. |
+| `full` | Every operation traced. Most useful, highest overhead — don't use in steady-state prod. |
+
+For 3am debugging a stuck endpoint: hit `/admin/threaddump`, scan `fibers.workers` for `RUNNING` fibers (what's the compute pool actually doing), then scan `fibers.external` for `WAITING` fibers grouped by what they're parked on (usually a `Deferred.get` you forgot to complete).
+
 ## Outbound-HTTP request/response logging
 
 Separate from the OTel layer: sttp's `LoggingBackend` is also wired into the shared `httpClient`. It writes each request and response to the project logger using the configured level (`logging.loglevel-request-response` in `application.conf`, default 4 = `DEBUG`). With `logRequestBody = true, logResponseBody = true`, you get the full body in dev — invaluable for debugging gateway integrations. Drop the level (or set request/response body to `false`) before shipping to production unless you really want every JSON payload in your logs.
