@@ -1,6 +1,7 @@
 package madrileno.utils.observability.admin
 
 import cats.effect.IO
+import cats.effect.kernel.Clock
 import com.sun.management.HotSpotDiagnosticMXBean
 import madrileno.utils.http.BaseRouter
 import madrileno.utils.json.JsonProtocol.*
@@ -11,7 +12,6 @@ import pl.iterators.stir.server.Route
 import java.io.{File, IOException}
 import java.lang.management.ManagementFactory
 import java.nio.file.FileAlreadyExistsException
-import java.time.Instant
 
 final case class HeapdumpResultDto(
   path: String,
@@ -26,7 +26,7 @@ class HeapdumpAdminRouter(using TelemetryContext) extends BaseRouter {
   val routes: Route =
     (post & pathPrefix("heapdump") & pathEndOrSingleSlash & parameters("live".as[Boolean] ? true, "path".?)) { (live, pathOverride) =>
       complete {
-        IO.blocking(dump(live, pathOverride)).map[ToResponseMarshallable] {
+        dump(live, pathOverride).map[ToResponseMarshallable] {
           case Right(dto)             => Ok -> dto
           case Left(FileExists)       => error(Conflict, "heapdump-file-exists", "Heap dump target file already exists; pick a different path")
           case Left(NotHotSpot)       => error(NotImplemented, "heapdump-not-supported", "HotSpotDiagnosticMXBean is not available on this JVM")
@@ -36,38 +36,42 @@ class HeapdumpAdminRouter(using TelemetryContext) extends BaseRouter {
       }
     }
 
-  private def dump(liveOnly: Boolean, pathOverride: Option[String]): Either[DumpFailure, HeapdumpResultDto] = {
-    val targetPath = pathOverride.getOrElse(HeapdumpAdminRouter.defaultPath())
-    val file       = new File(targetPath)
-    if (file.exists()) Left(FileExists)
-    else
-      hotSpotBean match {
-        case None => Left(NotHotSpot)
-        case Some(bean) =>
-          val started = System.currentTimeMillis()
-          try {
-            bean.dumpHeap(targetPath, liveOnly)
-            val took = System.currentTimeMillis() - started
-            Right(HeapdumpResultDto(path = targetPath, sizeBytes = file.length(), liveOnly = liveOnly, tookMillis = took))
-          } catch {
-            case _: FileAlreadyExistsException => Left(FileExists)
-            case e: IllegalArgumentException   => Left(Rejected(Option(e.getMessage).getOrElse("invalid heapdump arguments")))
-            case e: IOException                => Left(WriteFailed(Option(e.getMessage).getOrElse(e.getClass.getName)))
+  private def dump(liveOnly: Boolean, pathOverride: Option[String]): IO[Either[DumpFailure, HeapdumpResultDto]] =
+    for {
+      targetPath <- pathOverride.fold(HeapdumpAdminRouter.defaultPath)(IO.pure)
+      file = new File(targetPath)
+      exists <- IO.blocking(file.exists())
+      result <-
+        if (exists) IO.pure(Left(FileExists))
+        else
+          hotSpotBean.fold(IO.pure(Left(NotHotSpot): Either[DumpFailure, HeapdumpResultDto])) { bean =>
+            Clock[IO]
+              .timed(IO.blocking(bean.dumpHeap(targetPath, liveOnly)))
+              .flatMap { case (took, _) =>
+                IO.blocking(file.length()).map { size =>
+                  Right(HeapdumpResultDto(targetPath, size, liveOnly, took.toMillis)): Either[DumpFailure, HeapdumpResultDto]
+                }
+              }
+              .recover {
+                case _: FileAlreadyExistsException => Left(FileExists)
+                case e: IllegalArgumentException   => Left(Rejected(Option(e.getMessage).getOrElse("invalid heapdump arguments")))
+                case e: IOException                => Left(WriteFailed(Option(e.getMessage).getOrElse(e.getClass.getName)))
+              }
           }
-      }
-  }
+    } yield result
 
   private lazy val hotSpotBean: Option[HotSpotDiagnosticMXBean] =
     Option(ManagementFactory.getPlatformMXBean(classOf[HotSpotDiagnosticMXBean]))
 }
 
 object HeapdumpAdminRouter {
-  private[admin] def defaultPath(): String = {
-    val tmp       = System.getProperty("java.io.tmpdir")
-    val timestamp = Instant.now().toString.replace(':', '-').replace('.', '-')
-    val pid       = ProcessHandle.current().pid()
-    s"$tmp/madrileno-heap-$timestamp-$pid.hprof"
-  }
+  private[admin] def defaultPath: IO[String] =
+    IO.realTimeInstant.map { now =>
+      val tmp       = System.getProperty("java.io.tmpdir")
+      val timestamp = now.toString.replace(':', '-').replace('.', '-')
+      val pid       = ProcessHandle.current().pid()
+      s"$tmp/madrileno-heap-$timestamp-$pid.hprof"
+    }
 }
 
 private sealed trait DumpFailure
