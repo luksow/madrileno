@@ -10,17 +10,15 @@ import scala.util.Try
 
 class ModuleWiringSpec extends AnyFunSpec with Matchers {
 
-  // Opt-out: FQCN → one-line reason. Prefer an annotation if this grows past ~3.
+  // FQCN → reason.
   private val intentionallyNotMixedIn: Map[String, String] = Map.empty
 
   describe("ApplicationLoader") {
     it("mixes in every *Module trait defined under the project package") {
-      // Convention: ApplicationLoader lives in `<root>.main`, so drop the trailing segment.
-      // Works whether root is `madrileno` (single segment) or `com.acme.foo` (multi-segment after init-project rename).
+      // Convention: ApplicationLoader lives in `<root>.main` — drop the trailing segment.
       val pkg = classOf[ApplicationLoader].getPackage.getName.split('.').dropRight(1).mkString(".")
 
-      // filterResultsBy(_ => true) overrides SubTypes' default exclusion of java.lang.Object as a
-      // store key — without it, traits directly extending only Object would be absent from getAll.
+      // filterResultsBy(_ => true) keeps java.lang.Object entries; without it, traits extending only Object are missed.
       val reflections = new Reflections(pkg, Scanners.SubTypes.filterResultsBy(_ => true))
       val candidates  = reflections.getAll(Scanners.SubTypes).asScala.toSet
 
