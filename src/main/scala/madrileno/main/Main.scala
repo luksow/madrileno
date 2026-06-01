@@ -55,6 +55,7 @@ object Main extends IOApp.Simple {
           config,
           httpClient,
           transactor,
+          pgConfig,
           clock,
           scheduler.client,
           cacheRuntime,

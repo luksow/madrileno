@@ -61,6 +61,7 @@ trait TestApplicationLoader extends TestContainersForAll with TestMailpit { self
       config,
       httpClient,
       transactor,
+      pgConfig,
       Clock[IO],
       scheduler.client,
       TestCacheRuntime.unbounded,

@@ -255,6 +255,32 @@ Errors:
 
 Cost: writing the hprof is `IO.blocking` (synchronous JNI write that streams the whole heap to disk). A few hundred ms for a small heap, tens of seconds for a multi-GB heap. The HTTP request holds the connection open for the duration — for very large heaps the client may time out; `scp` and inspect `/tmp` directly if that happens.
 
+### Postgres connection breakdown — `/admin/db`
+
+Same admin Basic-Auth. Two sections: the configured pool slice from HOCON, and a connection-state breakdown queried from `pg_stat_activity`.
+
+```bash
+curl -u admin:admin http://localhost:9000/admin/db | jq
+```
+
+```json
+{
+  "config":      { "host": "localhost", "port": 55432, "database": "madrileno", "maxPoolSize": 10 },
+  "connections": { "active": 1, "idle": 1, "idleInTransaction": 0, "total": 2 }
+}
+```
+
+- **`config.maxPoolSize`** is the upper bound — Skunk won't open more than this many connections. Compare against `connections.active` for saturation: if active is near max, the pool is the bottleneck.
+- **`connections.active`** — currently executing a query.
+- **`connections.idle`** — sitting in the pool, ready for a checkout.
+- **`connections.idleInTransaction`** — held by some fiber inside a `BEGIN` block but not actively querying. Persistent non-zero values usually mean a forgotten transaction (a fiber holding a session but not committing/rolling back). Collapses `idle in transaction` and `idle in transaction (aborted)` into one count.
+- **`connections.total`** — sum across all states.
+
+Two caveats worth knowing before you panic on a number:
+
+- **Server-side perspective**: counts come from Postgres's `pg_stat_activity` for the current database. In a multi-instance deployment, `total` reflects all clients on the database, not just this app instance. A per-instance view would need client-side counters wrapping `transactor.inSession` — out of scope for this endpoint, Skunk's pool state isn't exposed externally.
+- **No queue-depth visibility**: if every connection in the pool is busy and new fibers are waiting for a session checkout, this endpoint won't show them. The threaddump endpoint's fiber dump (`/admin/threaddump`) shows fibers blocked on `Deferred`-style waits if it matters in the moment.
+
 ## Outbound-HTTP request/response logging
 
 Separate from the OTel layer: sttp's `LoggingBackend` is also wired into the shared `httpClient`. It writes each request and response to the project logger using the configured level (`logging.loglevel-request-response` in `application.conf`, default 4 = `DEBUG`). With `logRequestBody = true, logResponseBody = true`, you get the full body in dev — invaluable for debugging gateway integrations. Drop the level (or set request/response body to `false`) before shipping to production unless you really want every JSON payload in your logs.

@@ -9,12 +9,12 @@ import madrileno.auth.AuthModule
 import madrileno.healthcheck.HealthCheckModule
 import madrileno.user.UserModule
 import madrileno.utils.cache.CacheRuntime
-import madrileno.utils.db.transactor.Transactor
+import madrileno.utils.db.transactor.{PgConfig, Transactor}
 import madrileno.utils.events.EventBusRuntime
 import madrileno.utils.http.{ApplicationRouteProvider, Handlers, RateLimiterRuntime}
 import madrileno.utils.mailer.{MailContext, MailPreviewProvider, MailPreviewRouter, Mailer, MailerConfig, SmtpSender}
 import madrileno.utils.observability.*
-import madrileno.utils.observability.admin.{ConfigAdminRouter, HeapdumpAdminRouter, LoggersAdminRouter, ThreaddumpAdminRouter}
+import madrileno.utils.observability.admin.{ConfigAdminRouter, DbAdminRouter, HeapdumpAdminRouter, LoggersAdminRouter, ThreaddumpAdminRouter}
 import madrileno.utils.storage.{ObjectStore, ObjectStoreRuntime}
 import madrileno.utils.task.{ApplicationTaskProvider, OneTimeTask, SchedulerAdminRouter, SchedulerClient}
 import org.http4s.headers.`Content-Type`
@@ -68,6 +68,7 @@ class ApplicationLoader(
   val config: ConfigObjectSource,
   httpBackend: WebSocketStreamBackend[IO, Fs2Streams[IO]],
   val transactor: Transactor,
+  val pgConfig: PgConfig,
   val clock: Clock[IO],
   val schedulerClient: SchedulerClient,
   val cacheRuntime: CacheRuntime,
@@ -133,10 +134,11 @@ class ApplicationLoader(
   lazy val configAdminRouter: ConfigAdminRouter         = new ConfigAdminRouter(rawConfig, adminConfig.config.redactedPaths)
   lazy val threaddumpAdminRouter: ThreaddumpAdminRouter = new ThreaddumpAdminRouter(ioRuntime)
   lazy val heapdumpAdminRouter: HeapdumpAdminRouter     = new HeapdumpAdminRouter
+  lazy val dbAdminRouter: DbAdminRouter                 = new DbAdminRouter(transactor, pgConfig)
 
   lazy val adminRoutes: Route = pathPrefix("admin") {
     authenticateBasic(realm = "madrileno-admin", authenticator = adminAuthenticator) { _ =>
-      adminRoute ~ schedulerAdminRouter.routes ~ loggersAdminRouter.routes ~ configAdminRouter.routes ~ threaddumpAdminRouter.routes ~ heapdumpAdminRouter.routes
+      adminRoute ~ schedulerAdminRouter.routes ~ loggersAdminRouter.routes ~ configAdminRouter.routes ~ threaddumpAdminRouter.routes ~ heapdumpAdminRouter.routes ~ dbAdminRouter.routes
     }
   }
 

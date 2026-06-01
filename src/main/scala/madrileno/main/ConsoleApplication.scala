@@ -48,6 +48,7 @@ object ConsoleApplication {
         config,
         httpClient,
         transactor,
+        pgConfig,
         Clock[IO],
         scheduler.client,
         cacheRuntime,
