@@ -89,13 +89,15 @@ object InitProject {
 
     // 1b. Template-internal CI helpers — drop on init. They validate template content
     //     (link integrity in our docs, scripts/*.scala compile-cleanliness) and don't carry
-    //     value past the rename. The underlying scripts (check-links.scala etc.) stay; forks
-    //     that want the auto-check can re-add a workflow themselves.
-    val templateCiWorkflows = List(
+    //     value past the rename. `check-links.scala` is also template-only — after init the
+    //     `docs/` tree is typically gone (served by the MCP from the pinned ref) so the
+    //     link graph it walks no longer exists locally.
+    val templateCiFiles = List(
       root / ".github" / "workflows" / "link-check.yml",
-      root / ".github" / "workflows" / "script-tests.yml"
+      root / ".github" / "workflows" / "script-tests.yml",
+      root / "scripts" / "check-links.scala"
     ).filter(os.exists)
-    templateCiWorkflows.foreach(os.remove)
+    templateCiFiles.foreach(os.remove)
 
     // 2. Rewrite text files. Order matters: do the auction surgery while the strings
     //    still say `madrileno.auction`, then run the package + standalone-name renames.
@@ -198,7 +200,7 @@ object InitProject {
     println(s"Project: $name")
     println(s"Package: $packageName")
     println(s"Deleted: ${deleted.size} auction-related paths")
-    if (templateCiWorkflows.nonEmpty) println(s"Deleted: ${templateCiWorkflows.size} template-internal CI workflows (link-check, script-tests)")
+    if (templateCiFiles.nonEmpty) println(s"Deleted: ${templateCiFiles.size} template-internal CI files (link-check + script-tests workflows, check-links.scala)")
     if (docsDeleted) println("Deleted: docs/ (pass --keep-docs to retain a local copy; the MCP server serves them from the pinned ref)")
     println(s"Updated: $totalUpdated files")
     println(s"Anchored: $upstreamRepo @ ${sha.take(10)} (see .madrileno-ref)")

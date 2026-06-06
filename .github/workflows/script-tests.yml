@@ -1,5 +1,4 @@
 # Template-internal CI helper — smoke-tests the scala-cli scripts under scripts/.
-# Compiles each script (catches deps/import drift) and runs doctor (exit-code only).
 # `scripts/init-project.scala` deletes this workflow on init.
 name: Script tests
 
@@ -46,3 +45,56 @@ jobs:
             echo "doctor.scala exited with unexpected code $rc"
             exit 1
           fi
+
+  test-init-project:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'sbt'
+      - uses: sbt/setup-sbt@v1
+      - uses: VirtusLab/scala-cli-setup@v1
+      - name: Run init-project in a fresh copy and verify compile
+        run: |
+          set -e
+          DEST=/tmp/init-test
+          # Clone-with-git so init-project's `git rev-parse HEAD` works (the MCP-ref pin needs the sha).
+          git clone --depth 1 . "$DEST"
+          cd "$DEST"
+          ./scripts/init-project.scala wine-cellar
+          test -d src/main/scala/winecellar || { echo "renamed package dir not found"; exit 1; }
+          test ! -d src/main/scala/madrileno || { echo "old package dir still present"; exit 1; }
+          test -f .madrileno-ref || { echo ".madrileno-ref not written"; exit 1; }
+          test ! -f .github/workflows/link-check.yml || { echo "link-check workflow not deleted"; exit 1; }
+          test ! -f .github/workflows/script-tests.yml || { echo "script-tests workflow not deleted"; exit 1; }
+          test ! -f scripts/check-links.scala || { echo "check-links.scala not deleted"; exit 1; }
+          sbt compile
+
+  test-scaffold-module:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'sbt'
+      - uses: sbt/setup-sbt@v1
+      - uses: VirtusLab/scala-cli-setup@v1
+      - name: Run scaffold-module in a fresh copy and verify compile
+        run: |
+          set -e
+          DEST=/tmp/scaffold-test
+          git clone --depth 1 . "$DEST"
+          cd "$DEST"
+          ./scripts/scaffold-module.scala Wine wines
+          test -d src/main/scala/madrileno/wine || { echo "scaffolded module dir not found"; exit 1; }
+          test -d src/test/scala/madrileno/wine || { echo "scaffolded test dir not found"; exit 1; }
+          ls src/main/resources/db/migration/ | grep -q wine || { echo "wine migration not generated"; exit 1; }
+          grep -q "with WineModule" src/main/scala/madrileno/main/ApplicationLoader.scala || { echo "WineModule not wired into ApplicationLoader"; exit 1; }
+          sbt compile

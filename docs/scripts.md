@@ -204,16 +204,20 @@ Exit `0` if every link resolves, `1` with the broken-link list on stderr otherwi
 
 Code spans and fenced code blocks are stripped before matching so Scala type signatures like `Page[AuctionDto]` or method calls inside code samples don't trip the link regex.
 
-The CI workflow `.github/workflows/link-check.yml` runs this on every PR that touches `*.md` — both the workflow and the link-check workflow are deleted by `init-project.scala`, since they validate template content that doesn't carry value past the rename.
+The CI workflow `.github/workflows/link-check.yml` runs this on every PR that touches `*.md`. Both the workflow AND this script are deleted by `init-project.scala` — they validate template content (our docs' link graph), and after init the `docs/` tree is typically gone (the MCP server serves docs from the pinned upstream ref).
 
 ## Template-internal CI workflows
 
-Two GitHub Actions ship with the template and are deleted by `init-project.scala`:
+Two GitHub Actions ship with the template and are deleted by `init-project.scala` (along with `scripts/check-links.scala`):
 
 - **`.github/workflows/link-check.yml`** — runs `scripts/check-links.scala` on PRs touching markdown.
-- **`.github/workflows/script-tests.yml`** — runs `scala-cli compile` against every `scripts/*.scala` (catches dep/import drift in the scripts themselves) and executes `scripts/doctor.scala` to confirm it doesn't crash (exit `0` or `1` both accepted — CI has no dev stack so doctor's "checks failed" exit is the expected path).
+- **`.github/workflows/script-tests.yml`** — four jobs:
+  - `compile-scripts` — `scala-cli compile` every `scripts/*.scala`, catches dep/import drift in the scripts themselves
+  - `run-doctor` — smoke-runs `scripts/doctor.scala`, accepts exit `0` or `1` (CI has no dev stack so doctor's "checks failed" exit is expected; anything else is a real crash)
+  - `test-init-project` — `git clone`s the repo into a temp dir, runs `./scripts/init-project.scala wine-cellar`, asserts the rename / auction-drop / workflow-cleanup happened, then `sbt compile`s
+  - `test-scaffold-module` — same shape, runs `./scripts/scaffold-module.scala Wine wines`, asserts generated files exist + `WineModule` is wired into `ApplicationLoader`, then `sbt compile`s
 
-Both workflows verify template content (our docs, our scripts). A forked project that wants the same auto-checks can re-add a workflow themselves; the underlying scripts (`check-links.scala`, `doctor.scala`) stay on init for manual use.
+All workflows verify template content (our docs, our scripts). A forked project that wants the same auto-checks can re-add a workflow themselves; `doctor.scala` and the other scripts stay on init as user-facing tools. `check-links.scala` goes — without our `docs/` tree it has nothing meaningful to walk.
 
 ## File layout
 
