@@ -90,7 +90,7 @@ Don't throw to signal a business outcome. Reserve exceptions for genuinely excep
 
 ```scala
 def routes(wsb): Route =
-  rawPathPrefix(Slash ~ apiVersion) {                          // /v1
+  apiVersionPrefix {                                            // /v1 (auto-mounts /v2/* etc. when ApiVersion gains cases)
     authenticateOrRejectWithChallenge(userAuthenticator) { auth =>
       route(auth) ~ route ~ wsRoutes(auth, wsb) ~ wsRoutes(wsb)  // authed + public, both HTTP and WS
     } ~

@@ -7,10 +7,12 @@ import madrileno.utils.json.JsonProtocol.*
 final case class HealthCheckDto(
   name: String,
   environment: Environment,
-  version: String)
+  version: String,
+  apiVersion: String)
     derives Encoder.AsObject,
       Decoder
 
 object HealthCheckDto {
-  def apply(appConfig: AppConfig): HealthCheckDto = appConfig.into[HealthCheckDto].transform
+  def apply(appConfig: AppConfig, apiVersion: String): HealthCheckDto =
+    appConfig.into[HealthCheckDto].withFieldConst(_.apiVersion, apiVersion).transform
 }
