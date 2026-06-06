@@ -1,6 +1,6 @@
 # API versioning
 
-Status: **one version, `v1`.** Every HTTP endpoint mounts under `/v1/*`. This document describes how to add `/v2/*` when (if) that day comes.
+Status: **one version, `v1`.** API endpoints mount under `/v1/*`. Admin endpoints (`/admin/*`), the Baklava docs surface (`/swagger`, `/openapi`), and the dev-only `/mail-previews/*` are intentionally unversioned — they're operator-facing or local-only and don't form a client contract. This document describes how to add `/v2/*` for the versioned API surface when (if) that day comes.
 
 ## Mechanism
 
@@ -57,7 +57,7 @@ When a coordinated breaking change spans many endpoints (rare):
 
    `ApplicationLoader.routes` now mounts every module's routes under both `/v1/*` and `/v2/*` — without any wiring change.
 
-2. **Differentiate per version where the shape changes.** Swap `ApplicationLoader.apiPrefix` for `ApiVersionDirectives.apiVersionPrefix` — drop-in `Directive0` replacement that stores the matched version on the request attributes. Inner routes look it up on demand; no callback parameter to thread:
+2. **Differentiate per version where the shape changes.** `ApplicationLoader.routes` already uses `apiVersionPrefix` — the matcher stores the matched version on the request attributes for inner routes to look up on demand. No callback parameter to thread:
 
    ```scala
    apiVersionPrefix {
