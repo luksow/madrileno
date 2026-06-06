@@ -5,7 +5,7 @@ import org.http4s.Status
 import org.scalatest.funspec.AnyFunSpec
 import org.scalatest.matchers.should.Matchers
 import pl.iterators.stir.server.Directives.*
-import pl.iterators.stir.server.Route
+import pl.iterators.stir.server.{ExceptionHandler, Route}
 import pl.iterators.stir.testkit.ScalatestRouteTest
 
 import java.time.format.DateTimeFormatter
@@ -46,6 +46,22 @@ class ApiVersionDirectivesSpec extends AnyFunSpec with Matchers with ScalatestRo
       }
       Get("/ping") ~> route ~> check {
         handled shouldBe false
+        rejections shouldBe empty
+      }
+    }
+
+    it("survives intermediate directive composition") {
+      val route: Route =
+        apiVersionPrefix {
+          handleExceptions(ExceptionHandler { case _ => complete(Status.InternalServerError -> "boom") }) {
+            path("ping") {
+              currentApiVersion(v => complete(v.urlSegment))
+            }
+          }
+        }
+      Get("/v1/ping") ~> route ~> check {
+        status shouldBe Status.Ok
+        responseAs[String] shouldBe "v1"
       }
     }
   }
@@ -91,6 +107,24 @@ class ApiVersionDirectivesSpec extends AnyFunSpec with Matchers with ScalatestRo
       Get("/") ~> route ~> check {
         status shouldBe Status.Ok
         responseAs[String] shouldBe "ok"
+      }
+    }
+
+    it("adds headers even on non-2xx complete responses") {
+      val errorRoute: Route = deprecated(sunset)(complete(Status.NotFound -> "missing"))
+      Get("/") ~> errorRoute ~> check {
+        status shouldBe Status.NotFound
+        header("Deprecation").map(_.value) shouldBe Some("true")
+        header("Sunset") should not be empty
+      }
+    }
+
+    it("Sunset header round-trips through RFC_1123_DATE_TIME") {
+      Get("/") ~> route ~> check {
+        val formatted = header("Sunset").map(_.value).getOrElse(fail("no Sunset header"))
+        val parsed    = Instant.from(DateTimeFormatter.RFC_1123_DATE_TIME.parse(formatted))
+        // RFC 1123 has second precision; the test sunset is on a second boundary already
+        parsed shouldBe sunset
       }
     }
   }
