@@ -16,6 +16,8 @@ private val apiVersionAttrKey: Key[ApiVersion] = new Key[ApiVersion](new Unique.
 
 trait ApiVersionDirectives {
 
+  require(ApiVersion.values.nonEmpty, "ApiVersion must declare at least one case to mount under")
+
   val apiVersionPrefix: Directive0 =
     ApiVersion.values.toList
       .map(v => pathPrefix(v.urlSegment) & mapRequest(_.withAttribute(apiVersionAttrKey, v)))
