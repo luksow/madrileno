@@ -85,8 +85,8 @@ class ApiVersionDirectivesSpec extends AnyFunSpec with Matchers with ScalatestRo
     // apiVersion(V2) under /v1 rejects, so the alternative branch (`~ apiVersion(V1)`) handles it.
   }
 
-  describe("deprecated (no sunset)") {
-    val route: Route = deprecated()(complete("ok"))
+  describe("deprecated") {
+    val route: Route = deprecated(complete("ok"))
 
     it("adds the Deprecation: true header") {
       Get("/") ~> route ~> check {
@@ -101,10 +101,10 @@ class ApiVersionDirectivesSpec extends AnyFunSpec with Matchers with ScalatestRo
     }
   }
 
-  describe("deprecated (with sunset)") {
+  describe("deprecatedWithSunset") {
     val sunset = Instant.parse("2026-11-11T23:59:59Z")
     val route: Route =
-      deprecated(sunset)(complete("ok"))
+      deprecatedWithSunset(sunset)(complete("ok"))
 
     it("adds the Deprecation: true header") {
       Get("/") ~> route ~> check {
@@ -127,7 +127,7 @@ class ApiVersionDirectivesSpec extends AnyFunSpec with Matchers with ScalatestRo
     }
 
     it("adds headers even on non-2xx complete responses") {
-      val errorRoute: Route = deprecated(sunset)(complete(Status.NotFound -> "missing"))
+      val errorRoute: Route = deprecatedWithSunset(sunset)(complete(Status.NotFound -> "missing"))
       Get("/") ~> errorRoute ~> check {
         status shouldBe Status.NotFound
         header("Deprecation").map(_.value) shouldBe Some("true")

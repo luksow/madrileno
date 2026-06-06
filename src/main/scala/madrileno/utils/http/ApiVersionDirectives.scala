@@ -34,10 +34,10 @@ trait ApiVersionDirectives {
   // RFC 9745 `Deprecation: true` + RFC 8594 `Sunset: <http-date>`
   private val deprecationHeader = Header.Raw(ci"Deprecation", "true")
 
-  def deprecated(): Directive0 =
+  val deprecated: Directive0 =
     mapResponseHeaders(_ ++ Headers(deprecationHeader))
 
-  def deprecated(sunset: Instant): Directive0 = {
+  def deprecatedWithSunset(sunset: Instant): Directive0 = {
     val sunsetStr = DateTimeFormatter.RFC_1123_DATE_TIME.format(sunset.atOffset(java.time.ZoneOffset.UTC))
     mapResponseHeaders(_ ++ Headers(deprecationHeader, Header.Raw(ci"Sunset", sunsetStr)))
   }

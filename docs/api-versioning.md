@@ -84,7 +84,7 @@ When a coordinated breaking change spans many endpoints (rare):
 
 3. **Migrate clients off `/v1`.**
 
-4. **Deprecate `/v1`** by wrapping `/v1/*` routes with `ApiVersionDirectives.deprecated(sunsetDate)`. The directive adds `Deprecation: true` (RFC 9745) and `Sunset: <http-date>` (RFC 8594) response headers, so well-behaved clients see the warning ahead of the sunset.
+4. **Deprecate `/v1`** by wrapping `/v1/*` routes with `deprecatedWithSunset(sunsetDate)` (adds `Deprecation: true` per RFC 9745 + `Sunset: <http-date>` per RFC 8594), or with `deprecated` (no parens, adds only `Deprecation: true`) if a removal date isn't committed yet.
 
 5. **Remove `V1` from the enum** after the sunset date passes and you've verified no client traffic remains.
 
