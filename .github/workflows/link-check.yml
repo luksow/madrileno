@@ -1,0 +1,25 @@
+# Template-internal CI helper — verifies markdown link/anchor integrity.
+# `scripts/init-project.scala` deletes this workflow on init.
+name: Link check
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - "**/*.md"
+      - "scripts/check-links.scala"
+      - ".github/workflows/link-check.yml"
+  push:
+    branches: [ "main" ]
+    paths:
+      - "**/*.md"
+      - "scripts/check-links.scala"
+
+jobs:
+  check-links:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: VirtusLab/scala-cli-setup@v1
+      - name: Validate markdown links
+        run: ./scripts/check-links.scala

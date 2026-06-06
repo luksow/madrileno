@@ -1,0 +1,48 @@
+# Template-internal CI helper — smoke-tests the scala-cli scripts under scripts/.
+# Compiles each script (catches deps/import drift) and runs doctor (exit-code only).
+# `scripts/init-project.scala` deletes this workflow on init.
+name: Script tests
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - "scripts/**"
+      - ".github/workflows/script-tests.yml"
+  push:
+    branches: [ "main" ]
+    paths:
+      - "scripts/**"
+
+jobs:
+  compile-scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: VirtusLab/scala-cli-setup@v1
+      - name: Compile every scripts/*.scala
+        run: |
+          set -e
+          for f in scripts/*.scala; do
+            echo "==> compiling $f"
+            scala-cli compile "$f"
+          done
+
+  run-doctor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: VirtusLab/scala-cli-setup@v1
+      # doctor exits 0 when all checks pass and 1 when at least one fails — both are valid
+      # "ran cleanly" signals. CI has no docker-compose stack so exit 1 is expected. Anything
+      # else (compile error, NPE, etc.) is a real failure.
+      - name: Run doctor (smoke; exit 0 or 1)
+        run: |
+          set +e
+          ./scripts/doctor.scala
+          rc=$?
+          set -e
+          if [ $rc -ne 0 ] && [ $rc -ne 1 ]; then
+            echo "doctor.scala exited with unexpected code $rc"
+            exit 1
+          fi
