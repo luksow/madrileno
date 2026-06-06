@@ -48,7 +48,7 @@ object Doctor {
     val env             = readEnv()
     val pgPort          = env.get("PG_PORT").flatMap(_.toIntOption).getOrElse(55432)
     val appPort         = env.get("PORT").flatMap(_.toIntOption).getOrElse(9000)
-    val apiVersion      = readApiVersion()
+    val apiVersion      = "v1" // mirrors madrileno.utils.http.ApiVersion.V1.urlSegment
     val mailpitUiPort   = 58025
     val minioApiPort    = 59000
     val openobservePort = 55080
@@ -142,14 +142,6 @@ object Doctor {
   }
 
   // ---- helpers ----
-
-  private val ApiVersionRegex = """api-version\s*=\s*"([^"]+)"""".r
-
-  private def readApiVersion(): String = {
-    val path = Paths.get("src/main/resources/application.conf")
-    if (!Files.isRegularFile(path)) "v1"
-    else ApiVersionRegex.findFirstMatchIn(Files.readString(path)).map(_.group(1)).getOrElse("v1")
-  }
 
   private def readEnv(): Map[String, String] = {
     val source = if (new File(".env").isFile) ".env" else ".env.sample"

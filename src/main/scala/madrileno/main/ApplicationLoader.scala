@@ -11,7 +11,7 @@ import madrileno.user.UserModule
 import madrileno.utils.cache.CacheRuntime
 import madrileno.utils.db.transactor.Transactor
 import madrileno.utils.events.EventBusRuntime
-import madrileno.utils.http.{ApplicationRouteProvider, Handlers, RateLimiterRuntime}
+import madrileno.utils.http.{ApiVersion, ApplicationRouteProvider, Handlers, RateLimiterRuntime}
 import madrileno.utils.mailer.{MailContext, MailPreviewProvider, MailPreviewRouter, Mailer, MailerConfig, SmtpSender}
 import madrileno.utils.observability.*
 import madrileno.utils.observability.admin.{ConfigAdminRouter, HeapdumpAdminRouter, LoggersAdminRouter, ThreaddumpAdminRouter}
@@ -24,7 +24,7 @@ import org.http4s.{EntityEncoder, Headers, HttpRoutes, MediaType, Response, Stat
 import org.typelevel.otel4s.Attribute
 import pl.iterators.baklava.http4s.routes.BaklavaRoutes
 import pl.iterators.stir.server.directives.{CredentialsHelper, RouteDirectives}
-import pl.iterators.stir.server.{PathMatcher, Route}
+import pl.iterators.stir.server.{Directive0, Route}
 import pureconfig.*
 import pureconfig.error.ConfigReaderException
 import pureconfig.generic.derivation.EnumConfigReader
@@ -53,8 +53,7 @@ enum Environment derives EnumConfigReader {
 final case class AppConfig(
   name: String,
   environment: Environment,
-  version: String,
-  apiVersion: String)
+  version: String)
     derives ConfigReader
 final case class AdminConfig(
   user: String,
@@ -177,8 +176,8 @@ class ApplicationLoader(
     case 1 => logger.error(ctx)(_)
   }
 
-  private val apiVersion: String                   = appConfig.apiVersion
-  private val pathPrefixMatcher: PathMatcher[Unit] = Slash ~ apiVersion
+  private val apiPrefix: Directive0 =
+    ApiVersion.values.toList.map(v => pathPrefix(v.urlSegment)).reduce(_ | _)
 
   def routes(wsb: WebSocketBuilder2[IO]): Route = {
     val ws = wsb.withOnNonWebSocketRequest(
@@ -189,7 +188,7 @@ class ApplicationLoader(
       logRequest(logAction = Some(logAction)) {
         handleExceptions(exceptionHandler(logResult(logAction = Some(logAction)))) {
           handleRejections(rejectionHandler(logResult(logAction = Some(logAction)))) {
-            rawPathPrefix(pathPrefixMatcher) {
+            apiPrefix {
               authenticateOrRejectWithChallenge(userAuthenticator) { auth =>
                 handleExceptions(exceptionHandler(logResult(logAction = Some(logAction)))) {
                   handleRejections(rejectionHandler(logResult(logAction = Some(logAction)))) {

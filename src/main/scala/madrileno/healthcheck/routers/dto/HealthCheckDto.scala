@@ -7,8 +7,7 @@ import madrileno.utils.json.JsonProtocol.*
 final case class HealthCheckDto(
   name: String,
   environment: Environment,
-  version: String,
-  apiVersion: String)
+  version: String)
     derives Encoder.AsObject,
       Decoder
 

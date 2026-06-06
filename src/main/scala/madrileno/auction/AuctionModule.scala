@@ -14,7 +14,7 @@ import madrileno.user.repositories.UserRepository
 import madrileno.utils.cache.CacheRuntime
 import madrileno.utils.db.transactor.Transactor
 import madrileno.utils.events.{EventBus, EventBusRuntime}
-import madrileno.utils.http.{AuthRouteProvider, RateLimiterRuntime, RouteProvider, WsRouteProvider}
+import madrileno.utils.http.{ApiVersion, AuthRouteProvider, RateLimiterRuntime, RouteProvider, WsRouteProvider}
 import madrileno.utils.mailer.{MailPreview, MailPreviewProvider, Mailer}
 import madrileno.utils.observability.TelemetryContext
 import madrileno.utils.storage.{ObjectStore, SignedUrlTtl}
@@ -55,7 +55,7 @@ trait AuctionModule
   private val auctionService           = wire[AuctionService]
   private lazy val auctionImageService = wire[AuctionImageService]
   private val auctionRouter            = wire[AuctionRouter]
-  private lazy val auctionImageRouter  = new AuctionImageRouter(auctionImageService, appConfig.apiVersion)
+  private lazy val auctionImageRouter  = new AuctionImageRouter(auctionImageService, ApiVersion.V1.urlSegment)
 
   override abstract def route(auth: AuthContext): Route = {
     super.route(auth) ~ auctionRouter.authedRoutes(auth) ~ auctionImageRouter.authedRoutes(auth)
