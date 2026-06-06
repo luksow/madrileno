@@ -192,9 +192,33 @@ The checks:
 - Doesn't check OS-level prereqs (sbt installed, JDK version, etc.). Those would have failed earlier (you couldn't have run this script). If you want a full bootstrap check, that's a different scope.
 - Doesn't follow `S3_ENDPOINT` / `OTEL_EXPORTER_OTLP_*_ENDPOINT` from `.env`. The MinIO / OpenObserve port checks use the host ports from `docker-compose.yml` (59000 / 55080). Doctor's scope is "is the local dev stack up", not "is whatever the app is configured to talk to up". If you've pointed the app at remote MinIO / OpenObserve, the local doctor checks are still meaningful for the dev stack itself; if you've also customised the compose port mappings, doctor needs a matching tweak.
 
+## `check-links.scala`
+
+Validates the markdown link graph across the project. Walks every `.md` file, extracts `[text](target)` links, and verifies each internal target exists (relative path resolves; `#anchor` matches a heading slug in the target file). External `http(s)://` and `mailto:` / `tel:` links are skipped — external link rot is real but rate-limit-prone to check from CI, and internal rot is the more common pain.
+
+```bash
+./scripts/check-links.scala
+```
+
+Exit `0` if every link resolves, `1` with the broken-link list on stderr otherwise.
+
+Code spans and fenced code blocks are stripped before matching so Scala type signatures like `Page[AuctionDto]` or method calls inside code samples don't trip the link regex.
+
+The CI workflow `.github/workflows/link-check.yml` runs this on every PR that touches `*.md` — both the workflow and the link-check workflow are deleted by `init-project.scala`, since they validate template content that doesn't carry value past the rename.
+
+## Template-internal CI workflows
+
+Two GitHub Actions ship with the template and are deleted by `init-project.scala`:
+
+- **`.github/workflows/link-check.yml`** — runs `scripts/check-links.scala` on PRs touching markdown.
+- **`.github/workflows/script-tests.yml`** — runs `scala-cli compile` against every `scripts/*.scala` (catches dep/import drift in the scripts themselves) and executes `scripts/doctor.scala` to confirm it doesn't crash (exit `0` or `1` both accepted — CI has no dev stack so doctor's "checks failed" exit is the expected path).
+
+Both workflows verify template content (our docs, our scripts). A forked project that wants the same auto-checks can re-add a workflow themselves; the underlying scripts (`check-links.scala`, `doctor.scala`) stay on init for manual use.
+
 ## File layout
 
 - `init-project.scala` — standalone, no companion files
 - `scaffold-module.scala` + `templates/module/` — generator + templates
 - `dev-console.scala` — wrapper. The REPL predef is embedded as a string inside the wrapper (top of the file), written to a temp file at launch and passed to scala-cli's REPL. One file, at the cost of no syntax highlighting on the predef section in most editors.
 - `doctor.scala` — standalone, no companion files
+- `check-links.scala` — standalone, no companion files
