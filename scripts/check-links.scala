@@ -64,19 +64,22 @@ object CheckLinks {
     }
   }
 
-  // Strip fenced code blocks (``` ... ```) and inline code spans (`...`) so we don't false-positive
-  // on Scala/code samples that look like markdown links (e.g. `Page[AuctionDto]` or `[T](x)`).
+  // Strip fenced code blocks (``` ... ```) entirely. For inline code spans (`...`),
+  // keep the visible text but neutralize markdown-link punctuation inside (`[ ] ( )`)
+  // so code samples like `Page[AuctionDto]` or `[T](x)` don't trip LinkRe — and headings
+  // like `## \`AuthContext\`` still slug to a non-empty anchor.
   private def stripCode(s: String): String = {
-    val lines           = s.split('\n')
-    val withoutFences   = scala.collection.mutable.ArrayBuffer.empty[String]
-    var inFence         = false
-    lines.foreach { line =>
+    val (filtered, _) = s.split('\n').toList.foldLeft((Vector.empty[String], false)) { case ((acc, inFence), line) =>
       val trimmed = line.trim
-      if (trimmed.startsWith("```") || trimmed.startsWith("~~~")) inFence = !inFence
-      else if (!inFence) withoutFences += line
+      if (trimmed.startsWith("```") || trimmed.startsWith("~~~")) (acc, !inFence)
+      else if (inFence) (acc, inFence)
+      else (acc :+ line, inFence)
     }
-    val withoutInline = withoutFences.mkString("\n").replaceAll("`[^`\\n]*`", "")
-    withoutInline
+    val inlineRe = """`[^`\n]*`""".r
+    inlineRe.replaceAllIn(
+      filtered.mkString("\n"),
+      m => Regex.quoteReplacement(m.matched.stripPrefix("`").stripSuffix("`").replaceAll("[\\[\\]()]", ""))
+    )
   }
 
   private def validate(target: String, source: File, root: Path): Option[String] = {
