@@ -88,9 +88,8 @@ When a coordinated breaking change spans many endpoints (rare):
 
 5. **Remove `V1` from the enum** after the sunset date passes and you've verified no client traffic remains.
 
-`ApiVersionDirectives` lives at `madrileno.utils.http.ApiVersionDirectives` — three building blocks, tested in `ApiVersionDirectivesSpec`, currently unused. The wiring change in step 2 (swap `apiPrefix` for `apiVersionPrefix`) and the call-site additions in steps 2 and 4 are the only changes needed at that point.
+`ApiVersionDirectives` lives at `madrileno.utils.http.ApiVersionDirectives` as a trait (with a companion object for static imports). `BaseRouter` mixes it in, so every router has the directives available; `ApplicationLoader.routes` already uses `apiVersionPrefix` as the path matcher. The directives are wired and tested — only the enum and the per-endpoint branching at affected call sites need to change when V2 lands.
 
 ## What's NOT here
 
-- **`ApplicationLoader` is still wired to the `Directive0` form of the prefix.** When V2 is added to the enum, swap the loader's `apiPrefix` for `ApiVersionDirectives.apiVersionPrefix` so inner routes can branch. The directives themselves are built and tested already; the only thing missing is the call site change.
 - **Multi-version OpenAPI generation** — Baklava emits one spec per `paths` tree today; V2's spec would need to either coexist or supersede. Not yet investigated.

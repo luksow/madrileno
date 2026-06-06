@@ -11,7 +11,7 @@ import madrileno.user.UserModule
 import madrileno.utils.cache.CacheRuntime
 import madrileno.utils.db.transactor.Transactor
 import madrileno.utils.events.EventBusRuntime
-import madrileno.utils.http.{ApiVersion, ApplicationRouteProvider, Handlers, RateLimiterRuntime}
+import madrileno.utils.http.{ApplicationRouteProvider, Handlers, RateLimiterRuntime}
 import madrileno.utils.mailer.{MailContext, MailPreviewProvider, MailPreviewRouter, Mailer, MailerConfig, SmtpSender}
 import madrileno.utils.observability.*
 import madrileno.utils.observability.admin.{ConfigAdminRouter, HeapdumpAdminRouter, LoggersAdminRouter, ThreaddumpAdminRouter}
@@ -23,8 +23,8 @@ import org.http4s.server.websocket.WebSocketBuilder2
 import org.http4s.{EntityEncoder, Headers, HttpRoutes, MediaType, Response, Status}
 import org.typelevel.otel4s.Attribute
 import pl.iterators.baklava.http4s.routes.BaklavaRoutes
+import pl.iterators.stir.server.Route
 import pl.iterators.stir.server.directives.{CredentialsHelper, RouteDirectives}
-import pl.iterators.stir.server.{Directive0, Route}
 import pureconfig.*
 import pureconfig.error.ConfigReaderException
 import pureconfig.generic.derivation.EnumConfigReader
@@ -176,9 +176,6 @@ class ApplicationLoader(
     case 1 => logger.error(ctx)(_)
   }
 
-  private val apiPrefix: Directive0 =
-    ApiVersion.values.toList.map(v => pathPrefix(v.urlSegment)).reduce(_ | _)
-
   def routes(wsb: WebSocketBuilder2[IO]): Route = {
     val ws = wsb.withOnNonWebSocketRequest(
       IO.pure(Response[IO](Status.UpgradeRequired).withEntity("Upgrade required for WebSocket communication.")(using EntityEncoder.stringEncoder))
@@ -188,7 +185,7 @@ class ApplicationLoader(
       logRequest(logAction = Some(logAction)) {
         handleExceptions(exceptionHandler(logResult(logAction = Some(logAction)))) {
           handleRejections(rejectionHandler(logResult(logAction = Some(logAction)))) {
-            apiPrefix {
+            apiVersionPrefix {
               authenticateOrRejectWithChallenge(userAuthenticator) { auth =>
                 handleExceptions(exceptionHandler(logResult(logAction = Some(logAction)))) {
                   handleRejections(rejectionHandler(logResult(logAction = Some(logAction)))) {
