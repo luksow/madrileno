@@ -16,7 +16,6 @@
 
 import java.io.File
 import java.nio.file.{Files, Path, Paths}
-import scala.jdk.CollectionConverters.*
 import scala.util.matching.Regex
 
 object CheckLinks {
@@ -28,7 +27,7 @@ object CheckLinks {
   private val HeadingRe: Regex = """^(#{1,6})\s+(.+?)\s*#*\s*$""".r
 
   private val SkipDirs: Set[String] =
-    Set(".git", "target", ".bsp", ".bloop", ".scala-build", ".metals", ".idea", ".vscode", "logs", "node_modules")
+    Set(".git", ".madrileno-mcp", "target", ".bsp", ".bloop", ".scala-build", ".metals", ".idea", ".vscode", "logs", "node_modules")
 
   def main(args: Array[String]): Unit = {
     val root = Paths.get(".").toAbsolutePath.normalize
