@@ -95,7 +95,8 @@ object CheckLinks {
       val resolved =
         if (pathPart.startsWith("/")) root.resolve(pathPart.drop(1)).normalize
         else source.toPath.getParent.resolve(pathPart).normalize
-      if (!Files.exists(resolved)) Some(s"path not found: $pathPart")
+      if (!resolved.startsWith(root)) Some(s"path escapes repository root: $pathPart")
+      else if (!Files.exists(resolved)) Some(s"path not found: $pathPart")
       else if (anchor.isEmpty) None
       else if (!resolved.toString.endsWith(".md")) None // only check anchors in markdown targets
       else checkAnchorInFile(resolved.toFile, anchor)
