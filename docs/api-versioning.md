@@ -57,11 +57,10 @@ When a coordinated breaking change spans many endpoints (rare):
 
    `ApplicationLoader.routes` now mounts every module's routes under both `/v1/*` and `/v2/*` — without any wiring change.
 
-2. **Differentiate per version where the shape changes.** Switch `ApplicationLoader.apiPrefix` from the current `Directive0` to `ApiVersionDirectives.apiVersionPrefix: Directive1[ApiVersion]`, which extracts the matched enum value. Inner routes that need to branch import `apiVersion(target)(using current)` and gate per-endpoint:
+2. **Differentiate per version where the shape changes.** Swap `ApplicationLoader.apiPrefix` for `ApiVersionDirectives.apiVersionPrefix` — drop-in `Directive0` replacement that stores the matched version on the request attributes. Inner routes look it up on demand; no callback parameter to thread:
 
    ```scala
-   apiVersionPrefix { matched =>
-     given ApiVersion = matched
+   apiVersionPrefix {
      path("users") {
        apiVersion(ApiVersion.V1)(complete(v1Shape)) ~
        apiVersion(ApiVersion.V2)(complete(v2Shape))
@@ -69,7 +68,19 @@ When a coordinated breaking change spans many endpoints (rare):
    }
    ```
 
-   Modules whose endpoints didn't change need no per-version code — they just register routes once and run under both prefixes.
+   For handlers that need the value inline (e.g. one endpoint returning different DTO shapes per version), use `currentApiVersion`:
+
+   ```scala
+   apiVersionPrefix {
+     path("users" / JavaUUID) { id =>
+       currentApiVersion { v =>
+         complete(userService.find(id).map(_.toDto(v)))
+       }
+     }
+   }
+   ```
+
+   Modules whose endpoints didn't change need no per-version code — they register routes once and run under both prefixes.
 
 3. **Migrate clients off `/v1`.**
 

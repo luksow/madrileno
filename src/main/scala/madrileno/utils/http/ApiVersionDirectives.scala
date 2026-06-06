@@ -1,8 +1,10 @@
 package madrileno.utils.http
 
+import cats.effect.SyncIO
 import org.http4s.{Header, Headers}
 import org.typelevel.ci.*
-import pl.iterators.stir.server.directives.BasicDirectives.{mapResponseHeaders, pass, provide}
+import org.typelevel.vault.Key
+import pl.iterators.stir.server.directives.BasicDirectives.{extractRequest, mapRequest, mapResponseHeaders, pass, provide}
 import pl.iterators.stir.server.directives.PathDirectives.pathPrefix
 import pl.iterators.stir.server.directives.RouteDirectives.reject
 import pl.iterators.stir.server.{Directive, Directive0, Directive1}
@@ -14,20 +16,31 @@ import java.time.format.DateTimeFormatter
 // Built but unused — designed for when a real V2 lands in `ApiVersion`. See `docs/api-versioning.md`.
 object ApiVersionDirectives {
 
-  // Matches a known `ApiVersion.urlSegment` as the leading path segment and extracts the enum value.
-  // Replaces `ApplicationLoader.apiPrefix: Directive0` when inner routes need to branch on the matched version.
-  val apiVersionPrefix: Directive1[ApiVersion] =
+  private val attrKey: Key[ApiVersion] = Key.newKey[SyncIO, ApiVersion].unsafeRunSync()
+
+  // Matches a known `ApiVersion.urlSegment` as the leading path segment and stores the matched
+  // version on the request attributes. Drop-in replacement for `ApplicationLoader.apiPrefix`
+  // when inner routes need version awareness; same `Directive0` shape, no callback parameter.
+  val apiVersionPrefix: Directive0 =
     ApiVersion.values.toList
-      .map(v => pathPrefix(v.urlSegment) & provide(v))
+      .map(v => pathPrefix(v.urlSegment) & mapRequest(_.withAttribute(attrKey, v)))
       .reduce(_ | _)
 
-  // Gates the inner route on the request's matched `ApiVersion` equalling `target`.
-  // Use under `apiVersionPrefix { matched => given ApiVersion = matched; ... }`.
-  def apiVersion(target: ApiVersion)(using current: ApiVersion): Directive0 =
-    if (current == target) pass else Directive(_ => reject)
+  // Extracts the matched `ApiVersion` from request attributes. Rejects when called outside an
+  // `apiVersionPrefix` scope (programmer error).
+  val currentApiVersion: Directive1[ApiVersion] =
+    extractRequest.flatMap { req =>
+      req.attributes.lookup(attrKey).fold(Directive(_ => reject): Directive1[ApiVersion])(provide)
+    }
+
+  // Gates the inner route on the matched version equalling `target`. Looks up the version
+  // from request attributes; no caller-side threading.
+  def apiVersion(target: ApiVersion): Directive0 =
+    currentApiVersion.flatMap { current =>
+      if (current == target) pass else Directive(_ => reject)
+    }
 
   // Adds RFC 9745 `Deprecation: true` + RFC 8594 `Sunset: <http-date>` response headers.
-  // Use to advertise that an endpoint or version is deprecated and will be removed by `sunset`.
   def deprecated(sunset: Instant): Directive0 = {
     val sunsetStr = DateTimeFormatter.RFC_1123_DATE_TIME.format(sunset.atOffset(java.time.ZoneOffset.UTC))
     mapResponseHeaders(_ ++ Headers(Header.Raw(ci"Deprecation", "true"), Header.Raw(ci"Sunset", sunsetStr)))
