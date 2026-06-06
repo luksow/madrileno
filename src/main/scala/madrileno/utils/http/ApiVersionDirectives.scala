@@ -1,6 +1,6 @@
 package madrileno.utils.http
 
-import cats.effect.SyncIO
+import cats.effect.kernel.Unique
 import org.http4s.{Header, Headers}
 import org.typelevel.ci.*
 import org.typelevel.vault.Key
@@ -16,7 +16,7 @@ import java.time.format.DateTimeFormatter
 // Built but unused — designed for when a real V2 lands in `ApiVersion`. See `docs/api-versioning.md`.
 object ApiVersionDirectives {
 
-  private val attrKey: Key[ApiVersion] = Key.newKey[SyncIO, ApiVersion].unsafeRunSync()
+  private val attrKey: Key[ApiVersion] = new Key[ApiVersion](new Unique.Token)
 
   // Matches a known `ApiVersion.urlSegment` as the leading path segment and stores the matched
   // version on the request attributes. Drop-in replacement for `ApplicationLoader.apiPrefix`
