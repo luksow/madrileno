@@ -64,6 +64,10 @@ jobs:
           DEST=/tmp/init-test
           # Clone-with-git so init-project's `git rev-parse HEAD` works (the MCP-ref pin needs the sha).
           git clone --depth 1 . "$DEST"
+          # init-project reads `git remote get-url origin` to set `.madrileno-ref`'s `repo=`. A local
+          # clone-origin would write an unreachable path; point it at the upstream GitHub URL so the
+          # test exercises the same shape real users hit.
+          git -C "$DEST" remote set-url origin "https://github.com/$GITHUB_REPOSITORY.git"
           cd "$DEST"
           ./scripts/init-project.scala wine-cellar
           test -d src/main/scala/winecellar || { echo "renamed package dir not found"; exit 1; }
