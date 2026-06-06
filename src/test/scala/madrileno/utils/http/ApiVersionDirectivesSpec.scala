@@ -85,7 +85,23 @@ class ApiVersionDirectivesSpec extends AnyFunSpec with Matchers with ScalatestRo
     // apiVersion(V2) under /v1 rejects, so the alternative branch (`~ apiVersion(V1)`) handles it.
   }
 
-  describe("deprecated") {
+  describe("deprecated (no sunset)") {
+    val route: Route = deprecated()(complete("ok"))
+
+    it("adds the Deprecation: true header") {
+      Get("/") ~> route ~> check {
+        header("Deprecation").map(_.value) shouldBe Some("true")
+      }
+    }
+
+    it("does not add a Sunset header") {
+      Get("/") ~> route ~> check {
+        header("Sunset") shouldBe empty
+      }
+    }
+  }
+
+  describe("deprecated (with sunset)") {
     val sunset = Instant.parse("2026-11-11T23:59:59Z")
     val route: Route =
       deprecated(sunset)(complete("ok"))
