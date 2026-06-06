@@ -57,18 +57,29 @@ When a coordinated breaking change spans many endpoints (rare):
 
    `ApplicationLoader.routes` now mounts every module's routes under both `/v1/*` and `/v2/*` — without any wiring change.
 
-2. **Differentiate per version where the shape changes.** This is the work madrileno hasn't yet built — when you need it, the cleanest pattern is to thread the matched `ApiVersion` into routes (via a `Directive1[ApiVersion]` from `apiPrefix`, or via an `IOLocal[ApiVersion]` populated at the prefix-matching site) and branch inside the affected route. Modules whose endpoints didn't change need no per-version code.
+2. **Differentiate per version where the shape changes.** Switch `ApplicationLoader.apiPrefix` from the current `Directive0` to `ApiVersionDirectives.apiVersionPrefix: Directive1[ApiVersion]`, which extracts the matched enum value. Inner routes that need to branch import `apiVersion(target)(using current)` and gate per-endpoint:
+
+   ```scala
+   apiVersionPrefix { matched =>
+     given ApiVersion = matched
+     path("users") {
+       apiVersion(ApiVersion.V1)(complete(v1Shape)) ~
+       apiVersion(ApiVersion.V2)(complete(v2Shape))
+     }
+   }
+   ```
+
+   Modules whose endpoints didn't change need no per-version code — they just register routes once and run under both prefixes.
 
 3. **Migrate clients off `/v1`.**
 
-4. **Deprecate `/v1`** by emitting `Deprecation: true` + `Sunset: <date>` response headers (RFC 8594) on `/v1/*` responses. A `deprecated(sunset: Instant)` stir directive is the natural place for this — also not yet built; add when first deprecating.
+4. **Deprecate `/v1`** by wrapping `/v1/*` routes with `ApiVersionDirectives.deprecated(sunsetDate)`. The directive adds `Deprecation: true` (RFC 9745) and `Sunset: <http-date>` (RFC 8594) response headers, so well-behaved clients see the warning ahead of the sunset.
 
 5. **Remove `V1` from the enum** after the sunset date passes and you've verified no client traffic remains.
 
-The work in steps 2 and 4 is intentionally deferred. Building it speculatively against a hypothetical future shape risks getting the abstraction wrong. The enum-based mounting is the structural foundation; the per-version branching pattern can be designed when there's a real second version to motivate it.
+`ApiVersionDirectives` lives at `madrileno.utils.http.ApiVersionDirectives` — three building blocks, tested in `ApiVersionDirectivesSpec`, currently unused. The wiring change in step 2 (swap `apiPrefix` for `apiVersionPrefix`) and the call-site additions in steps 2 and 4 are the only changes needed at that point.
 
 ## What's NOT here
 
-- **Per-endpoint version branching directive** — deferred until v2 exists
-- **`deprecated(sunset)` directive emitting RFC 8594 headers** — deferred until first deprecation
-- **Multi-version OpenAPI generation** — Baklava emits one spec per `paths` tree today; v2's spec would need to either coexist or supersede. Not yet investigated.
+- **`ApplicationLoader` is still wired to the `Directive0` form of the prefix.** When V2 is added to the enum, swap the loader's `apiPrefix` for `ApiVersionDirectives.apiVersionPrefix` so inner routes can branch. The directives themselves are built and tested already; the only thing missing is the call site change.
+- **Multi-version OpenAPI generation** — Baklava emits one spec per `paths` tree today; V2's spec would need to either coexist or supersede. Not yet investigated.
