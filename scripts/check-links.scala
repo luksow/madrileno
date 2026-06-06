@@ -46,7 +46,7 @@ object CheckLinks {
   private def walkMd(dir: File): List[File] =
     if (!dir.isDirectory) Nil
     else
-      dir.listFiles.toList.flatMap { f =>
+      Option(dir.listFiles).getOrElse(Array.empty[File]).toList.flatMap { f =>
         if (f.isDirectory) {
           if (SkipDirs.contains(f.getName)) Nil else walkMd(f)
         } else if (f.getName.endsWith(".md")) List(f)
@@ -102,10 +102,16 @@ object CheckLinks {
 
   private def checkAnchorInFile(file: File, anchor: String): Option[String] = {
     if (!file.exists() || !file.getName.endsWith(".md")) return None
-    val headings = Files.readAllLines(file.toPath).asScala.toList.flatMap {
-      case HeadingRe(_, text) => Some(slug(text))
-      case _                  => None
-    }.toSet
+    // GitHub disambiguates duplicate headings: the second `## Install` renders as `#install-1`,
+    // the third as `#install-2`, etc. Track per-base-slug occurrence to match.
+    val headings = Files.readAllLines(file.toPath).asScala.toList
+      .collect { case HeadingRe(_, text) => slug(text) }
+      .foldLeft((Map.empty[String, Int], Set.empty[String])) { case ((counts, acc), base) =>
+        val n      = counts.getOrElse(base, 0)
+        val anchor = if (n == 0) base else s"$base-$n"
+        (counts.updated(base, n + 1), acc + anchor)
+      }
+      ._2
     if (headings.contains(anchor)) None else Some(s"anchor not found: #$anchor in ${file.getName}")
   }
 
