@@ -55,7 +55,7 @@ trait AuctionModule
   private val auctionService           = wire[AuctionService]
   private lazy val auctionImageService = wire[AuctionImageService]
   private val auctionRouter            = wire[AuctionRouter]
-  private lazy val auctionImageRouter  = new AuctionImageRouter(auctionImageService, appConfig.apiVersion)
+  private lazy val auctionImageRouter  = new AuctionImageRouter(auctionImageService)
 
   override abstract def route(auth: AuthContext): Route = {
     super.route(auth) ~ auctionRouter.authedRoutes(auth) ~ auctionImageRouter.authedRoutes(auth)

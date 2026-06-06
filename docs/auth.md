@@ -167,7 +167,7 @@ Same-email users from different providers are **separate** accounts — `UserAut
 `ApplicationLoader.routes(wsb)` wraps everything under `/v1` in `authenticateOrRejectWithChallenge(userAuthenticator)`:
 
 ```scala
-rawPathPrefix(Slash ~ apiVersion) {
+apiVersionPrefix {
   authenticateOrRejectWithChallenge(userAuthenticator) { auth =>
     route(auth) ~ wsRoutes(auth, wsb)        // authed routes
   } ~

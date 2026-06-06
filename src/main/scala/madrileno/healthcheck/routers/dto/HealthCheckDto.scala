@@ -13,5 +13,6 @@ final case class HealthCheckDto(
       Decoder
 
 object HealthCheckDto {
-  def apply(appConfig: AppConfig): HealthCheckDto = appConfig.into[HealthCheckDto].transform
+  def apply(appConfig: AppConfig, apiVersion: String): HealthCheckDto =
+    appConfig.into[HealthCheckDto].withFieldConst(_.apiVersion, apiVersion).transform
 }

@@ -23,8 +23,8 @@ import org.http4s.server.websocket.WebSocketBuilder2
 import org.http4s.{EntityEncoder, Headers, HttpRoutes, MediaType, Response, Status}
 import org.typelevel.otel4s.Attribute
 import pl.iterators.baklava.http4s.routes.BaklavaRoutes
+import pl.iterators.stir.server.Route
 import pl.iterators.stir.server.directives.{CredentialsHelper, RouteDirectives}
-import pl.iterators.stir.server.{PathMatcher, Route}
 import pureconfig.*
 import pureconfig.error.ConfigReaderException
 import pureconfig.generic.derivation.EnumConfigReader
@@ -53,8 +53,7 @@ enum Environment derives EnumConfigReader {
 final case class AppConfig(
   name: String,
   environment: Environment,
-  version: String,
-  apiVersion: String)
+  version: String)
     derives ConfigReader
 final case class AdminConfig(
   user: String,
@@ -177,9 +176,6 @@ class ApplicationLoader(
     case 1 => logger.error(ctx)(_)
   }
 
-  private val apiVersion: String                   = appConfig.apiVersion
-  private val pathPrefixMatcher: PathMatcher[Unit] = Slash ~ apiVersion
-
   def routes(wsb: WebSocketBuilder2[IO]): Route = {
     val ws = wsb.withOnNonWebSocketRequest(
       IO.pure(Response[IO](Status.UpgradeRequired).withEntity("Upgrade required for WebSocket communication.")(using EntityEncoder.stringEncoder))
@@ -189,7 +185,7 @@ class ApplicationLoader(
       logRequest(logAction = Some(logAction)) {
         handleExceptions(exceptionHandler(logResult(logAction = Some(logAction)))) {
           handleRejections(rejectionHandler(logResult(logAction = Some(logAction)))) {
-            rawPathPrefix(pathPrefixMatcher) {
+            apiVersionPrefix {
               authenticateOrRejectWithChallenge(userAuthenticator) { auth =>
                 handleExceptions(exceptionHandler(logResult(logAction = Some(logAction)))) {
                   handleRejections(rejectionHandler(logResult(logAction = Some(logAction)))) {

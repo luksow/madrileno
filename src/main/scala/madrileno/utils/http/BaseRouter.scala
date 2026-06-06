@@ -26,7 +26,8 @@ trait BaseRouter
     with KebsHttp4sStirEnumUnmarshallers
     with KebsHttp4sStirValueEnumUnmarshallers
     with KebsEnum
-    with PaginationDirectives {
+    with PaginationDirectives
+    with ApiVersionDirectives {
   export Status.*
 
   given [A: Encoder]: Encoder.AsObject[Page[A]]   = Encoder.AsObject.derived
