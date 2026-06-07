@@ -16,7 +16,7 @@ trait RateLimiterRuntime {
 
 `increment(key, window)` is the whole API: bump the counter for `key` in the current `window`, return the new count. Returning `Long` (not `Boolean` or `Either`) keeps the policy in the caller — the directive layer decides what counts as "over" by comparing to the configured limit. Different routes might want soft warnings, hard 429s, or instrumentation around the same counter; the trait stays out of that decision.
 
-`RateLimiterRuntime` is the factory layer, mirroring `CacheRuntime` / `EventBusRuntime` / `ObjectStoreRuntime`. One runtime per app, swapped in `Main`.
+`RateLimiterRuntime` is the factory layer, mirroring `CacheRuntime` / `EventBusRuntime` / `ObjectStoreRuntime` / `CircuitBreakerRuntime`. One runtime per app, swapped in `Main`.
 
 ## The `rateLimited` directive
 
