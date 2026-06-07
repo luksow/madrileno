@@ -33,7 +33,7 @@ object VivinoGateway {
 
   private[gateways] def isTransient(t: Throwable): Boolean = t match {
     case _: TimeoutException    => true
-    case _: SttpClientException => true // sttp wraps transport errors (connect/read failures) here
+    case _: SttpClientException => true
     case _: IOException         => true
     case _                      => false
   }
