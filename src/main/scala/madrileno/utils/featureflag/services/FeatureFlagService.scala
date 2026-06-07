@@ -44,12 +44,7 @@ object FlagEvaluator {
   val asBoolean: FlagVariant => Option[Boolean] = { case FlagVariant.BoolVariant(v) => Some(v); case _ => None }
   val asString: FlagVariant => Option[String]   = { case FlagVariant.StringVariant(v) => Some(v); case _ => None }
   val asInt: FlagVariant => Option[Int]         = { case FlagVariant.IntVariant(v) => Some(v); case _ => None }
-  val asJson: FlagVariant => Option[Json] = {
-    case FlagVariant.JsonVariant(v)   => Some(v)
-    case FlagVariant.BoolVariant(v)   => Some(Json.fromBoolean(v))
-    case FlagVariant.StringVariant(v) => Some(Json.fromString(v))
-    case FlagVariant.IntVariant(v)    => Some(Json.fromInt(v))
-  }
+  val asJson: FlagVariant => Option[Json]       = { case FlagVariant.JsonVariant(v) => Some(v); case _ => None }
 }
 
 class FeatureFlagServiceLive(
@@ -92,7 +87,9 @@ class FeatureFlagServiceLive(
           }
       }
       .handleErrorWith(t =>
-        logger.warn(t)(s"feature-flag eval failed for $key, using default").as(EvaluationDetail(default, EvaluationReason.Error, Some(t.getMessage)))
+        logger
+          .warn(t)(s"feature-flag eval failed for $key, using default")
+          .as(EvaluationDetail(default, EvaluationReason.Error, Option(t.getMessage)))
       )
 
   override def evaluator(ctx: EvaluationContext): FlagEvaluator = new FlagEvaluator {

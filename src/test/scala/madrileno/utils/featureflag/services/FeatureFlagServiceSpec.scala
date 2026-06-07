@@ -28,8 +28,7 @@ class FeatureFlagServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matcher
   private def seedFlag(
     key: String,
     enabled: Boolean,
-    defaultValue: FlagVariant,
-    variantType: VariantType
+    defaultValue: FlagVariant
   ): IO[FeatureFlag] =
     for {
       id <- UUIDGen[IO].randomUUID.map(FlagId.apply)
@@ -37,7 +36,6 @@ class FeatureFlagServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matcher
                id = id,
                key = FlagKey(key),
                description = FlagDescription(""),
-               variantType = variantType,
                enabled = enabled,
                defaultValue = defaultValue,
                clientExposed = false,
@@ -50,7 +48,7 @@ class FeatureFlagServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matcher
   "FeatureFlagServiceLive" should {
     "return defaultValue for an enabled boolean flag" in {
       for {
-        _      <- seedFlag("phase1-bool-on", enabled = true, FlagVariant.BoolVariant(true), VariantType.Boolean)
+        _      <- seedFlag("phase1-bool-on", enabled = true, FlagVariant.BoolVariant(true))
         result <- service.evaluator(ctx).booleanDetail(FlagKey("phase1-bool-on"), default = false)
       } yield {
         result.value shouldBe true
@@ -60,10 +58,10 @@ class FeatureFlagServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matcher
 
     "return defaultValue with FlagDisabled when the flag is disabled" in {
       for {
-        _      <- seedFlag("phase1-bool-off", enabled = false, FlagVariant.BoolVariant(true), VariantType.Boolean)
+        _      <- seedFlag("phase1-bool-off", enabled = false, FlagVariant.BoolVariant(true))
         result <- service.evaluator(ctx).booleanDetail(FlagKey("phase1-bool-off"), default = false)
       } yield {
-        result.value shouldBe true // defaultValue from the flag, not from the call site
+        result.value shouldBe true
         result.reason shouldBe EvaluationReason.FlagDisabled
       }
     }
@@ -80,7 +78,7 @@ class FeatureFlagServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matcher
 
     "return VariantTypeMismatch when the flag's variant doesn't match the caller's typed call" in {
       for {
-        _      <- seedFlag("phase1-string-flag", enabled = true, FlagVariant.StringVariant("v3"), VariantType.String)
+        _      <- seedFlag("phase1-string-flag", enabled = true, FlagVariant.StringVariant("v3"))
         result <- service.evaluator(ctx).booleanDetail(FlagKey("phase1-string-flag"), default = false)
       } yield {
         result.value shouldBe false
@@ -88,11 +86,20 @@ class FeatureFlagServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matcher
       }
     }
 
+    "return VariantTypeMismatch when calling evaluateJson on a non-Json flag" in {
+      for {
+        _      <- seedFlag("phase1-bool-as-json", enabled = true, FlagVariant.BoolVariant(true))
+        result <- service.evaluator(ctx).jsonDetail(FlagKey("phase1-bool-as-json"), default = io.circe.Json.Null)
+      } yield {
+        result.value shouldBe io.circe.Json.Null
+        result.reason shouldBe EvaluationReason.VariantTypeMismatch
+      }
+    }
+
     "support int and json variant types" in {
       for {
-        _ <- seedFlag("phase1-int", enabled = true, FlagVariant.IntVariant(42), VariantType.Int)
-        _ <-
-          seedFlag("phase1-json", enabled = true, FlagVariant.JsonVariant(io.circe.Json.obj("k" -> io.circe.Json.fromString("v"))), VariantType.Json)
+        _ <- seedFlag("phase1-int", enabled = true, FlagVariant.IntVariant(42))
+        _ <- seedFlag("phase1-json", enabled = true, FlagVariant.JsonVariant(io.circe.Json.obj("k" -> io.circe.Json.fromString("v"))))
         i <- service.evaluator(ctx).intDetail(FlagKey("phase1-int"), default = 0)
         j <- service.evaluator(ctx).jsonDetail(FlagKey("phase1-json"), default = io.circe.Json.Null)
       } yield {

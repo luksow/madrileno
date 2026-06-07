@@ -66,7 +66,6 @@ final case class FeatureFlag(
   id: FlagId,
   key: FlagKey,
   description: FlagDescription,
-  variantType: VariantType,
   enabled: Boolean,
   defaultValue: FlagVariant,
   clientExposed: Boolean,

@@ -11,15 +11,10 @@ class FlagEvaluationEngineSpec extends AnyWordSpec with Matchers {
 
   private val now = Instant.parse("2026-06-07T00:00:00Z")
 
-  private def flag(
-    enabled: Boolean,
-    defaultValue: FlagVariant,
-    variantType: VariantType
-  ): FeatureFlag = FeatureFlag(
+  private def flag(enabled: Boolean, defaultValue: FlagVariant): FeatureFlag = FeatureFlag(
     id = FlagId(UUID.randomUUID()),
     key = FlagKey("test-flag"),
     description = FlagDescription(""),
-    variantType = variantType,
     enabled = enabled,
     defaultValue = defaultValue,
     clientExposed = false,
@@ -31,28 +26,28 @@ class FlagEvaluationEngineSpec extends AnyWordSpec with Matchers {
 
   "FlagEvaluationEngine.evaluate" should {
     "return defaultValue with Fallthrough reason when the flag is enabled" in {
-      val f      = flag(enabled = true, FlagVariant.BoolVariant(true), VariantType.Boolean)
+      val f      = flag(enabled = true, FlagVariant.BoolVariant(true))
       val result = FlagEvaluationEngine.evaluate(f, ctx)
       result.value shouldBe FlagVariant.BoolVariant(true)
       result.reason shouldBe EvaluationReason.Fallthrough
     }
 
     "return defaultValue with FlagDisabled reason when the flag is disabled" in {
-      val f      = flag(enabled = false, FlagVariant.StringVariant("off"), VariantType.String)
+      val f      = flag(enabled = false, FlagVariant.StringVariant("off"))
       val result = FlagEvaluationEngine.evaluate(f, ctx)
       result.value shouldBe FlagVariant.StringVariant("off")
       result.reason shouldBe EvaluationReason.FlagDisabled
     }
 
     "preserve the variant for all four types" in {
-      val cases: List[(VariantType, FlagVariant)] = List(
-        (VariantType.Boolean, FlagVariant.BoolVariant(true)),
-        (VariantType.String, FlagVariant.StringVariant("hello")),
-        (VariantType.Int, FlagVariant.IntVariant(42)),
-        (VariantType.Json, FlagVariant.JsonVariant(io.circe.Json.obj("k" -> io.circe.Json.fromString("v"))))
+      val cases: List[FlagVariant] = List(
+        FlagVariant.BoolVariant(true),
+        FlagVariant.StringVariant("hello"),
+        FlagVariant.IntVariant(42),
+        FlagVariant.JsonVariant(io.circe.Json.obj("k" -> io.circe.Json.fromString("v")))
       )
-      cases.foreach { case (vt, value) =>
-        val f      = flag(enabled = true, value, vt)
+      cases.foreach { value =>
+        val f      = flag(enabled = true, value)
         val result = FlagEvaluationEngine.evaluate(f, ctx)
         result.value shouldBe value
       }

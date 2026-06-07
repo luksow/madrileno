@@ -30,7 +30,11 @@ private[repositories] final case class FeatureFlagRow(
 
 private[repositories] object FeatureFlagRow {
   def apply(flag: FeatureFlag): FeatureFlagRow =
-    flag.into[FeatureFlagRow].withFieldConst(_.defaultValue, flag.defaultValue.toJson).transform
+    flag
+      .into[FeatureFlagRow]
+      .withFieldConst(_.defaultValue, flag.defaultValue.toJson)
+      .withFieldConst(_.variantType, flag.defaultValue.variantType)
+      .transform
 }
 
 private[repositories] object FeatureFlagRowTable extends Table[FeatureFlagRow]("feature_flag") with IdTable[FeatureFlagRow, FlagId] {
