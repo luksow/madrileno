@@ -76,12 +76,13 @@ class VivinoGatewayResilienceSpec extends AsyncWordSpec with AsyncIOSpec with Ma
         backend = backendFromBehavior(callCount.update(_ + 1) >> IO.raiseError[String](new IOException("dead")))
         cb <- CircuitBreaker.of[IO](maxFailures = 2, resetTimeout = 1.minute)
         gateway = newGateway(backend, cb)
-        // enough failing calls to trip a maxFailures=2 breaker; each call exhausts retries
+        // 3 failing calls is enough to open a maxFailures=2 breaker regardless of
+        // open-at-vs-open-after-max semantics; each call exhausts retries first
         _              <- gateway.findRating(WineName("A"), None)
         _              <- gateway.findRating(WineName("B"), None)
         _              <- gateway.findRating(WineName("C"), None)
         callsAfterTrip <- callCount.get
-        // breaker is now open; this call should short-circuit without hitting the backend
+        // breaker is open by now; the probe should not hit the backend
         _               <- gateway.findRating(WineName("Z"), None)
         callsAfterProbe <- callCount.get
       } yield {

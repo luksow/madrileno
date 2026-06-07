@@ -159,19 +159,21 @@ Outbound calls fail in two distinct ways:
 - **[cats-retry](https://cb372.github.io/cats-retry/)** retries transient failures with exponential backoff.
 - **[davenverse/circuit](https://davenverse.github.io/circuit)** opens after sustained failures so subsequent calls fast-fail without touching the dep.
 
-The composition — circuit wraps retry — so each breaker outcome reflects the full retry burst, not individual attempts:
+The composition — circuit wraps retry — so each breaker outcome reflects the full retry burst, not individual attempts. The breaker arrives as `IO[CircuitBreaker[IO]]` (the runtime memoizes the allocation), so the gateway `flatMap`s once to get the live instance:
 
 ```scala
-val attempt = fetch(wineName, vintage).timeout(requestTimeout)
+val singleAttempt = fetch(wineName, vintage).timeout(requestTimeout)
 circuitBreaker
-  .protect(
-    retryingOnErrors(attempt)(
-      policy = retryPolicy,
-      errorHandler = (e, details) =>
-        if (isTransient(e))
-          logger.warn(e)(s"transient (retry ${details.retriesSoFar + 1})").as(HandlerDecision.Continue)
-        else
-          IO.pure(HandlerDecision.Stop)
+  .flatMap(cb =>
+    cb.protect(
+      retryingOnErrors(singleAttempt)(
+        policy = retryPolicy,
+        errorHandler = (e, details) =>
+          if (isTransient(e))
+            logger.warn(e)(s"transient (retry ${details.retriesSoFar + 1})").as(HandlerDecision.Continue)
+          else
+            IO.pure(HandlerDecision.Stop)
+      )
     )
   )
   .flatTap(result => cache.put((wineName, vintage), result))
@@ -180,7 +182,7 @@ circuitBreaker
 
 Five things to notice:
 
-- **Per-attempt timeout.** `attempt = fetch.timeout(requestTimeout)` — each retry attempt gets its own 3-second budget. If timeout sat outside the retry, retries would race a single shared deadline.
+- **Per-attempt timeout.** `singleAttempt = fetch.timeout(requestTimeout)` — each retry attempt gets its own 3-second budget. If timeout sat outside the retry, retries would race a single shared deadline.
 - **Retry inside, breaker outside.** `cb.protect(retryingOnErrors(...))` — retry exhausts first; the breaker only sees the *final* outcome of the burst. A "down" dep produces N retries per request before incrementing the breaker. The breaker opens after sustained failure *across* multiple full requests.
 - **Error classifier decides what to retry.** `isTransient` returns true for `TimeoutException`, `SttpClientException` (sttp's transport-error wrapper), and `IOException`. Returns false for parse errors and 4xx/5xx propagated from `.response(asJson[T])` — those won't be fixed by retrying. `CircuitBreaker.RejectedExecution` never reaches the classifier: when the breaker is open, control never enters the retry block.
 - **`handleErrorWith` outermost.** Once retries are exhausted *or* the breaker is open, the error propagates out — `handleErrorWith` folds it into the domain answer (`None`). This is the gateway's fail-soft contract; a payment gateway would raise a typed error here instead.

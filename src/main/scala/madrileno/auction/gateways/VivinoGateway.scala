@@ -123,11 +123,11 @@ class VivinoGatewayLive(
     cache.get((wineName, vintage)).flatMap {
       case Some(cached) => IO.pure(cached)
       case None =>
-        val attempt = fetch(wineName, vintage).timeout(requestTimeout)
+        val singleAttempt = fetch(wineName, vintage).timeout(requestTimeout)
         circuitBreaker
           .flatMap(cb =>
             cb.protect(
-              retryingOnErrors(attempt)(
+              retryingOnErrors(singleAttempt)(
                 policy = retryPolicy,
                 errorHandler = (e: Throwable, details: RetryDetails) =>
                   if (isTransient(e))
