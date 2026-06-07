@@ -170,7 +170,7 @@ circuitBreaker
         policy = retryPolicy,
         errorHandler = (e, details) =>
           if (isTransient(e))
-            logger.debug(s"transient (retry ${details.retriesSoFar + 1}): ${e.getClass.getSimpleName}").as(HandlerDecision.Continue)
+            logger.debug(s"transient (attempt ${details.retriesSoFar + 1}): ${e.getClass.getSimpleName}").as(HandlerDecision.Continue)
           else
             IO.pure(HandlerDecision.Stop)
       )

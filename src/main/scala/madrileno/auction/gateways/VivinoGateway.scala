@@ -134,7 +134,7 @@ class VivinoGatewayLive(
                   if (isTransient(e))
                     logger
                       .debug(
-                        s"Vivino lookup transient failure (retry ${details.retriesSoFar + 1}) for $wineName ${vintage.map(_.unwrap)}: ${e.getClass.getSimpleName}"
+                        s"Vivino lookup transient failure (attempt ${details.retriesSoFar + 1}) for $wineName ${vintage.map(_.unwrap)}: ${e.getClass.getSimpleName}"
                       )
                       .as(HandlerDecision.Continue)
                   else
