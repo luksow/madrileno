@@ -76,14 +76,14 @@ class VivinoGatewayResilienceSpec extends AsyncWordSpec with AsyncIOSpec with Ma
         backend = backendFromBehavior(callCount.update(_ + 1) >> IO.raiseError[String](new IOException("dead")))
         cb <- CircuitBreaker.of[IO](maxFailures = 2, resetTimeout = 1.minute)
         gateway = newGateway(backend, cb)
-        _               <- gateway.findRating(WineName("A"), None)
-        _               <- gateway.findRating(WineName("B"), None)
-        _               <- gateway.findRating(WineName("C"), None)
-        callsAfterTrip  <- callCount.get
-        _               <- gateway.findRating(WineName("Z"), None)
-        callsAfterProbe <- callCount.get
+        _              <- gateway.findRating(WineName("A"), None)
+        _              <- gateway.findRating(WineName("B"), None)
+        callsAfterTrip <- callCount.get
+        _              <- gateway.findRating(WineName("C"), None)
+        callsAfterOpen <- callCount.get
       } yield {
-        callsAfterProbe shouldBe callsAfterTrip
+        callsAfterTrip shouldBe 6
+        callsAfterOpen shouldBe 6
       }
     }
   }

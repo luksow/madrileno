@@ -170,14 +170,19 @@ circuitBreaker
         policy = retryPolicy,
         errorHandler = (e, details) =>
           if (isTransient(e))
-            logger.warn(e)(s"transient (retry ${details.retriesSoFar + 1})").as(HandlerDecision.Continue)
+            logger.debug(s"transient (retry ${details.retriesSoFar + 1}): ${e.getClass.getSimpleName}").as(HandlerDecision.Continue)
           else
             IO.pure(HandlerDecision.Stop)
       )
     )
   )
   .flatTap(result => cache.put((wineName, vintage), result))
-  .handleErrorWith(t => logger.warn(t)("failed").as(None))
+  .handleErrorWith {
+    case _: CircuitBreaker.RejectedExecution =>
+      logger.debug("circuit open, fast-failing").as(None)
+    case t                                   =>
+      logger.warn(t)("lookup failed").as(None)
+  }
 ```
 
 Five things to notice:
