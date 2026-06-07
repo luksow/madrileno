@@ -83,7 +83,7 @@ class FeatureFlagServiceLive(
           extract(result.value) match {
             case Some(v) => EvaluationDetail(v, result.reason)
             case None =>
-              val actual = FlagVariant.variantType(result.value)
+              val actual = result.value.variantType
               EvaluationDetail(
                 default,
                 EvaluationReason.VariantTypeMismatch,

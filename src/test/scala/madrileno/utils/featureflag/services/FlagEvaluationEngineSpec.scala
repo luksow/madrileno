@@ -18,7 +18,7 @@ class FlagEvaluationEngineSpec extends AnyWordSpec with Matchers {
   ): FeatureFlag = FeatureFlag(
     id = FlagId(UUID.randomUUID()),
     key = FlagKey("test-flag"),
-    description = "",
+    description = FlagDescription(""),
     variantType = variantType,
     enabled = enabled,
     defaultValue = defaultValue,

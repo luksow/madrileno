@@ -36,7 +36,7 @@ class FeatureFlagServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matcher
       flag = FeatureFlag(
                id = id,
                key = FlagKey(key),
-               description = "",
+               description = FlagDescription(""),
                variantType = variantType,
                enabled = enabled,
                defaultValue = defaultValue,

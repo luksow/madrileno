@@ -22,7 +22,7 @@ class TestFeatureFlagService private (values: Map[FlagKey, FlagVariant]) extends
           extract(value) match {
             case Some(v) => EvaluationDetail(v, EvaluationReason.Fallthrough)
             case None =>
-              EvaluationDetail(default, EvaluationReason.VariantTypeMismatch, Some(s"stubbed flag $key is ${FlagVariant.variantType(value)}"))
+              EvaluationDetail(default, EvaluationReason.VariantTypeMismatch, Some(s"stubbed flag $key is ${value.variantType}"))
           }
       })
 

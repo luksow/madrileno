@@ -2,6 +2,7 @@ package madrileno.utils.featureflag.repositories
 
 import cats.effect.IO
 import io.circe.Json
+import io.scalaland.chimney.dsl.*
 import madrileno.utils.db.dsl.*
 import madrileno.utils.db.transactor.DB
 import madrileno.utils.featureflag.domain.*
@@ -14,7 +15,7 @@ import java.time.Instant
 private[repositories] final case class FeatureFlagRow(
   id: FlagId,
   key: FlagKey,
-  description: String,
+  description: FlagDescription,
   variantType: VariantType,
   enabled: Boolean,
   defaultValue: Json,
@@ -23,47 +24,25 @@ private[repositories] final case class FeatureFlagRow(
   updatedAt: Instant) {
   def toFeatureFlag: Either[String, FeatureFlag] =
     FlagVariant.fromJson(variantType, defaultValue).map { variant =>
-      FeatureFlag(
-        id = id,
-        key = key,
-        description = description,
-        variantType = variantType,
-        enabled = enabled,
-        defaultValue = variant,
-        clientExposed = clientExposed,
-        createdAt = createdAt,
-        updatedAt = updatedAt
-      )
+      this.into[FeatureFlag].withFieldConst(_.defaultValue, variant).transform
     }
 }
 
 private[repositories] object FeatureFlagRow {
-  def fromDomain(flag: FeatureFlag): FeatureFlagRow = FeatureFlagRow(
-    id = flag.id,
-    key = flag.key,
-    description = flag.description,
-    variantType = flag.variantType,
-    enabled = flag.enabled,
-    defaultValue = FlagVariant.toJson(flag.defaultValue),
-    clientExposed = flag.clientExposed,
-    createdAt = flag.createdAt,
-    updatedAt = flag.updatedAt
-  )
+  def apply(flag: FeatureFlag): FeatureFlagRow =
+    flag.into[FeatureFlagRow].withFieldConst(_.defaultValue, flag.defaultValue.toJson).transform
 }
 
 private[repositories] object FeatureFlagRowTable extends Table[FeatureFlagRow]("feature_flag") with IdTable[FeatureFlagRow, FlagId] {
-  private val variantTypeCodec: Codec[VariantType] =
-    text.imap(s => VariantType.fromWireName(s).getOrElse(throw new IllegalStateException(s"Unknown variant_type: $s")))(_.wireName)
-
-  override val id: Column[FlagId]      = column("id", uuid.as[FlagId])
-  val key: Column[FlagKey]             = column("key", text.as[FlagKey])
-  val description: Column[String]      = column("description", text)
-  val variantType: Column[VariantType] = column("variant_type", variantTypeCodec)
-  val enabled: Column[Boolean]         = column("enabled", bool)
-  val defaultValue: Column[Json]       = column("default_value", jsonb)
-  val clientExposed: Column[Boolean]   = column("client_exposed", bool)
-  val createdAt: Column[Instant]       = column("created_at", timestamptz.asInstant)
-  val updatedAt: Column[Instant]       = column("updated_at", timestamptz.asInstant)
+  override val id: Column[FlagId]          = column("id", uuid.as[FlagId])
+  val key: Column[FlagKey]                 = column("key", text.as[FlagKey])
+  val description: Column[FlagDescription] = column("description", text.as[FlagDescription])
+  val variantType: Column[VariantType]     = column("variant_type", text.asEnum[VariantType])
+  val enabled: Column[Boolean]             = column("enabled", bool)
+  val defaultValue: Column[Json]           = column("default_value", jsonb)
+  val clientExposed: Column[Boolean]       = column("client_exposed", bool)
+  val createdAt: Column[Instant]           = column("created_at", timestamptz.asInstant)
+  val updatedAt: Column[Instant]           = column("updated_at", timestamptz.asInstant)
 
   def mapping: (List[Column[?]], Codec[FeatureFlagRow]) =
     (id, key, description, variantType, enabled, defaultValue, clientExposed, createdAt, updatedAt)
@@ -86,7 +65,7 @@ class FeatureFlagRepository {
     }
 
   def save(flag: FeatureFlag): DB[Unit] =
-    repository.create(FeatureFlagRow.fromDomain(flag)).void
+    repository.create(FeatureFlagRow(flag)).void
 
   private val repository: IdRepository[FeatureFlagRow, FlagId] & FilteringRepository[FeatureFlagRow, FeatureFlagRowFilter] =
     new IdRepository[FeatureFlagRow, FlagId](_.id) with FilteringRepository[FeatureFlagRow, FeatureFlagRowFilter] {

@@ -12,21 +12,24 @@ object FlagId extends Opaque[FlagId, UUID]
 opaque type FlagKey = String
 object FlagKey extends Opaque[FlagKey, String] {
   private val Pattern = "^[a-z][a-z0-9_-]*$".r
-  override def validate(value: String): Either[String, FlagKey] =
-    if (value.isEmpty || value.length > 128) Left("FlagKey must be 1-128 chars")
-    else if (!Pattern.matches(value)) Left("FlagKey must match [a-z][a-z0-9_-]*")
-    else Right(value)
+  override def validate(value: String): Either[String, FlagKey] = {
+    val trimmed = value.trim
+    if (trimmed.isEmpty || trimmed.length > 128) Left("FlagKey must be 1-128 chars")
+    else if (!Pattern.matches(trimmed)) Left("FlagKey must match [a-z][a-z0-9_-]*")
+    else Right(trimmed)
+  }
 }
 
-enum VariantType(val wireName: String) {
-  case Boolean extends VariantType("boolean")
-  case String  extends VariantType("string")
-  case Int     extends VariantType("int")
-  case Json    extends VariantType("json")
+opaque type FlagDescription = String
+object FlagDescription extends Opaque[FlagDescription, String] {
+  override def validate(value: String): Either[String, FlagDescription] = {
+    val trimmed = value.trim
+    if (trimmed.length > 500) Left("FlagDescription must be at most 500 chars") else Right(trimmed)
+  }
 }
 
-object VariantType {
-  def fromWireName(s: String): Option[VariantType] = values.find(_.wireName == s)
+enum VariantType {
+  case Boolean, String, Int, Json
 }
 
 enum FlagVariant {
@@ -34,24 +37,15 @@ enum FlagVariant {
   case StringVariant(value: String) extends FlagVariant
   case IntVariant(value: Int)       extends FlagVariant
   case JsonVariant(value: Json)     extends FlagVariant
-}
 
-object FlagVariant {
-  def variantType(v: FlagVariant): VariantType = v match {
+  def variantType: VariantType = this match {
     case _: BoolVariant   => VariantType.Boolean
     case _: StringVariant => VariantType.String
     case _: IntVariant    => VariantType.Int
     case _: JsonVariant   => VariantType.Json
   }
 
-  def fromJson(variantType: VariantType, json: Json): Either[String, FlagVariant] = variantType match {
-    case VariantType.Boolean => json.asBoolean.toRight(s"expected boolean, got: ${json.noSpaces}").map(BoolVariant.apply)
-    case VariantType.String  => json.asString.toRight(s"expected string, got: ${json.noSpaces}").map(StringVariant.apply)
-    case VariantType.Int     => json.asNumber.flatMap(_.toInt).toRight(s"expected int, got: ${json.noSpaces}").map(IntVariant.apply)
-    case VariantType.Json    => Right(JsonVariant(json))
-  }
-
-  def toJson(v: FlagVariant): Json = v match {
+  def toJson: Json = this match {
     case BoolVariant(value)   => Json.fromBoolean(value)
     case StringVariant(value) => Json.fromString(value)
     case IntVariant(value)    => Json.fromInt(value)
@@ -59,10 +53,19 @@ object FlagVariant {
   }
 }
 
+object FlagVariant {
+  def fromJson(variantType: VariantType, json: Json): Either[String, FlagVariant] = variantType match {
+    case VariantType.Boolean => json.asBoolean.toRight(s"expected boolean, got: ${json.noSpaces}").map(BoolVariant.apply)
+    case VariantType.String  => json.asString.toRight(s"expected string, got: ${json.noSpaces}").map(StringVariant.apply)
+    case VariantType.Int     => json.asNumber.flatMap(_.toInt).toRight(s"expected int, got: ${json.noSpaces}").map(IntVariant.apply)
+    case VariantType.Json    => Right(JsonVariant(json))
+  }
+}
+
 final case class FeatureFlag(
   id: FlagId,
   key: FlagKey,
-  description: String,
+  description: FlagDescription,
   variantType: VariantType,
   enabled: Boolean,
   defaultValue: FlagVariant,
