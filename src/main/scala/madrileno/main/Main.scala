@@ -3,13 +3,13 @@ package madrileno.main
 import cats.effect.std.Supervisor
 import cats.effect.{Clock, IO, IOApp, Resource}
 import io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppender
-import madrileno.auction.gateways.VivinoGateway
 import madrileno.utils.cache.CacheRuntime
 import madrileno.utils.db.Migrations
 import madrileno.utils.db.transactor.{PgConfig, PgTransactor}
 import madrileno.utils.events.EventBusRuntime
 import madrileno.utils.http.{Cors, CorsConfig, RateLimiterRuntime}
 import madrileno.utils.observability.TelemetryContext
+import madrileno.utils.resilience.CircuitBreakerRuntime
 import madrileno.utils.storage.{ObjectStoreRuntime, StorageConfig}
 import madrileno.utils.task.{Scheduler, SchedulerConfig}
 import org.http4s.RequestPrelude
@@ -50,8 +50,8 @@ object Main extends IOApp.Simple {
       storageConfig        <- Resource.eval(IO.delay(config.at("storage").loadOrThrow[StorageConfig]))
       objectStoreRuntime   <- ObjectStoreRuntime.s3(storageConfig)
       given Supervisor[IO] <- Supervisor[IO]
-      eventBusRuntime = EventBusRuntime.postgres(transactor)
-      vivinoCircuitBreaker <- VivinoGateway.circuitBreaker
+      eventBusRuntime       = EventBusRuntime.postgres(transactor)
+      circuitBreakerRuntime = CircuitBreakerRuntime.default
       application =
         ApplicationLoader(
           config,
@@ -63,7 +63,7 @@ object Main extends IOApp.Simple {
           rateLimiterRuntime,
           objectStoreRuntime,
           eventBusRuntime,
-          vivinoCircuitBreaker,
+          circuitBreakerRuntime,
           runtime
         )
       _ <- scheduler.run(recurringTasks = application.recurringTasks, oneTimeTasks = application.oneTimeTasks, customTasks = application.customTasks)

@@ -201,15 +201,16 @@ See [cats-retry's policy combinators](https://cb372.github.io/cats-retry/docs/po
 
 ### Circuit breaker
 
+The breaker is allocated by `CircuitBreakerRuntime` and the tuning lives in the module that owns the gateway:
+
 ```scala
-val circuitBreaker: Resource[IO, CircuitBreaker[IO]] =
-  Resource.eval(
-    CircuitBreaker.of[IO](
-      maxFailures = 5,
-      resetTimeout = 30.seconds,
-      backoff = Backoff.exponential,
-      maxResetTimeout = 5.minutes
-    )
+// AuctionModule.scala
+protected lazy val vivinoCircuitBreaker: IO[CircuitBreaker[IO]] =
+  circuitBreakerRuntime.create(
+    maxFailures = 5,
+    resetTimeout = 30.seconds,
+    backoff = Backoff.exponential,
+    maxResetTimeout = 5.minutes
   )
 ```
 
@@ -221,14 +222,16 @@ When the breaker is open, `cb.protect(...)` raises `CircuitBreaker.RejectedExecu
 
 ### Wiring
 
-The breaker holds mutable state (a `Ref`), so it's an `IO`-allocated resource:
+`CircuitBreakerRuntime` mirrors the codebase's other `*Runtime` shapes (`CacheRuntime`, `EventBusRuntime`, `RateLimiterRuntime`). It exists for two reasons: to keep the pattern consistent across the project, and to encapsulate the davenport friction — `CircuitBreaker.of` returns `IO[CircuitBreaker[IO]]`, and the runtime memoizes that so each gateway gets a single shared breaker, allocated lazily on first use.
 
-- The gateway's companion exposes construction as `Resource[IO, CircuitBreaker[IO]]` — tuning lives next to the gateway it protects, not in HOCON.
-- `Main` acquires it once at startup: `vivinoCircuitBreaker <- VivinoGateway.circuitBreaker`.
-- `ApplicationLoader` threads it through to `AuctionModule` as an abstract `val`.
-- macwire injects it into `VivinoGatewayLive` by type.
+- `Main` constructs `CircuitBreakerRuntime.default` (one line) and passes it to `ApplicationLoader`.
+- `ApplicationLoader` threads it through to modules as an abstract `val`.
+- Each module owns its per-gateway tuning as a `lazy val IO[CircuitBreaker[IO]]` — the breaker is allocated on the first `findRating` call and shared from then on.
+- The gateway accepts `IO[CircuitBreaker[IO]]` and `flatMap`s over it inside its call site. The cost is one extra word per protected call; the benefit is no `unsafeRunSync` anywhere.
 
-**One breaker per gateway.** Different deps have different failure characteristics: a payment provider wants a low threshold and a long cool-down; a non-essential rating lookup wants higher tolerance. Don't share a breaker across unrelated services. (If you wire two gateways that each need a `CircuitBreaker[IO]`, macwire will fail to disambiguate — give each a wrapper type or pass by name.)
+`Main` knows nothing about which gateways need breakers or how they're tuned — only that a runtime exists. Add a new gateway with its own breaker by declaring another `lazy val` in its module; no other layer touched.
+
+**One breaker per gateway.** Different deps have different failure characteristics: a payment provider wants a low threshold and a long cool-down; a non-essential rating lookup wants higher tolerance. Don't share a breaker across unrelated services.
 
 ### When NOT to add this
 

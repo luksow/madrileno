@@ -4,7 +4,6 @@ import cats.effect.unsafe.IORuntime
 import cats.effect.{Clock, IO}
 import com.comcast.ip4s.{Ipv4Address, Port}
 import com.typesafe.config.Config
-import io.chrisdavenport.circuit.CircuitBreaker
 import madrileno.auction.AuctionModule
 import madrileno.auth.AuthModule
 import madrileno.healthcheck.HealthCheckModule
@@ -16,6 +15,7 @@ import madrileno.utils.http.{ApplicationRouteProvider, Handlers, RateLimiterRunt
 import madrileno.utils.mailer.{MailContext, MailPreviewProvider, MailPreviewRouter, Mailer, MailerConfig, SmtpSender}
 import madrileno.utils.observability.*
 import madrileno.utils.observability.admin.{ConfigAdminRouter, HeapdumpAdminRouter, LoggersAdminRouter, ThreaddumpAdminRouter}
+import madrileno.utils.resilience.CircuitBreakerRuntime
 import madrileno.utils.storage.{ObjectStore, ObjectStoreRuntime}
 import madrileno.utils.task.{ApplicationTaskProvider, OneTimeTask, SchedulerAdminRouter, SchedulerClient}
 import org.http4s.headers.`Content-Type`
@@ -74,7 +74,7 @@ class ApplicationLoader(
   val rateLimiterRuntime: RateLimiterRuntime,
   val objectStoreRuntime: ObjectStoreRuntime,
   val eventBusRuntime: EventBusRuntime,
-  val vivinoCircuitBreaker: CircuitBreaker[IO],
+  val circuitBreakerRuntime: CircuitBreakerRuntime,
   val ioRuntime: IORuntime
 )(using TelemetryContext)
     extends ApplicationRouteProvider

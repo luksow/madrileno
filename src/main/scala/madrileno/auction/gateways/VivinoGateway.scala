@@ -1,7 +1,7 @@
 package madrileno.auction.gateways
 
-import cats.effect.{IO, Resource}
-import io.chrisdavenport.circuit.{Backoff, CircuitBreaker}
+import cats.effect.IO
+import io.chrisdavenport.circuit.CircuitBreaker
 import io.circe.Encoder
 import io.circe.derivation.{Configuration, ConfiguredCodec}
 import io.circe.syntax.*
@@ -27,11 +27,6 @@ trait VivinoGateway {
 
 object VivinoGateway {
   private[gateways] val similarityThreshold = 0.85
-
-  // Outbound resilience — retries cover transient blips (network, timeout); the breaker
-  // fast-fails when Vivino is sustainedly down so we don't pile retries on a sick dep.
-  val circuitBreaker: Resource[IO, CircuitBreaker[IO]] =
-    Resource.eval(CircuitBreaker.of[IO](maxFailures = 5, resetTimeout = 30.seconds, backoff = Backoff.exponential, maxResetTimeout = 5.minutes))
 
   private[gateways] val retryPolicy: RetryPolicy[IO, Any] =
     limitRetries[IO](2).join(exponentialBackoff[IO](200.millis))
@@ -111,7 +106,7 @@ object VivinoGateway {
 class VivinoGatewayLive(
   http: WebSocketStreamBackend[IO, Fs2Streams[IO]],
   cacheRuntime: CacheRuntime,
-  circuitBreaker: CircuitBreaker[IO]
+  circuitBreaker: IO[CircuitBreaker[IO]]
 )(using TelemetryContext)
     extends VivinoGateway
     with LoggingSupport {
@@ -130,16 +125,18 @@ class VivinoGatewayLive(
       case None =>
         val attempt = fetch(wineName, vintage).timeout(requestTimeout)
         circuitBreaker
-          .protect(
-            retryingOnErrors(attempt)(
-              policy = retryPolicy,
-              errorHandler = (e: Throwable, details: RetryDetails) =>
-                if (isTransient(e))
-                  logger
-                    .warn(e)(s"Vivino lookup transient failure (retry ${details.retriesSoFar + 1}) for $wineName ${vintage.map(_.unwrap)}")
-                    .as(HandlerDecision.Continue)
-                else
-                  IO.pure(HandlerDecision.Stop)
+          .flatMap(cb =>
+            cb.protect(
+              retryingOnErrors(attempt)(
+                policy = retryPolicy,
+                errorHandler = (e: Throwable, details: RetryDetails) =>
+                  if (isTransient(e))
+                    logger
+                      .warn(e)(s"Vivino lookup transient failure (retry ${details.retriesSoFar + 1}) for $wineName ${vintage.map(_.unwrap)}")
+                      .as(HandlerDecision.Continue)
+                  else
+                    IO.pure(HandlerDecision.Stop)
+              )
             )
           )
           .flatTap(result => cache.put((wineName, vintage), result))

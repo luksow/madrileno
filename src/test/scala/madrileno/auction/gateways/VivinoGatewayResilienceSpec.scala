@@ -37,7 +37,7 @@ class VivinoGatewayResilienceSpec extends AsyncWordSpec with AsyncIOSpec with Ma
       .thenRespondF(_ => behavior.map(body => ResponseStub.adjust(body)))
 
   private def newGateway(http: WebSocketStreamBackend[IO, Fs2Streams[IO]], cb: CircuitBreaker[IO]): VivinoGatewayLive =
-    new VivinoGatewayLive(http, TestCacheRuntime.unbounded, cb)
+    new VivinoGatewayLive(http, TestCacheRuntime.unbounded, IO.pure(cb))
 
   "VivinoGatewayLive resilience" should {
 

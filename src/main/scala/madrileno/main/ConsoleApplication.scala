@@ -5,12 +5,12 @@ import cats.effect.unsafe.IORuntime
 import cats.effect.unsafe.implicits.global
 import cats.effect.{Clock, IO, Resource}
 import io.opentelemetry.api.OpenTelemetry
-import madrileno.auction.gateways.VivinoGateway
 import madrileno.utils.cache.CacheRuntime
 import madrileno.utils.db.transactor.{PgConfig, PgTransactor}
 import madrileno.utils.events.EventBusRuntime
 import madrileno.utils.http.RateLimiterRuntime
 import madrileno.utils.observability.TelemetryContext
+import madrileno.utils.resilience.CircuitBreakerRuntime
 import madrileno.utils.storage.{ObjectStoreRuntime, StorageConfig}
 import madrileno.utils.task.{Scheduler, SchedulerConfig}
 import pureconfig.ConfigSource
@@ -40,12 +40,12 @@ object ConsoleApplication {
       transactor           <- PgTransactor.resource(pgConfig)
       objectStoreRuntime   <- ObjectStoreRuntime.s3(storageConfig)
       given Supervisor[IO] <- Supervisor[IO]
-      vivinoCircuitBreaker <- VivinoGateway.circuitBreaker
     } yield {
-      val scheduler          = Scheduler(transactor, schedulerConfig)
-      val cacheRuntime       = CacheRuntime.scaffeine
-      val rateLimiterRuntime = RateLimiterRuntime.scaffeine()
-      val eventBusRuntime    = EventBusRuntime.postgres(transactor)
+      val scheduler             = Scheduler(transactor, schedulerConfig)
+      val cacheRuntime          = CacheRuntime.scaffeine
+      val rateLimiterRuntime    = RateLimiterRuntime.scaffeine()
+      val eventBusRuntime       = EventBusRuntime.postgres(transactor)
+      val circuitBreakerRuntime = CircuitBreakerRuntime.default
       ApplicationLoader(
         config,
         httpClient,
@@ -56,7 +56,7 @@ object ConsoleApplication {
         rateLimiterRuntime,
         objectStoreRuntime,
         eventBusRuntime,
-        vivinoCircuitBreaker,
+        circuitBreakerRuntime,
         IORuntime.global
       )
     }

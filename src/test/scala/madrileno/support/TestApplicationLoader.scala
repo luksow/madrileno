@@ -13,6 +13,7 @@ import madrileno.utils.db.transactor.{PgConfig, PgTransactor}
 import madrileno.utils.events.EventBusRuntime
 import madrileno.utils.mailer.MailerConfig
 import madrileno.utils.observability.TelemetryContext
+import madrileno.utils.resilience.CircuitBreakerRuntime
 import madrileno.utils.task.{Scheduler, SchedulerConfig}
 import org.flywaydb.core.Flyway
 import org.scalatest.Suite
@@ -52,12 +53,11 @@ trait TestApplicationLoader extends TestContainersForAll with TestMailpit { self
     // Finalizers discarded — pool and HTTP client lifetime is tied to the Testcontainers PG container.
     // Releasing in afterAll causes broken-pipe errors because ScalaTest's afterAll ordering
     // conflicts with TestContainersForAll's container lifecycle.
-    val transactor           = PgTransactor.resource(pgConfig).allocated.unsafeRunSync()._1
-    val httpClient           = HttpClientFs2Backend.resource[IO]().allocated.unsafeRunSync()._1
-    val vivinoCircuitBreaker = VivinoGateway.circuitBreaker.allocated.unsafeRunSync()._1
-    val config               = ConfigSource.default
-    val schedulerConfig      = SchedulerConfig()
-    val scheduler            = Scheduler(transactor, schedulerConfig)
+    val transactor      = PgTransactor.resource(pgConfig).allocated.unsafeRunSync()._1
+    val httpClient      = HttpClientFs2Backend.resource[IO]().allocated.unsafeRunSync()._1
+    val config          = ConfigSource.default
+    val schedulerConfig = SchedulerConfig()
+    val scheduler       = Scheduler(transactor, schedulerConfig)
     new ApplicationLoader(
       config,
       httpClient,
@@ -68,7 +68,7 @@ trait TestApplicationLoader extends TestContainersForAll with TestMailpit { self
       TestRateLimiterRuntime.unbounded,
       TestObjectStoreRuntime.inMemory,
       EventBusRuntime.local,
-      vivinoCircuitBreaker,
+      CircuitBreakerRuntime.default,
       IORuntime.global
     ) {
       override protected lazy val externalAuthVerifiers: AuthVerifiers =
