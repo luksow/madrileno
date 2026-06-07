@@ -194,7 +194,7 @@ The checks:
 
 ## Template-internal CI workflows
 
-Two GitHub Actions ship with the template and are deleted by `init-project.scala` (along with `scripts/check-links.scala`, which only the link-check workflow uses):
+The repo ships three GitHub Actions. `.github/workflows/scala.yml` is the project's own CI (format check, scalafix, compile, test) — kept on init like any other project file. The other two are **template-internal**: they validate template content and are deleted by `init-project.scala` (along with `scripts/check-links.scala`, which only the link-check workflow uses):
 
 - **`.github/workflows/link-check.yml`** — runs `scripts/check-links.scala` on PRs touching markdown. The script walks every `.md`, extracts `[text](target)` links, verifies internal targets exist (relative paths + `#anchor` heading slugs). Externals + `mailto:` / `tel:` are skipped. Code spans + fenced blocks are stripped first so Scala signatures inside code samples don't trip the regex.
 - **`.github/workflows/script-tests.yml`** — four jobs:
