@@ -3,6 +3,7 @@ package madrileno.main
 import cats.effect.std.Supervisor
 import cats.effect.{Clock, IO, IOApp, Resource}
 import io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppender
+import madrileno.auction.gateways.VivinoGateway
 import madrileno.utils.cache.CacheRuntime
 import madrileno.utils.db.Migrations
 import madrileno.utils.db.transactor.{PgConfig, PgTransactor}
@@ -50,6 +51,7 @@ object Main extends IOApp.Simple {
       objectStoreRuntime   <- ObjectStoreRuntime.s3(storageConfig)
       given Supervisor[IO] <- Supervisor[IO]
       eventBusRuntime = EventBusRuntime.postgres(transactor)
+      vivinoCircuitBreaker <- VivinoGateway.circuitBreaker
       application =
         ApplicationLoader(
           config,
@@ -61,6 +63,7 @@ object Main extends IOApp.Simple {
           rateLimiterRuntime,
           objectStoreRuntime,
           eventBusRuntime,
+          vivinoCircuitBreaker,
           runtime
         )
       _ <- scheduler.run(recurringTasks = application.recurringTasks, oneTimeTasks = application.oneTimeTasks, customTasks = application.customTasks)

@@ -4,6 +4,7 @@ import cats.effect.unsafe.IORuntime
 import cats.effect.{Clock, IO}
 import com.comcast.ip4s.{Ipv4Address, Port}
 import com.typesafe.config.Config
+import io.chrisdavenport.circuit.CircuitBreaker
 import madrileno.auction.AuctionModule
 import madrileno.auth.AuthModule
 import madrileno.healthcheck.HealthCheckModule
@@ -73,6 +74,7 @@ class ApplicationLoader(
   val rateLimiterRuntime: RateLimiterRuntime,
   val objectStoreRuntime: ObjectStoreRuntime,
   val eventBusRuntime: EventBusRuntime,
+  val vivinoCircuitBreaker: CircuitBreaker[IO],
   val ioRuntime: IORuntime
 )(using TelemetryContext)
     extends ApplicationRouteProvider

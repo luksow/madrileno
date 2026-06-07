@@ -27,6 +27,8 @@ libraryDependencies ++= {
   val sealedV            = "2.0.1"
   val javaJwtV           = "4.5.0"
   val cron4sV            = "0.8.2"
+  val catsRetryV         = "4.0.0"
+  val circuitV           = "0.5.1"
   val jakartaMailV       = "2.1.3"
   val angusMailV         = "2.0.3"
   val scalatagsV         = "0.13.1"
@@ -64,6 +66,7 @@ libraryDependencies ++= {
     "com.softwaremill.sttp.client4"   %% "fs2"                                       % sttpV,
     "com.softwaremill.sttp.client4"   %% "circe"                                     % sttpV,
     "com.softwaremill.sttp.client4"   %% "opentelemetry-backend"                     % sttpV,
+    "com.softwaremill.sttp.client4"   %% "cats"                                      % sttpV              % "test",
     "org.tpolecat"                    %% "skunk-core"                                % skunkV,
     "org.tpolecat"                    %% "skunk-circe"                               % skunkV,
     "org.postgresql"                   % "postgresql"                                % postgresqlV,
@@ -77,6 +80,8 @@ libraryDependencies ++= {
     "pl.iterators"                    %% "sealed-monad"                              % sealedV,
     "com.auth0"                        % "java-jwt"                                  % javaJwtV,
     "com.github.alonsodomin.cron4s"   %% "cron4s-core"                               % cron4sV,
+    "com.github.cb372"                %% "cats-retry"                                % catsRetryV,
+    "io.chrisdavenport"               %% "circuit"                                   % circuitV,
     "jakarta.mail"                     % "jakarta.mail-api"                          % jakartaMailV,
     "org.eclipse.angus"                % "angus-mail"                                % angusMailV         % Runtime,
     "com.lihaoyi"                     %% "scalatags"                                 % scalatagsV,

@@ -2,6 +2,7 @@ package madrileno.auction
 
 import cats.effect.IO
 import com.softwaremill.macwire.*
+import io.chrisdavenport.circuit.CircuitBreaker
 import madrileno.auction.domain.AuctionEvent
 import madrileno.auction.emails.{AuctionClosedEmailTemplate, OutbidEmailTemplate}
 import madrileno.auction.gateways.{VivinoGateway, VivinoGatewayLive}
@@ -44,6 +45,7 @@ trait AuctionModule
   lazy val userRepository: UserRepository
   lazy val mailer: Mailer
   lazy val appConfig: AppConfig
+  val vivinoCircuitBreaker: CircuitBreaker[IO]
 
   protected lazy val vivinoGateway: VivinoGateway            = wire[VivinoGatewayLive]
   protected lazy val auctionEventBus: EventBus[AuctionEvent] = eventBusRuntime.topic[AuctionEvent]("auction_events", maxQueued = 64)

@@ -5,6 +5,7 @@ import cats.effect.unsafe.IORuntime
 import cats.effect.unsafe.implicits.global
 import cats.effect.{Clock, IO, Resource}
 import io.opentelemetry.api.OpenTelemetry
+import madrileno.auction.gateways.VivinoGateway
 import madrileno.utils.cache.CacheRuntime
 import madrileno.utils.db.transactor.{PgConfig, PgTransactor}
 import madrileno.utils.events.EventBusRuntime
@@ -39,6 +40,7 @@ object ConsoleApplication {
       transactor           <- PgTransactor.resource(pgConfig)
       objectStoreRuntime   <- ObjectStoreRuntime.s3(storageConfig)
       given Supervisor[IO] <- Supervisor[IO]
+      vivinoCircuitBreaker <- VivinoGateway.circuitBreaker
     } yield {
       val scheduler          = Scheduler(transactor, schedulerConfig)
       val cacheRuntime       = CacheRuntime.scaffeine
@@ -54,6 +56,7 @@ object ConsoleApplication {
         rateLimiterRuntime,
         objectStoreRuntime,
         eventBusRuntime,
+        vivinoCircuitBreaker,
         IORuntime.global
       )
     }

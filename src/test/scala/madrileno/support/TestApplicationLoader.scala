@@ -52,11 +52,12 @@ trait TestApplicationLoader extends TestContainersForAll with TestMailpit { self
     // Finalizers discarded — pool and HTTP client lifetime is tied to the Testcontainers PG container.
     // Releasing in afterAll causes broken-pipe errors because ScalaTest's afterAll ordering
     // conflicts with TestContainersForAll's container lifecycle.
-    val transactor      = PgTransactor.resource(pgConfig).allocated.unsafeRunSync()._1
-    val httpClient      = HttpClientFs2Backend.resource[IO]().allocated.unsafeRunSync()._1
-    val config          = ConfigSource.default
-    val schedulerConfig = SchedulerConfig()
-    val scheduler       = Scheduler(transactor, schedulerConfig)
+    val transactor           = PgTransactor.resource(pgConfig).allocated.unsafeRunSync()._1
+    val httpClient           = HttpClientFs2Backend.resource[IO]().allocated.unsafeRunSync()._1
+    val vivinoCircuitBreaker = VivinoGateway.circuitBreaker.allocated.unsafeRunSync()._1
+    val config               = ConfigSource.default
+    val schedulerConfig      = SchedulerConfig()
+    val scheduler            = Scheduler(transactor, schedulerConfig)
     new ApplicationLoader(
       config,
       httpClient,
@@ -67,6 +68,7 @@ trait TestApplicationLoader extends TestContainersForAll with TestMailpit { self
       TestRateLimiterRuntime.unbounded,
       TestObjectStoreRuntime.inMemory,
       EventBusRuntime.local,
+      vivinoCircuitBreaker,
       IORuntime.global
     ) {
       override protected lazy val externalAuthVerifiers: AuthVerifiers =
