@@ -43,7 +43,7 @@ trait VivinoGateway {
 class VivinoGatewayLive(
   http: WebSocketStreamBackend[IO, Fs2Streams[IO]],
   cacheRuntime: CacheRuntime,
-  circuitBreaker: CircuitBreaker[IO]
+  circuitBreaker: IO[CircuitBreaker[IO]]
 )(using TelemetryContext)
     extends VivinoGateway with LoggingSupport {
   import VivinoGateway.*
