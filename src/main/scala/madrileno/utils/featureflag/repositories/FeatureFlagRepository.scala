@@ -22,9 +22,9 @@ private[repositories] final case class FeatureFlagRow(
   clientExposed: Boolean,
   createdAt: Instant,
   updatedAt: Instant) {
-  def toFeatureFlag: Either[String, FeatureFlag] =
+  def toFeatureFlag(rules: List[Rule]): Either[String, FeatureFlag] =
     FlagVariant.fromJson(variantType, defaultValue).map { variant =>
-      this.into[FeatureFlag].withFieldConst(_.defaultValue, variant).transform
+      this.into[FeatureFlag].withFieldConst(_.defaultValue, variant).withFieldConst(_.rules, rules).transform
     }
 }
 
@@ -57,15 +57,20 @@ private[repositories] final case class FeatureFlagRowFilter(id: SqlPredicate[Fla
     SqlFilterDerivation.filterFragment(this, (FeatureFlagRowTable.id, FeatureFlagRowTable.key))
 }
 
-class FeatureFlagRepository {
+class FeatureFlagRepository(ruleRepository: RuleRepository, segmentRepository: SegmentRepository) {
   def findByKey(key: FlagKey): DB[Option[FeatureFlag]] =
     repository.findOneByFilter(FeatureFlagRowFilter(key = p.equal(key))).flatMap {
       case None => IO.pure(None)
       case Some(row) =>
-        row.toFeatureFlag match {
-          case Right(flag) => IO.pure(Some(flag))
-          case Left(err)   => IO.raiseError(new IllegalStateException(s"Invalid feature_flag row for key=$key: $err"))
-        }
+        for {
+          rawRules <- ruleRepository.findByFlagId(row.id)
+          segments <- segmentRepository.findAll
+          flag <- row.toFeatureFlag(SegmentExpansion.expand(rawRules, segments)) match {
+                    case Right(f) => IO.pure(Option(f))
+                    case Left(err) =>
+                      IO.raiseError[Option[FeatureFlag]](new IllegalStateException(s"Invalid feature_flag row for key=$key: $err"))
+                  }
+        } yield flag
     }
 
   def save(flag: FeatureFlag): DB[Unit] =

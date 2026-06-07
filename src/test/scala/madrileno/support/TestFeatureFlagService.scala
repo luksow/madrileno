@@ -10,6 +10,8 @@ class TestFeatureFlagService private (values: Map[FlagKey, FlagVariant]) extends
   def withFlag(key: FlagKey, value: FlagVariant): TestFeatureFlagService    = new TestFeatureFlagService(values + (key -> value))
   def withFlags(overrides: (FlagKey, FlagVariant)*): TestFeatureFlagService = new TestFeatureFlagService(values ++ overrides.toMap)
 
+  override def saveFlag(flag: FeatureFlag): IO[Unit] = IO.unit
+
   override def evaluator(ctx: EvaluationContext): FlagEvaluator = new FlagEvaluator {
     private def evalDetail[T](
       key: FlagKey,

@@ -1,0 +1,55 @@
+package madrileno.utils.featureflag.repositories
+
+import io.scalaland.chimney.dsl.*
+import madrileno.utils.db.dsl.*
+import madrileno.utils.db.transactor.DB
+import madrileno.utils.featureflag.domain.*
+import skunk.*
+import skunk.circe.codec.all.*
+import skunk.codec.all.*
+
+import java.time.Instant
+
+private[repositories] final case class SegmentRow(
+  id: SegmentId,
+  name: SegmentName,
+  description: FlagDescription,
+  conditions: List[RuleCondition],
+  createdAt: Instant,
+  updatedAt: Instant) {
+  def toSegment: Segment = this.into[Segment].transform
+}
+
+private[repositories] object SegmentRow {
+  def apply(segment: Segment): SegmentRow = segment.into[SegmentRow].transform
+}
+
+private[repositories] object SegmentRowTable extends Table[SegmentRow]("feature_flag_segment") with IdTable[SegmentRow, SegmentId] {
+  override val id: Column[SegmentId]          = column("id", uuid.as[SegmentId])
+  val name: Column[SegmentName]               = column("name", text.as[SegmentName])
+  val description: Column[FlagDescription]    = column("description", text.as[FlagDescription])
+  val conditions: Column[List[RuleCondition]] = column("conditions", jsonb[List[RuleCondition]])
+  val createdAt: Column[Instant]              = column("created_at", timestamptz.asInstant)
+  val updatedAt: Column[Instant]              = column("updated_at", timestamptz.asInstant)
+
+  def mapping: (List[Column[?]], Codec[SegmentRow]) =
+    (id, name, description, conditions, createdAt, updatedAt)
+}
+
+class SegmentRepository {
+  def findAll: DB[List[Segment]] =
+    repository.findByFilter(SegmentRowFilter()).map(_.map(_.toSegment))
+
+  def save(segment: Segment): DB[Unit] =
+    repository.create(SegmentRow(segment)).void
+
+  private val repository: IdRepository[SegmentRow, SegmentId] & FilteringRepository[SegmentRow, SegmentRowFilter] =
+    new IdRepository[SegmentRow, SegmentId](_.id) with FilteringRepository[SegmentRow, SegmentRowFilter] {
+      override val table: SegmentRowTable.type = SegmentRowTable
+    }
+}
+
+private[repositories] final case class SegmentRowFilter(id: SqlPredicate[SegmentId] = p.any) extends SqlFilter {
+  override def filterFragment: AppliedFragment =
+    SqlFilterDerivation.filterFragment(this, Tuple1(SegmentRowTable.id))
+}

@@ -1,9 +1,12 @@
 package madrileno.utils.featureflag.services
 
 import cats.effect.IO
+import cats.effect.std.Supervisor
 import io.circe.Json
+import madrileno.utils.async.Memoize
 import madrileno.utils.cache.{Cache, CacheRuntime}
 import madrileno.utils.db.transactor.Transactor
+import madrileno.utils.events.EventBus
 import madrileno.utils.featureflag.domain.*
 import madrileno.utils.featureflag.repositories.FeatureFlagRepository
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
@@ -12,6 +15,7 @@ import scala.concurrent.duration.*
 
 trait FeatureFlagService {
   def evaluator(ctx: EvaluationContext): FlagEvaluator
+  def saveFlag(flag: FeatureFlag): IO[Unit]
 
   final def evaluateBoolean(key: FlagKey, default: Boolean)(using ctx: EvaluationContext): IO[Boolean] = evaluator(ctx).boolean(key, default)
   final def evaluateString(key: FlagKey, default: String)(using ctx: EvaluationContext): IO[String]    = evaluator(ctx).string(key, default)
@@ -50,19 +54,34 @@ object FlagEvaluator {
 class FeatureFlagServiceLive(
   repository: FeatureFlagRepository,
   cacheRuntime: CacheRuntime,
-  transactor: Transactor
-)(using TelemetryContext)
+  transactor: Transactor,
+  eventBus: EventBus[FeatureFlagEvent]
+)(using
+  TelemetryContext,
+  Supervisor[IO])
     extends FeatureFlagService
     with LoggingSupport {
 
   private val flagCache: Cache[FlagKey, Option[FeatureFlag]] =
     cacheRuntime.expiring[FlagKey, Option[FeatureFlag]](expireAfterWrite = 60.seconds, maxSize = 10_000)
 
+  private val invalidationLoop: IO[Unit] =
+    eventBus.subscribe
+      .evalTap { case FeatureFlagEvent.Invalidated(key) => flagCache.invalidate(key) }
+      .compile
+      .drain
+
+  private val invalidationStarted: IO[Unit] =
+    Memoize(summon[Supervisor[IO]].supervise(invalidationLoop).void)
+
   private def fetch(key: FlagKey): IO[Option[FeatureFlag]] =
-    flagCache.get(key).flatMap {
+    invalidationStarted *> flagCache.get(key).flatMap {
       case Some(cached) => IO.pure(cached)
       case None         => transactor.inSession(repository.findByKey(key)).flatTap(flagCache.put(key, _))
     }
+
+  override def saveFlag(flag: FeatureFlag): IO[Unit] =
+    transactor.inSession(repository.save(flag)) *> eventBus.publish(FeatureFlagEvent.Invalidated(flag.key))
 
   private def evalDetail[T](
     key: FlagKey,
