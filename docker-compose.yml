@@ -69,7 +69,42 @@ services:
     entrypoint: >
       sh -c "mc alias set local http://minio:9000 minioadmin minioadmin && mc mb --ignore-existing local/madrileno"
 
+  unleash-postgres:
+    image: postgres:latest
+    container_name: madrileno-unleash-postgres
+    environment:
+      POSTGRES_DB: unleash
+      POSTGRES_USER: unleash
+      POSTGRES_PASSWORD: unleash
+    volumes:
+      - madrileno-unleash-postgres:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U unleash -d unleash"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  unleash:
+    image: unleashorg/unleash-server:latest
+    container_name: madrileno-unleash
+    depends_on:
+      unleash-postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_HOST: unleash-postgres
+      DATABASE_PORT: 5432
+      DATABASE_NAME: unleash
+      DATABASE_USERNAME: unleash
+      DATABASE_PASSWORD: unleash
+      DATABASE_SSL: "false"
+      LOG_LEVEL: warn
+      INIT_ADMIN_API_TOKENS: "*:*.unleash-insecure-admin-token"
+      INIT_CLIENT_API_TOKENS: "default:development.unleash-insecure-api-token"
+    ports:
+      - "127.0.0.1:54242:4242"  # UI + API at http://localhost:54242  (default admin: admin / unleash4all)
+
 volumes:
   madrileno-postgres:
   madrileno-openobserve:
   madrileno-minio:
+  madrileno-unleash-postgres:

@@ -29,6 +29,7 @@ libraryDependencies ++= {
   val cron4sV            = "0.8.2"
   val catsRetryV         = "4.0.0"
   val circuitV           = "0.5.1"
+  val unleashV           = "10.0.0"
   val jakartaMailV       = "2.1.3"
   val angusMailV         = "2.0.3"
   val scalatagsV         = "0.13.1"
@@ -82,6 +83,7 @@ libraryDependencies ++= {
     "com.github.alonsodomin.cron4s"   %% "cron4s-core"                               % cron4sV,
     "com.github.cb372"                %% "cats-retry"                                % catsRetryV,
     "io.chrisdavenport"               %% "circuit"                                   % circuitV,
+    "io.getunleash"                    % "unleash-client-java"                       % unleashV,
     "jakarta.mail"                     % "jakarta.mail-api"                          % jakartaMailV,
     "org.eclipse.angus"                % "angus-mail"                                % angusMailV         % Runtime,
     "com.lihaoyi"                     %% "scalatags"                                 % scalatagsV,
