@@ -89,7 +89,7 @@ class FeatureFlagServiceLive(
       .handleErrorWith(t =>
         logger
           .warn(t)(s"feature-flag eval failed for $key, using default")
-          .as(EvaluationDetail(default, EvaluationReason.Error, Option(t.getMessage)))
+          .as(EvaluationDetail(default, EvaluationReason.Error, Option(t.getClass.getSimpleName)))
       )
 
   override def evaluator(ctx: EvaluationContext): FlagEvaluator = new FlagEvaluator {
