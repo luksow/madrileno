@@ -32,10 +32,11 @@ object VivinoGateway {
     limitRetries[IO](2).join(exponentialBackoff[IO](200.millis))
 
   private[gateways] def isTransient(t: Throwable): Boolean = t match {
-    case _: TimeoutException    => true
-    case _: SttpClientException => true
-    case _: IOException         => true
-    case _                      => false
+    case _: TimeoutException                                 => true
+    case _: SttpClientException.ResponseHandlingException[?] => false
+    case _: SttpClientException                              => true
+    case _: IOException                                      => true
+    case _                                                   => false
   }
 
   private[gateways] def pickBestMatch(

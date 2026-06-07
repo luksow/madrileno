@@ -57,6 +57,19 @@ class VivinoGatewayResilienceSpec extends AsyncWordSpec with AsyncIOSpec with Ma
       }
     }
 
+    "not retry on parse errors (response decoded as Left[ResponseException])" in {
+      for {
+        callCount <- Ref.of[IO, Int](0)
+        backend = backendFromBehavior(callCount.update(_ + 1).as("not valid json {"))
+        cb     <- CircuitBreaker.of[IO](maxFailures = 99, resetTimeout = 1.minute)
+        result <- newGateway(backend, cb).findRating(wine, vintage)
+        n      <- callCount.get
+      } yield {
+        result shouldBe None
+        n shouldBe 1
+      }
+    }
+
     "give up and return None after retries are exhausted" in {
       for {
         callCount <- Ref.of[IO, Int](0)
