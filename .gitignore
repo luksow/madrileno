@@ -3,6 +3,8 @@
 !.scalafmt.conf
 !.scalafix.conf
 !.env.sample
+!.github
+!.github/**
 
 *.class
 *.log

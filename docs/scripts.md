@@ -192,9 +192,23 @@ The checks:
 - Doesn't check OS-level prereqs (sbt installed, JDK version, etc.). Those would have failed earlier (you couldn't have run this script). If you want a full bootstrap check, that's a different scope.
 - Doesn't follow `S3_ENDPOINT` / `OTEL_EXPORTER_OTLP_*_ENDPOINT` from `.env`. The MinIO / OpenObserve port checks use the host ports from `docker-compose.yml` (59000 / 55080). Doctor's scope is "is the local dev stack up", not "is whatever the app is configured to talk to up". If you've pointed the app at remote MinIO / OpenObserve, the local doctor checks are still meaningful for the dev stack itself; if you've also customised the compose port mappings, doctor needs a matching tweak.
 
+## Template-internal CI workflows
+
+The repo ships three GitHub Actions. `.github/workflows/scala.yml` is the project's own CI (format check, scalafix, compile, test) — kept on init like any other project file. The other two are **template-internal**: they validate template content and are deleted by `init-project.scala` (along with `scripts/check-links.scala`, which only the link-check workflow uses):
+
+- **`.github/workflows/link-check.yml`** — runs `scripts/check-links.scala` on PRs touching markdown. The script walks every `.md`, extracts `[text](target)` links, verifies internal targets exist (relative paths + `#anchor` heading slugs). Externals + `mailto:` / `tel:` are skipped. Code spans + fenced blocks are stripped first so Scala signatures inside code samples don't trip the regex.
+- **`.github/workflows/script-tests.yml`** — four jobs:
+  - `compile-scripts` — `scala-cli compile` every `scripts/*.scala`, catches dep/import drift in the scripts themselves
+  - `run-doctor` — smoke-runs `scripts/doctor.scala`, accepts exit `0` or `1` (CI has no dev stack so doctor's "checks failed" exit is expected; anything else is a real crash)
+  - `test-init-project` — `git clone`s the repo into a temp dir, runs `./scripts/init-project.scala wine-cellar`, asserts the rename / auction-drop / workflow-cleanup happened, then `sbt compile`s
+  - `test-scaffold-module` — same shape, runs `./scripts/scaffold-module.scala Wine wines`, asserts generated files exist + `WineModule` is wired into `ApplicationLoader`, then `sbt compile`s
+
+All workflows verify template content (our docs, our scripts). A forked project that wants the same auto-checks can re-add a workflow themselves; `doctor.scala` and the other scripts stay on init as user-facing tools. `check-links.scala` goes — without our `docs/` tree it has nothing meaningful to walk.
+
 ## File layout
 
 - `init-project.scala` — standalone, no companion files
 - `scaffold-module.scala` + `templates/module/` — generator + templates
 - `dev-console.scala` — wrapper. The REPL predef is embedded as a string inside the wrapper (top of the file), written to a temp file at launch and passed to scala-cli's REPL. One file, at the cost of no syntax highlighting on the predef section in most editors.
 - `doctor.scala` — standalone, no companion files
+- `check-links.scala` — standalone; template-only, deleted on init

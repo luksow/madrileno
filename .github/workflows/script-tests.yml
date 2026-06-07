@@ -1,0 +1,104 @@
+# Template-internal CI helper — smoke-tests the scala-cli scripts under scripts/.
+# `scripts/init-project.scala` deletes this workflow on init.
+name: Script tests
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - "scripts/**"
+      - ".github/workflows/script-tests.yml"
+  push:
+    branches: [ "main" ]
+    paths:
+      - "scripts/**"
+
+jobs:
+  compile-scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: VirtusLab/scala-cli-setup@d320e01a605bf27128a5657575382668f83ef34e # v1
+      - name: Compile every scripts/*.scala
+        run: |
+          set -e
+          for f in scripts/*.scala; do
+            echo "==> compiling $f"
+            scala-cli compile "$f"
+          done
+
+  run-doctor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: VirtusLab/scala-cli-setup@d320e01a605bf27128a5657575382668f83ef34e # v1
+      # doctor exits 0 when all checks pass and 1 when at least one fails — both are valid
+      # "ran cleanly" signals. CI has no docker-compose stack so exit 1 is expected. Anything
+      # else (compile error, NPE, etc.) is a real failure.
+      - name: Run doctor (smoke; exit 0 or 1)
+        run: |
+          set +e
+          ./scripts/doctor.scala
+          rc=$?
+          set -e
+          if [ $rc -ne 0 ] && [ $rc -ne 1 ]; then
+            echo "doctor.scala exited with unexpected code $rc"
+            exit 1
+          fi
+
+  test-init-project:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'sbt'
+      - uses: sbt/setup-sbt@v1
+      - uses: VirtusLab/scala-cli-setup@d320e01a605bf27128a5657575382668f83ef34e # v1
+      - name: Run init-project in a fresh copy and verify compile
+        run: |
+          set -e
+          DEST=/tmp/init-test
+          # Clone-with-git so init-project's `git rev-parse HEAD` works (the MCP-ref pin needs the sha).
+          git clone --depth 1 . "$DEST"
+          # init-project reads `git remote get-url origin` to set `.madrileno-ref`'s `repo=`. A local
+          # clone-origin would write an unreachable path; point it at the upstream GitHub URL so the
+          # test exercises the same shape real users hit.
+          git -C "$DEST" remote set-url origin "https://github.com/$GITHUB_REPOSITORY.git"
+          cd "$DEST"
+          ./scripts/init-project.scala wine-cellar
+          test -d src/main/scala/winecellar || { echo "renamed package dir not found"; exit 1; }
+          test ! -d src/main/scala/madrileno || { echo "old package dir still present"; exit 1; }
+          test -f .madrileno-ref || { echo ".madrileno-ref not written"; exit 1; }
+          test ! -f .github/workflows/link-check.yml || { echo "link-check workflow not deleted"; exit 1; }
+          test ! -f .github/workflows/script-tests.yml || { echo "script-tests workflow not deleted"; exit 1; }
+          test ! -f scripts/check-links.scala || { echo "check-links.scala not deleted"; exit 1; }
+          sbt compile
+
+  test-scaffold-module:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'sbt'
+      - uses: sbt/setup-sbt@v1
+      - uses: VirtusLab/scala-cli-setup@d320e01a605bf27128a5657575382668f83ef34e # v1
+      - name: Run scaffold-module in a fresh copy and verify compile
+        run: |
+          set -e
+          DEST=/tmp/scaffold-test
+          git clone --depth 1 . "$DEST"
+          cd "$DEST"
+          ./scripts/scaffold-module.scala Wine wines
+          test -d src/main/scala/madrileno/wine || { echo "scaffolded module dir not found"; exit 1; }
+          test -d src/test/scala/madrileno/wine || { echo "scaffolded test dir not found"; exit 1; }
+          ls src/main/resources/db/migration/ | grep -q wine || { echo "wine migration not generated"; exit 1; }
+          grep -q "with WineModule" src/main/scala/madrileno/main/ApplicationLoader.scala || { echo "WineModule not wired into ApplicationLoader"; exit 1; }
+          sbt compile
