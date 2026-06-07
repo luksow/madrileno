@@ -8,10 +8,6 @@ import java.util.concurrent.CancellationException
 import scala.concurrent.duration.{Duration, DurationInt, FiniteDuration}
 
 trait CircuitBreakerRuntime {
-
-  /** Returns a memoized handle: the breaker is allocated on first use and shared across all subsequent flatMaps. Modules expose this as a `lazy val`
-    * per gateway so wiring stays synchronous while the actual `Ref` allocation happens inside IO — no `unsafeRunSync` in business code.
-    */
   def create(
     maxFailures: Int,
     resetTimeout: FiniteDuration,
@@ -32,7 +28,6 @@ object CircuitBreakerRuntime {
       memoize(CircuitBreaker.of[IO](maxFailures, resetTimeout, backoff, maxResetTimeout))
   }
 
-  // Mirrors the pattern in EventBusRuntime — synchronous wiring with IO-allocated state.
   private def memoize[A](init: IO[A]): IO[A] = {
     val ref = Ref.unsafe[IO, Option[Deferred[IO, Either[Throwable, A]]]](None)
     Deferred[IO, Either[Throwable, A]].flatMap { fresh =>
