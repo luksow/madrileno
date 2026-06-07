@@ -132,7 +132,9 @@ class VivinoGatewayLive(
                 errorHandler = (e: Throwable, details: RetryDetails) =>
                   if (isTransient(e))
                     logger
-                      .warn(e)(s"Vivino lookup transient failure (retry ${details.retriesSoFar + 1}) for $wineName ${vintage.map(_.unwrap)}")
+                      .debug(
+                        s"Vivino lookup transient failure (retry ${details.retriesSoFar + 1}) for $wineName ${vintage.map(_.unwrap)}: ${e.getClass.getSimpleName}"
+                      )
                       .as(HandlerDecision.Continue)
                   else
                     IO.pure(HandlerDecision.Stop)
@@ -140,7 +142,12 @@ class VivinoGatewayLive(
             )
           )
           .flatTap(result => cache.put((wineName, vintage), result))
-          .handleErrorWith(t => logger.warn(t)(s"Vivino lookup failed for $wineName ${vintage.map(_.unwrap)}").as(None))
+          .handleErrorWith {
+            case _: CircuitBreaker.RejectedExecution =>
+              logger.debug(s"Vivino circuit breaker open, fast-failing $wineName ${vintage.map(_.unwrap)}").as(None)
+            case t =>
+              logger.warn(t)(s"Vivino lookup failed for $wineName ${vintage.map(_.unwrap)}").as(None)
+          }
     }
 
   private def fetch(wineName: WineName, vintage: Option[Vintage]): IO[Option[VivinoRating]] = {

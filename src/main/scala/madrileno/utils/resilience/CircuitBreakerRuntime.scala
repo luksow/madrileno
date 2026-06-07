@@ -1,10 +1,9 @@
 package madrileno.utils.resilience
 
-import cats.effect.kernel.Deferred
-import cats.effect.{IO, Ref}
+import cats.effect.IO
 import io.chrisdavenport.circuit.{Backoff, CircuitBreaker}
+import madrileno.utils.async.Memoize
 
-import java.util.concurrent.CancellationException
 import scala.concurrent.duration.{Duration, DurationInt, FiniteDuration}
 
 trait CircuitBreakerRuntime {
@@ -25,29 +24,6 @@ object CircuitBreakerRuntime {
       backoff: FiniteDuration => FiniteDuration,
       maxResetTimeout: Duration
     ): IO[CircuitBreaker[IO]] =
-      memoize(CircuitBreaker.of[IO](maxFailures, resetTimeout, backoff, maxResetTimeout))
-  }
-
-  private def memoize[A](init: IO[A]): IO[A] = {
-    val ref = Ref.unsafe[IO, Option[Deferred[IO, Either[Throwable, A]]]](None)
-    Deferred[IO, Either[Throwable, A]].flatMap { fresh =>
-      IO.uncancelable { poll =>
-        ref.modify {
-          case Some(d) => (Some(d), poll(d.get).rethrow)
-          case None =>
-            val cancellation = new CancellationException("memoize: init cancelled")
-            val attempt =
-              poll(init).attempt
-                .flatTap(fresh.complete(_).void)
-                .flatTap {
-                  case Left(_)  => ref.set(None)
-                  case Right(_) => IO.unit
-                }
-                .onCancel(ref.set(None) *> fresh.complete(Left(cancellation)).void)
-                .rethrow
-            (Some(fresh), attempt)
-        }.flatten
-      }
-    }
+      Memoize(CircuitBreaker.of[IO](maxFailures, resetTimeout, backoff, maxResetTimeout))
   }
 }
