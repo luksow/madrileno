@@ -5,11 +5,11 @@ import cats.effect.std.Supervisor
 import cats.effect.{IO, Ref, Resource}
 import fs2.Stream
 import fs2.concurrent.Topic
+import madrileno.utils.async.Memoize
 import madrileno.utils.db.transactor.Transactor
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
 import skunk.data.Identifier
 
-import java.util.concurrent.CancellationException
 import scala.concurrent.duration.*
 
 trait EventBusRuntime {
@@ -26,31 +26,8 @@ object EventBusRuntime {
     override def topic[E: EventCodec](name: String, maxQueued: Int): EventBus[E] = new PostgresEventBus[E](transactor, name, maxQueued)
   }
 
-  private def memoize[A](init: IO[A]): IO[A] = {
-    val ref = Ref.unsafe[IO, Option[Deferred[IO, Either[Throwable, A]]]](None)
-    Deferred[IO, Either[Throwable, A]].flatMap { fresh =>
-      IO.uncancelable { poll =>
-        ref.modify {
-          case Some(d) => (Some(d), poll(d.get).rethrow)
-          case None =>
-            val cancellation = new CancellationException("memoize: init cancelled")
-            val attempt =
-              poll(init).attempt
-                .flatTap(fresh.complete(_).void)
-                .flatTap {
-                  case Left(_)  => ref.set(None)
-                  case Right(_) => IO.unit
-                }
-                .onCancel(ref.set(None) *> fresh.complete(Left(cancellation)).void)
-                .rethrow
-            (Some(fresh), attempt)
-        }.flatten
-      }
-    }
-  }
-
   private class LocalEventBus[E](maxQueued: Int) extends EventBus[E] {
-    private val topic: IO[Topic[IO, E]] = memoize(Topic[IO, E])
+    private val topic: IO[Topic[IO, E]] = Memoize(Topic[IO, E])
 
     override def publish(event: E): IO[Unit]                 = topic.flatMap(_.publish1(event)).void
     override def subscribe: Stream[IO, E]                    = Stream.eval(topic).flatMap(_.subscribe(maxQueued))
@@ -74,7 +51,7 @@ object EventBusRuntime {
     private val listenerReady: Ref[IO, Deferred[IO, Unit]] =
       Ref.unsafe(Deferred.unsafe[IO, Unit])
 
-    private val topic: IO[Topic[IO, E]] = memoize {
+    private val topic: IO[Topic[IO, E]] = Memoize {
       Topic[IO, E].flatTap(t => supervisor.supervise(listenLoop(t).foreverM))
     }
 

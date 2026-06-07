@@ -27,7 +27,8 @@ A typical usage, distilled from `VivinoGatewayLive` (the real method also wraps 
 ```scala
 class VivinoGatewayLive(
   http: WebSocketStreamBackend[IO, Fs2Streams[IO]],
-  cacheRuntime: CacheRuntime
+  cacheRuntime: CacheRuntime,
+  circuitBreaker: IO[CircuitBreaker[IO]]
 )(using TelemetryContext) extends VivinoGateway with LoggingSupport {
 
   private val cache = cacheRuntime.expiring[(WineName, Option[Vintage]), Option[VivinoRating]](

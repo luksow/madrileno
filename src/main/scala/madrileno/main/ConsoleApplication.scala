@@ -10,6 +10,7 @@ import madrileno.utils.db.transactor.{PgConfig, PgTransactor}
 import madrileno.utils.events.EventBusRuntime
 import madrileno.utils.http.RateLimiterRuntime
 import madrileno.utils.observability.TelemetryContext
+import madrileno.utils.resilience.CircuitBreakerRuntime
 import madrileno.utils.storage.{ObjectStoreRuntime, StorageConfig}
 import madrileno.utils.task.{Scheduler, SchedulerConfig}
 import pureconfig.ConfigSource
@@ -40,10 +41,11 @@ object ConsoleApplication {
       objectStoreRuntime   <- ObjectStoreRuntime.s3(storageConfig)
       given Supervisor[IO] <- Supervisor[IO]
     } yield {
-      val scheduler          = Scheduler(transactor, schedulerConfig)
-      val cacheRuntime       = CacheRuntime.scaffeine
-      val rateLimiterRuntime = RateLimiterRuntime.scaffeine()
-      val eventBusRuntime    = EventBusRuntime.postgres(transactor)
+      val scheduler             = Scheduler(transactor, schedulerConfig)
+      val cacheRuntime          = CacheRuntime.scaffeine
+      val rateLimiterRuntime    = RateLimiterRuntime.scaffeine()
+      val eventBusRuntime       = EventBusRuntime.postgres(transactor)
+      val circuitBreakerRuntime = CircuitBreakerRuntime.default
       ApplicationLoader(
         config,
         httpClient,
@@ -54,6 +56,7 @@ object ConsoleApplication {
         rateLimiterRuntime,
         objectStoreRuntime,
         eventBusRuntime,
+        circuitBreakerRuntime,
         IORuntime.global
       )
     }

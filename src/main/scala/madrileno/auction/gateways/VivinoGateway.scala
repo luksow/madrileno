@@ -1,18 +1,23 @@
 package madrileno.auction.gateways
 
 import cats.effect.IO
+import io.chrisdavenport.circuit.CircuitBreaker
 import io.circe.Encoder
 import io.circe.derivation.{Configuration, ConfiguredCodec}
 import io.circe.syntax.*
 import madrileno.auction.domain.*
 import madrileno.utils.cache.CacheRuntime
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
+import retry.RetryPolicies.*
+import retry.{HandlerDecision, RetryDetails, RetryPolicy, retryingOnErrors}
 import sttp.capabilities.fs2.Fs2Streams
 import sttp.client4.circe.*
-import sttp.client4.{UriContext, WebSocketStreamBackend, basicRequest}
+import sttp.client4.{SttpClientException, UriContext, WebSocketStreamBackend, basicRequest}
 import sttp.model.MediaType
 
+import java.io.IOException
 import java.text.Normalizer
+import java.util.concurrent.TimeoutException
 import scala.annotation.tailrec
 import scala.concurrent.duration.*
 
@@ -22,6 +27,17 @@ trait VivinoGateway {
 
 object VivinoGateway {
   private[gateways] val similarityThreshold = 0.85
+
+  private[gateways] val retryPolicy: RetryPolicy[IO, Any] =
+    limitRetries[IO](2).join(exponentialBackoff[IO](200.millis))
+
+  private[gateways] def isTransient(t: Throwable): Boolean = t match {
+    case _: TimeoutException                                 => true
+    case _: SttpClientException.ResponseHandlingException[?] => false
+    case _: SttpClientException                              => true
+    case _: IOException                                      => true
+    case _                                                   => false
+  }
 
   private[gateways] def pickBestMatch(
     wineName: WineName,
@@ -88,7 +104,11 @@ object VivinoGateway {
       derives ConfiguredCodec
 }
 
-class VivinoGatewayLive(http: WebSocketStreamBackend[IO, Fs2Streams[IO]], cacheRuntime: CacheRuntime)(using TelemetryContext)
+class VivinoGatewayLive(
+  http: WebSocketStreamBackend[IO, Fs2Streams[IO]],
+  cacheRuntime: CacheRuntime,
+  circuitBreaker: IO[CircuitBreaker[IO]]
+)(using TelemetryContext)
     extends VivinoGateway
     with LoggingSupport {
   import VivinoGateway.*
@@ -104,10 +124,31 @@ class VivinoGatewayLive(http: WebSocketStreamBackend[IO, Fs2Streams[IO]], cacheR
     cache.get((wineName, vintage)).flatMap {
       case Some(cached) => IO.pure(cached)
       case None =>
-        fetch(wineName, vintage)
-          .timeout(requestTimeout)
+        val singleAttempt = fetch(wineName, vintage).timeout(requestTimeout)
+        circuitBreaker
+          .flatMap(cb =>
+            cb.protect(
+              retryingOnErrors(singleAttempt)(
+                policy = retryPolicy,
+                errorHandler = (e: Throwable, details: RetryDetails) =>
+                  if (isTransient(e))
+                    logger
+                      .debug(
+                        s"Vivino lookup transient failure (attempt ${details.retriesSoFar + 1}) for $wineName ${vintage.map(_.unwrap)}: ${e.getClass.getSimpleName}"
+                      )
+                      .as(HandlerDecision.Continue)
+                  else
+                    IO.pure(HandlerDecision.Stop)
+              )
+            )
+          )
           .flatTap(result => cache.put((wineName, vintage), result))
-          .handleErrorWith(t => logger.warn(t)(s"Vivino lookup failed for $wineName ${vintage.map(_.unwrap)}").as(None))
+          .handleErrorWith {
+            case _: CircuitBreaker.RejectedExecution =>
+              logger.debug(s"Vivino circuit breaker open, fast-failing $wineName ${vintage.map(_.unwrap)}").as(None)
+            case t =>
+              logger.warn(t)(s"Vivino lookup failed for $wineName ${vintage.map(_.unwrap)}").as(None)
+          }
     }
 
   private def fetch(wineName: WineName, vintage: Option[Vintage]): IO[Option[VivinoRating]] = {

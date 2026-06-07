@@ -21,7 +21,7 @@ Reading order if you're tracing a request: Module first (where the route is defi
 
 ## Main
 
-`Main` is one big `Resource[IO, _]` `for`-comprehension. It loads config, starts OpenTelemetry, opens the database connection pool, builds the HTTP client, and constructs every `Runtime` (cache, rate limiter, object store, event bus). At the end it constructs `ApplicationLoader` with all of those, hands the loader's task lists to the scheduler, wraps the loader's HTTP routes in middleware (metrics, request size limits, tracing), and binds the result to an Ember server.
+`Main` is one big `Resource[IO, _]` `for`-comprehension. It loads config, starts OpenTelemetry, opens the database connection pool, builds the HTTP client, and constructs every `Runtime` (cache, rate limiter, object store, event bus, circuit breaker). At the end it constructs `ApplicationLoader` with all of those, hands the loader's task lists to the scheduler, wraps the loader's HTTP routes in middleware (metrics, request size limits, tracing), and binds the result to an Ember server.
 
 What's important about `Main`:
 
@@ -57,7 +57,7 @@ Adding a new provider type is a small change: define the trait, give it an `Appl
 
 ## Runtimes
 
-Runtimes are the swap points: `CacheRuntime`, `RateLimiterRuntime`, `ObjectStoreRuntime`, `EventBusRuntime`. Each is a small interface with concrete factory methods on its companion object — `local`, `postgres`, `s3`, `disk`, `inMemory` — that build the underlying implementation.
+Runtimes are the swap points: `CacheRuntime`, `RateLimiterRuntime`, `ObjectStoreRuntime`, `EventBusRuntime`, `CircuitBreakerRuntime`. Each is a small interface with concrete factory methods on its companion object — `local`, `postgres`, `s3`, `disk`, `inMemory`, `default` — that build the underlying implementation.
 
 Modules accept a runtime as an abstract `val` and use only the interface. Tests use `TestXxxRuntime` variants. Production picks whichever factory in `Main`. Replacing Caffeine with Redis is one factory change; the call sites stay still.
 

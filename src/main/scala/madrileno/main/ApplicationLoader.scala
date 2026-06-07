@@ -15,6 +15,7 @@ import madrileno.utils.http.{ApplicationRouteProvider, Handlers, RateLimiterRunt
 import madrileno.utils.mailer.{MailContext, MailPreviewProvider, MailPreviewRouter, Mailer, MailerConfig, SmtpSender}
 import madrileno.utils.observability.*
 import madrileno.utils.observability.admin.{ConfigAdminRouter, HeapdumpAdminRouter, LoggersAdminRouter, ThreaddumpAdminRouter}
+import madrileno.utils.resilience.CircuitBreakerRuntime
 import madrileno.utils.storage.{ObjectStore, ObjectStoreRuntime}
 import madrileno.utils.task.{ApplicationTaskProvider, OneTimeTask, SchedulerAdminRouter, SchedulerClient}
 import org.http4s.headers.`Content-Type`
@@ -73,6 +74,7 @@ class ApplicationLoader(
   val rateLimiterRuntime: RateLimiterRuntime,
   val objectStoreRuntime: ObjectStoreRuntime,
   val eventBusRuntime: EventBusRuntime,
+  val circuitBreakerRuntime: CircuitBreakerRuntime,
   val ioRuntime: IORuntime
 )(using TelemetryContext)
     extends ApplicationRouteProvider

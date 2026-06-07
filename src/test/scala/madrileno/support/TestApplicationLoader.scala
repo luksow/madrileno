@@ -13,6 +13,7 @@ import madrileno.utils.db.transactor.{PgConfig, PgTransactor}
 import madrileno.utils.events.EventBusRuntime
 import madrileno.utils.mailer.MailerConfig
 import madrileno.utils.observability.TelemetryContext
+import madrileno.utils.resilience.CircuitBreakerRuntime
 import madrileno.utils.task.{Scheduler, SchedulerConfig}
 import org.flywaydb.core.Flyway
 import org.scalatest.Suite
@@ -67,6 +68,7 @@ trait TestApplicationLoader extends TestContainersForAll with TestMailpit { self
       TestRateLimiterRuntime.unbounded,
       TestObjectStoreRuntime.inMemory,
       EventBusRuntime.local,
+      CircuitBreakerRuntime.default,
       IORuntime.global
     ) {
       override protected lazy val externalAuthVerifiers: AuthVerifiers =

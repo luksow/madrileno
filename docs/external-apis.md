@@ -1,6 +1,6 @@
 # External APIs
 
-External-API calls go through sttp's `WebSocketStreamBackend[IO, Fs2Streams[IO]]`, layered with logging, metrics, and tracing in `ApplicationLoader`. A "gateway" is a small class that wraps one external service behind a domain-shaped interface — caching, timeouts, and error mapping live in the gateway, not at call sites.
+External-API calls go through sttp's `WebSocketStreamBackend[IO, Fs2Streams[IO]]`, layered with logging, metrics, and tracing in `ApplicationLoader`. A "gateway" is a small class that wraps one external service behind a domain-shaped interface — caching, timeouts, error mapping, retries, and breaker protection live in the gateway, not at call sites.
 
 `VivinoGateway` is the worked example: looks up wine ratings from the Vivino-fronted Algolia index. Same shape applies to any third-party HTTP API.
 
@@ -42,7 +42,8 @@ trait VivinoGateway {
 
 class VivinoGatewayLive(
   http: WebSocketStreamBackend[IO, Fs2Streams[IO]],
-  cacheRuntime: CacheRuntime
+  cacheRuntime: CacheRuntime,
+  circuitBreaker: IO[CircuitBreaker[IO]]
 )(using TelemetryContext)
     extends VivinoGateway with LoggingSupport {
   import VivinoGateway.*
@@ -146,6 +147,113 @@ The gateway decides which of these are recoverable. `VivinoGateway` treats all t
 
 Don't catch `Throwable` at the call site. Either the gateway converts to a domain answer (`None`, `Either[ErrorADT, Result]`), or it raises a typed exception the caller must handle.
 
+## Retries and circuit breakers
+
+Outbound calls fail in two distinct ways:
+
+- **Transiently** — a dropped connection, a 30-second blip, a slow first call after a dep's cold-start. Retrying usually works.
+- **Sustained** — the dep is genuinely down for minutes. Retries make it worse: every failing request still consumes its full retry burst against the sick dep.
+
+`VivinoGateway` layers two libraries to cover both:
+
+- **[cats-retry](https://cb372.github.io/cats-retry/)** retries transient failures with exponential backoff.
+- **[davenverse/circuit](https://davenverse.github.io/circuit)** opens after sustained failures so subsequent calls fast-fail without touching the dep.
+
+The composition — circuit wraps retry — so each breaker outcome reflects the full retry burst, not individual attempts. The breaker arrives as `IO[CircuitBreaker[IO]]` (the runtime memoizes the allocation), so the gateway `flatMap`s once to get the live instance:
+
+```scala
+val singleAttempt = fetch(wineName, vintage).timeout(requestTimeout)
+circuitBreaker
+  .flatMap(cb =>
+    cb.protect(
+      retryingOnErrors(singleAttempt)(
+        policy = retryPolicy,
+        errorHandler = (e, details) =>
+          if (isTransient(e))
+            logger.debug(s"transient (attempt ${details.retriesSoFar + 1}): ${e.getClass.getSimpleName}").as(HandlerDecision.Continue)
+          else
+            IO.pure(HandlerDecision.Stop)
+      )
+    )
+  )
+  .flatTap(result => cache.put((wineName, vintage), result))
+  .handleErrorWith {
+    case _: CircuitBreaker.RejectedExecution =>
+      logger.debug("circuit open, fast-failing").as(None)
+    case t                                   =>
+      logger.warn(t)("lookup failed").as(None)
+  }
+```
+
+Five things to notice:
+
+- **Per-attempt timeout.** `singleAttempt = fetch.timeout(requestTimeout)` — each retry attempt gets its own 3-second budget. If timeout sat outside the retry, retries would race a single shared deadline.
+- **Retry inside, breaker outside.** `cb.protect(retryingOnErrors(...))` — retry exhausts first; the breaker only sees the *final* outcome of the burst. A "down" dep produces N retries per request before incrementing the breaker. The breaker opens after sustained failure *across* multiple full requests.
+- **Error classifier decides what to retry.** `isTransient` returns true for `TimeoutException` (from `IO.timeout`), sttp transport errors (`SttpClientException.ConnectException` / `ReadException` and friends), and `IOException`. Crucially it returns false for `SttpClientException.ResponseHandlingException` — sttp's wrapper around `ResponseException` — so parse failures and non-2xx responses don't get retried even though they're technically `SttpClientException`s. Same for any `ResponseException` raised directly from `.response(asJson[T])`'s `Left` branch (won't match any case). `CircuitBreaker.RejectedExecution` never reaches the classifier: when the breaker is open, control never enters the retry block.
+- **`handleErrorWith` outermost.** Once retries are exhausted *or* the breaker is open, the error propagates out — `handleErrorWith` folds it into the domain answer (`None`). This is the gateway's fail-soft contract; a payment gateway would raise a typed error here instead.
+- **Successful results are cached, failures aren't.** `.flatTap(cache.put)` runs only on the success path. Errors don't poison the cache.
+
+### Retry policy
+
+```scala
+val retryPolicy: RetryPolicy[IO, Any] =
+  limitRetries[IO](2).join(exponentialBackoff[IO](200.millis))
+```
+
+- `limitRetries(2)` caps the burst at 2 retries (3 attempts total).
+- `exponentialBackoff(200.millis)` waits 200ms, then 400ms, then 800ms… — predictable backoff that doesn't synchronize retry storms across callers.
+- `.join` combines them: stop at whichever limit fires first.
+
+See [cats-retry's policy combinators](https://cb372.github.io/cats-retry/docs/policies.html) for `constantDelay`, `fibonacciBackoff`, `fullJitter`, and friends.
+
+### Circuit breaker
+
+The breaker is allocated by `CircuitBreakerRuntime` and the tuning lives in the module that owns the gateway:
+
+```scala
+// AuctionModule.scala
+protected lazy val vivinoCircuitBreaker: IO[CircuitBreaker[IO]] =
+  circuitBreakerRuntime.create(
+    maxFailures = 5,
+    resetTimeout = 30.seconds,
+    backoff = Backoff.exponential,
+    maxResetTimeout = 5.minutes
+  )
+```
+
+- `maxFailures = 5` — after 5 consecutive retry-bursts fail, the breaker opens.
+- `resetTimeout = 30.seconds` — initial wait before allowing a single probe call.
+- `backoff = Backoff.exponential` + `maxResetTimeout = 5.minutes` — if the probe also fails, the next wait doubles, then doubles again, capped at 5 minutes. Without backoff, the breaker would probe a long-down dep every 30 seconds forever.
+
+When the breaker is open, `cb.protect(...)` raises `CircuitBreaker.RejectedExecution` immediately without invoking the protected action.
+
+### Wiring
+
+`CircuitBreakerRuntime` mirrors the codebase's other `*Runtime` shapes (`CacheRuntime`, `EventBusRuntime`, `RateLimiterRuntime`). It exists for two reasons: to keep the pattern consistent across the project, and to encapsulate the davenport friction — `CircuitBreaker.of` returns `IO[CircuitBreaker[IO]]`, and the runtime memoizes that so each gateway gets a single shared breaker, allocated lazily on first use.
+
+- `Main` constructs `CircuitBreakerRuntime.default` (one line) and passes it to `ApplicationLoader`.
+- `ApplicationLoader` threads it through to modules as an abstract `val`.
+- Each module owns its per-gateway tuning as a `lazy val IO[CircuitBreaker[IO]]` — the breaker is allocated on the first `findRating` call and shared from then on.
+- The gateway accepts `IO[CircuitBreaker[IO]]` and `flatMap`s over it inside its call site. The cost is one extra word per protected call; the benefit is no `unsafeRunSync` anywhere.
+
+`Main` knows nothing about which gateways need breakers or how they're tuned — only that a runtime exists. Add a new gateway with its own breaker by declaring another `lazy val` in its module; no other layer touched.
+
+**One breaker per gateway.** Different deps have different failure characteristics: a payment provider wants a low threshold and a long cool-down; a non-essential rating lookup wants higher tolerance. Don't share a breaker across unrelated services.
+
+### When NOT to add this
+
+For the worked example — a non-essential, fail-soft rating lookup — the breaker is arguably overkill: errors already fold to `None` and the cache absorbs most of the load. It's wired anyway as a copy-pasteable template. Skip retry+CB when:
+
+- The call is advisory and the cache absorbs most failures.
+- Volume is low enough that retry storms can't pressure the dep.
+- The dep is solid enough that you'd rather see real failures than mask them.
+
+Add retry+CB when:
+
+- The call is on a user-facing critical path (auth verification, payment, primary content).
+- The dep has documented downtime windows or you've observed sustained outages.
+- Traffic is high enough that a degraded dep would receive thousands of doomed retries.
+
 ## Configuration
 
 The Vivino gateway hardcodes the Algolia endpoint and credentials. That's deliberate — they're the public Vivino front-end's keys, not secrets. For a real third-party with secrets, load them from config:
@@ -173,7 +281,9 @@ Add a `final case class SomeApiConfig(...)` derived from `ConfigReader`, load it
 
 Unit tests for gateway logic that doesn't depend on HTTP — like `VivinoGateway.pickBestMatch` — are pure-function tests; see `VivinoGatewaySpec`.
 
-For end-to-end tests of the full HTTP path, sttp ships an in-memory backend you can wire instead of `HttpClientFs2Backend`. The auction tests don't currently do this — they stub the gateway at the trait level (`val vivinoGateway: VivinoGateway = (_, _) => IO.pure(None)`) so service tests don't depend on Algolia being up.
+For HTTP-path tests, sttp ships `WebSocketStreamBackendStub` you can wire instead of `HttpClientFs2Backend`. `VivinoGatewayResilienceSpec` uses it with a `Ref`-driven response to exercise the retry-then-breaker layering end-to-end: counting backend calls to verify retries fire, then that the breaker opens and stops them. The dep is `"com.softwaremill.sttp.client4" %% "cats" % sttpV % "test"`, which brings sttp's CE3 `MonadError` instance.
+
+For broader integration tests, the auction tests stub the gateway at the trait level (`val vivinoGateway: VivinoGateway = (_, _) => IO.pure(None)`) so service tests don't depend on Algolia being up — the resilient wiring is exercised only in the gateway's own spec.
 
 ## Where to look next
 

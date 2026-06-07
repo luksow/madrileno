@@ -2,6 +2,7 @@ package madrileno.auction
 
 import cats.effect.IO
 import com.softwaremill.macwire.*
+import io.chrisdavenport.circuit.{Backoff, CircuitBreaker}
 import madrileno.auction.domain.AuctionEvent
 import madrileno.auction.emails.{AuctionClosedEmailTemplate, OutbidEmailTemplate}
 import madrileno.auction.gateways.{VivinoGateway, VivinoGatewayLive}
@@ -17,6 +18,7 @@ import madrileno.utils.events.{EventBus, EventBusRuntime}
 import madrileno.utils.http.{AuthRouteProvider, RateLimiterRuntime, RouteProvider, WsRouteProvider}
 import madrileno.utils.mailer.{MailPreview, MailPreviewProvider, Mailer}
 import madrileno.utils.observability.TelemetryContext
+import madrileno.utils.resilience.CircuitBreakerRuntime
 import madrileno.utils.storage.{ObjectStore, SignedUrlTtl}
 import madrileno.utils.task.{OneTimeTask, OneTimeTaskProvider, RecurringTaskProvider, SchedulerClient, Task}
 import org.http4s.server.websocket.WebSocketBuilder2
@@ -44,6 +46,10 @@ trait AuctionModule
   lazy val userRepository: UserRepository
   lazy val mailer: Mailer
   lazy val appConfig: AppConfig
+  val circuitBreakerRuntime: CircuitBreakerRuntime
+
+  protected lazy val vivinoCircuitBreaker: IO[CircuitBreaker[IO]] =
+    circuitBreakerRuntime.create(maxFailures = 5, resetTimeout = 30.seconds, backoff = Backoff.exponential, maxResetTimeout = 5.minutes)
 
   protected lazy val vivinoGateway: VivinoGateway            = wire[VivinoGatewayLive]
   protected lazy val auctionEventBus: EventBus[AuctionEvent] = eventBusRuntime.topic[AuctionEvent]("auction_events", maxQueued = 64)
