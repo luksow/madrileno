@@ -2,7 +2,6 @@ package madrileno.utils.featureflag.repositories
 
 import cats.effect.IO
 import io.circe.Json
-import io.scalaland.chimney.dsl.*
 import madrileno.utils.db.dsl.*
 import madrileno.utils.db.transactor.DB
 import madrileno.utils.featureflag.domain.*
@@ -22,19 +21,23 @@ private[repositories] final case class FeatureFlagRow(
   clientExposed: Boolean,
   createdAt: Instant,
   updatedAt: Instant) {
-  def toFeatureFlag: Either[String, FeatureFlag] =
+  def toFeatureFlag: Either[String, FeatureFlag] = {
+    import io.scalaland.chimney.dsl.*
     FlagVariant.fromJson(variantType, defaultValue).map { variant =>
       this.into[FeatureFlag].withFieldConst(_.defaultValue, variant).transform
     }
+  }
 }
 
 private[repositories] object FeatureFlagRow {
-  def apply(flag: FeatureFlag): FeatureFlagRow =
+  def apply(flag: FeatureFlag): FeatureFlagRow = {
+    import io.scalaland.chimney.dsl.*
     flag
       .into[FeatureFlagRow]
       .withFieldConst(_.defaultValue, flag.defaultValue.toJson)
       .withFieldConst(_.variantType, flag.defaultValue.variantType)
       .transform
+  }
 }
 
 private[repositories] object FeatureFlagRowTable extends Table[FeatureFlagRow]("feature_flag") with IdTable[FeatureFlagRow, FlagId] {
