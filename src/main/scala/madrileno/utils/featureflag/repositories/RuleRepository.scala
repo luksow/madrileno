@@ -1,6 +1,5 @@
 package madrileno.utils.featureflag.repositories
 
-import io.scalaland.chimney.dsl.*
 import madrileno.utils.db.dsl.*
 import madrileno.utils.db.transactor.DB
 import madrileno.utils.featureflag.domain.*
@@ -18,12 +17,17 @@ private[repositories] final case class RuleRow(
   conditions: List[RuleCondition],
   outcome: RuleOutcome,
   createdAt: Instant) {
-  def toRule: Rule = this.into[Rule].transform
+  def toRule: Rule = {
+    import io.scalaland.chimney.dsl.*
+    this.into[Rule].transform
+  }
 }
 
 private[repositories] object RuleRow {
-  def apply(flagId: FlagId, rule: Rule): RuleRow =
+  def apply(flagId: FlagId, rule: Rule): RuleRow = {
+    import io.scalaland.chimney.dsl.*
     rule.into[RuleRow].withFieldConst(_.flagId, flagId).transform
+  }
 }
 
 private[repositories] object RuleRowTable extends Table[RuleRow]("feature_flag_rule") with IdTable[RuleRow, RuleId] with ForeignIdTable[FlagId] {

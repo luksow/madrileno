@@ -1,6 +1,5 @@
 package madrileno.utils.featureflag.repositories
 
-import io.scalaland.chimney.dsl.*
 import madrileno.utils.db.dsl.*
 import madrileno.utils.db.transactor.DB
 import madrileno.utils.featureflag.domain.*
@@ -17,11 +16,17 @@ private[repositories] final case class SegmentRow(
   conditions: List[RuleCondition],
   createdAt: Instant,
   updatedAt: Instant) {
-  def toSegment: Segment = this.into[Segment].transform
+  def toSegment: Segment = {
+    import io.scalaland.chimney.dsl.*
+    this.into[Segment].transform
+  }
 }
 
 private[repositories] object SegmentRow {
-  def apply(segment: Segment): SegmentRow = segment.into[SegmentRow].transform
+  def apply(segment: Segment): SegmentRow = {
+    import io.scalaland.chimney.dsl.*
+    segment.into[SegmentRow].transform
+  }
 }
 
 private[repositories] object SegmentRowTable extends Table[SegmentRow]("feature_flag_segment") with IdTable[SegmentRow, SegmentId] {
