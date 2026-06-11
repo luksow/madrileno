@@ -1,7 +1,8 @@
 package madrileno.utils.featureflag.services
 
 import cats.effect.std.Supervisor
-import cats.effect.{Deferred, IO}
+import cats.effect.{IO, Ref}
+import cats.syntax.all.*
 import io.circe.Json
 import madrileno.utils.async.Memoize
 import madrileno.utils.cache.{Cache, CacheRuntime}
@@ -68,39 +69,54 @@ class FeatureFlagServiceLive(
   private val segmentCache: Cache[Unit, Map[SegmentName, Segment]] =
     cacheRuntime.expiring[Unit, Map[SegmentName, Segment]](expireAfterWrite = 60.seconds, maxSize = 1)
 
-  def saveFlag(flag: FeatureFlag): IO[Unit] =
-    transactor.inTransaction(repository.save(flag)) *> eventBus.publish(FeatureFlagEvent.Invalidated(flag.key))
+  def saveFlag(flag: FeatureFlag): IO[Unit] = {
+    val expected   = flag.defaultValue.variantType
+    val mismatched = flag.rules.filter(_.outcome.variant.variantType != expected)
+    IO.raiseError(
+      new IllegalArgumentException(s"flag ${flag.key} is $expected but rules at ${mismatched.map(_.position)} carry a different variant type")
+    ).whenA(mismatched.nonEmpty) *>
+      transactor.inTransaction(repository.save(flag)) *>
+      eventBus.publish(FeatureFlagEvent.Invalidated(flag.key))
+  }
 
   def saveSegment(segment: Segment): IO[Unit] =
     transactor.inSession(segmentRepository.save(segment)) *> eventBus.publish(FeatureFlagEvent.SegmentsChanged)
 
-  private def invalidationLoop(ready: Deferred[IO, Unit]): IO[Nothing] = {
+  private val invalidationEpoch: Ref[IO, Long] = Ref.unsafe(0L)
+
+  private val invalidationLoop: IO[Nothing] = {
     eventBus.subscribeAwait
-      .use { stream =>
-        ready.complete(()).void *>
-          stream
-            .evalTap {
-              case FeatureFlagEvent.Invalidated(key) => flagCache.invalidate(key)
-              case FeatureFlagEvent.SegmentsChanged  => segmentCache.invalidate(())
-            }
-            .compile
-            .drain
+      .use {
+        _.evalTap {
+          case FeatureFlagEvent.Invalidated(key) => invalidationEpoch.update(_ + 1) *> flagCache.invalidate(key)
+          case FeatureFlagEvent.SegmentsChanged  => invalidationEpoch.update(_ + 1) *> segmentCache.invalidate(())
+        }.compile.drain
       }
       .handleErrorWith(t => logger.warn(t)("feature-flag invalidation stream failed, resubscribing")) *>
       IO.sleep(1.second)
   }.foreverM
 
-  private val subscriptionReady: IO[Deferred[IO, Unit]] =
-    Memoize(Deferred[IO, Unit].flatTap(ready => summon[Supervisor[IO]].supervise(invalidationLoop(ready))))
+  private val invalidationStarted: IO[Unit] =
+    Memoize(summon[Supervisor[IO]].supervise(invalidationLoop).void)
 
-  private val ensureSubscribedToInvalidations: IO[Unit] =
-    subscriptionReady.flatMap(_.get).timeout(30.seconds)
+  private def cachedLoad[K, V](
+    cache: Cache[K, V],
+    key: K,
+    load: IO[V]
+  ): IO[V] =
+    cache.get(key).flatMap {
+      case Some(cached) => IO.pure(cached)
+      case None =>
+        for {
+          before <- invalidationEpoch.get
+          loaded <- load
+          after  <- invalidationEpoch.get
+          _      <- cache.put(key, loaded).whenA(before == after)
+        } yield loaded
+    }
 
   private def fetchFlag(key: FlagKey): IO[Option[FeatureFlag]] =
-    flagCache.get(key).flatMap {
-      case Some(cached) => IO.pure(cached)
-      case None         => transactor.inSession(repository.findByKey(key)).flatTap(flagCache.put(key, _))
-    }
+    cachedLoad(flagCache, key, transactor.inSession(repository.findByKey(key)))
 
   private def fetchSegments(flag: FeatureFlag): IO[Map[SegmentName, Segment]] = {
     val referencesSegments = flag.rules.exists(_.conditions.exists {
@@ -108,12 +124,7 @@ class FeatureFlagServiceLive(
       case _                             => false
     })
     if (!referencesSegments) IO.pure(Map.empty)
-    else
-      segmentCache.get(()).flatMap {
-        case Some(cached) => IO.pure(cached)
-        case None =>
-          transactor.inSession(segmentRepository.findAll).map(_.map(s => s.name -> s).toMap).flatTap(segmentCache.put((), _))
-      }
+    else cachedLoad(segmentCache, (), transactor.inSession(segmentRepository.findAll).map(_.map(s => s.name -> s).toMap))
   }
 
   private def evalDetail[T](
@@ -122,7 +133,7 @@ class FeatureFlagServiceLive(
     extract: FlagVariant => Option[T],
     ctx: EvaluationContext
   ): IO[EvaluationDetail[T]] =
-    (ensureSubscribedToInvalidations *> fetchFlag(key))
+    (invalidationStarted *> fetchFlag(key))
       .flatMap {
         case None => IO.pure(EvaluationDetail(default, EvaluationReason.FlagNotFound))
         case Some(flag) =>

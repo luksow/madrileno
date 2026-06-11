@@ -20,7 +20,14 @@ import scala.concurrent.duration.DurationInt
 class FeatureFlagServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers with TestTransactor {
 
   given TelemetryContext = TelemetryContext(Meter.noop[IO], Tracer.noop[IO], OpenTelemetry.noop())
-  given Supervisor[IO]   = Supervisor[IO].allocated.unsafeRunSync()._1
+
+  private val (supervisorInstance, supervisorRelease) = Supervisor[IO].allocated.unsafeRunSync()
+  given Supervisor[IO]                                = supervisorInstance
+
+  override def beforeContainersStop(containers: Containers): Unit = {
+    supervisorRelease.unsafeRunSync()
+    super.beforeContainersStop(containers)
+  }
 
   private val eventBus: EventBus[FeatureFlagEvent] =
     EventBusRuntime.local.topic[FeatureFlagEvent]("feature_flag_events_test", maxQueued = 64)
@@ -145,6 +152,15 @@ class FeatureFlagServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matcher
         _      <- IO.sleep(200.millis)
         result <- service.evaluator(ctx).stringDetail(key, default = "caller-default")
       } yield result.value shouldBe "b"
+    }
+
+    "reject saveFlag when a rule outcome's variant type doesn't match the flag's" in {
+      val mismatched = TestData.featureFlag(
+        key = FlagKey("phase2-mismatched"),
+        defaultValue = FlagVariant.BoolVariant(false),
+        rules = List(TestData.flagRule(outcome = RuleOutcome.FixedValue(FlagVariant.StringVariant("oops"))))
+      )
+      service.saveFlag(mismatched).attempt.asserting(_.left.toOption.get shouldBe an[IllegalArgumentException])
     }
 
     "evaluate segment-driven rules and pick up segment changes" in {

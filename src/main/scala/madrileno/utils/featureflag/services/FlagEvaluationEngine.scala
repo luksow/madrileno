@@ -23,7 +23,7 @@ object FlagEvaluationEngine {
     segments: Map[SegmentName, Segment],
     context: EvaluationContext
   ): Option[Result] =
-    rules.iterator.flatMap(applyRule(_, segments, context)).nextOption()
+    rules.sortBy(_.position).iterator.flatMap(applyRule(_, segments, context)).nextOption()
 
   private def applyRule(
     rule: Rule,

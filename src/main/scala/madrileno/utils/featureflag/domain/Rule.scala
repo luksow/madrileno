@@ -48,6 +48,11 @@ enum RuleOutcome {
     percentage: Percentage,
     seed: RolloutSeed,
     onMatch: FlagVariant) extends RuleOutcome
+
+  def variant: FlagVariant = this match {
+    case FixedValue(value)                => value
+    case PercentageRollout(_, _, onMatch) => onMatch
+  }
 }
 
 final case class Rule(
