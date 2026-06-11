@@ -30,10 +30,7 @@ private[repositories] object SegmentRow {
 }
 
 private[repositories] object SegmentRowTable extends Table[SegmentRow]("feature_flag_segment") with IdTable[SegmentRow, SegmentId] {
-  import io.circe.Codec as CirceCodec
-  import madrileno.utils.json.JsonProtocol.given
-
-  private given CirceCodec.AsObject[RuleCondition] = CirceCodec.AsObject.derived
+  import FeatureFlagJsonbCodecs.given
 
   override val id: Column[SegmentId]          = column("id", uuid.as[SegmentId])
   val name: Column[SegmentName]               = column("name", text.as[SegmentName])
