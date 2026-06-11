@@ -48,7 +48,7 @@ class SegmentRepository {
     repository.findByFilter(SegmentRowFilter()).map(_.map(_.toSegment))
 
   def save(segment: Segment): DB[Unit] =
-    repository.create(SegmentRow(segment)).void
+    repository.upsert(SegmentRow(segment))
 
   private val repository: IdRepository[SegmentRow, SegmentId] & FilteringRepository[SegmentRow, SegmentRowFilter] =
     new IdRepository[SegmentRow, SegmentId](_.id) with FilteringRepository[SegmentRow, SegmentRowFilter] {

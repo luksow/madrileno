@@ -5,6 +5,7 @@ import io.circe.Json
 import madrileno.auction.domain.*
 import madrileno.auth.domain.{AuthContext, *}
 import madrileno.user.domain.*
+import madrileno.utils.featureflag.domain.*
 import madrileno.utils.imaging.{Height, ImageFormat, Width}
 import madrileno.utils.storage.StorageKey
 import org.http4s.MediaType
@@ -18,6 +19,9 @@ object TestData {
   def randomUserId(): UserId                 = UserId(UUID.randomUUID())
   def randomRefreshTokenId(): RefreshTokenId = RefreshTokenId(UUID.randomUUID())
   def randomUserAuthId(): UserAuthId         = UserAuthId(UUID.randomUUID())
+  def randomFlagId(): FlagId                 = FlagId(UUID.randomUUID())
+  def randomRuleId(): RuleId                 = RuleId(UUID.randomUUID())
+  def randomSegmentId(): SegmentId           = SegmentId(UUID.randomUUID())
   // scripts:auction-block-start
   def randomAuctionId(): AuctionId           = AuctionId(UUID.randomUUID())
   def randomBidId(): BidId                   = BidId(UUID.randomUUID())
@@ -57,6 +61,36 @@ object TestData {
     VerifiedExternalToken(provider, providerUserId, credential, ExternalProfile(fullName, emailAddress, emailVerified, None), Metadata(Json.obj()))
 
   val defaultIpAddress: IpAddress = IpAddress.fromString("127.0.0.1").get
+
+  def featureFlag(
+    id: FlagId = randomFlagId(),
+    key: FlagKey = FlagKey(s"test-flag-${UUID.randomUUID()}"),
+    description: FlagDescription = FlagDescription(""),
+    enabled: Boolean = true,
+    defaultValue: FlagVariant = FlagVariant.BoolVariant(false),
+    clientExposed: Boolean = false,
+    rules: List[Rule] = Nil,
+    createdAt: Instant = Instant.now(),
+    updatedAt: Instant = Instant.now()
+  ): FeatureFlag = FeatureFlag(id, key, description, enabled, defaultValue, clientExposed, rules, createdAt, updatedAt)
+
+  def flagRule(
+    id: RuleId = randomRuleId(),
+    position: RulePosition = RulePosition(0),
+    description: FlagDescription = FlagDescription(""),
+    conditions: List[RuleCondition] = Nil,
+    outcome: RuleOutcome = RuleOutcome.FixedValue(FlagVariant.BoolVariant(true)),
+    createdAt: Instant = Instant.now()
+  ): Rule = Rule(id, position, description, conditions, outcome, createdAt)
+
+  def flagSegment(
+    id: SegmentId = randomSegmentId(),
+    name: SegmentName = SegmentName(s"test-segment-${UUID.randomUUID()}"),
+    description: FlagDescription = FlagDescription(""),
+    conditions: List[RuleCondition] = Nil,
+    createdAt: Instant = Instant.now(),
+    updatedAt: Instant = Instant.now()
+  ): Segment = Segment(id, name, description, conditions, createdAt, updatedAt)
 
   // scripts:auction-block-start
   def auction(

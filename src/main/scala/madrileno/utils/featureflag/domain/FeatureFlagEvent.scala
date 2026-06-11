@@ -5,4 +5,5 @@ import madrileno.utils.events.EventCodec.given
 
 enum FeatureFlagEvent derives EventCodec {
   case Invalidated(key: FlagKey) extends FeatureFlagEvent
+  case SegmentsChanged           extends FeatureFlagEvent
 }
