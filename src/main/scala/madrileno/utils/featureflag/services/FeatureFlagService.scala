@@ -71,11 +71,11 @@ class FeatureFlagServiceLive(
       .compile
       .drain
 
-  private val invalidationStarted: IO[Unit] =
+  private val ensureSubscribedToInvalidations: IO[Unit] =
     Memoize(summon[Supervisor[IO]].supervise(invalidationLoop).void)
 
   private def fetch(key: FlagKey): IO[Option[FeatureFlag]] =
-    invalidationStarted *> flagCache.get(key).flatMap {
+    ensureSubscribedToInvalidations *> flagCache.get(key).flatMap {
       case Some(cached) => IO.pure(cached)
       case None         => transactor.inSession(repository.findByKey(key)).flatTap(flagCache.put(key, _))
     }

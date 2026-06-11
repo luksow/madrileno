@@ -1,7 +1,5 @@
 package madrileno.utils.featureflag.domain
 
-import io.circe.Codec
-import madrileno.utils.json.JsonProtocol.given
 import pl.iterators.kebs.opaque.Opaque
 
 import java.time.Instant
@@ -44,20 +42,12 @@ enum RuleCondition {
   case SegmentMatch(name: SegmentName)                           extends RuleCondition
 }
 
-object RuleCondition {
-  given Codec.AsObject[RuleCondition] = Codec.AsObject.derived
-}
-
 enum RuleOutcome {
   case FixedValue(value: FlagVariant) extends RuleOutcome
   case PercentageRollout(
     percentage: Percentage,
     seed: RolloutSeed,
     onMatch: FlagVariant) extends RuleOutcome
-}
-
-object RuleOutcome {
-  given Codec.AsObject[RuleOutcome] = Codec.AsObject.derived
 }
 
 final case class Rule(

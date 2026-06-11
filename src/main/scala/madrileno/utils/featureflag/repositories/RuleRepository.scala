@@ -31,6 +31,13 @@ private[repositories] object RuleRow {
 }
 
 private[repositories] object RuleRowTable extends Table[RuleRow]("feature_flag_rule") with IdTable[RuleRow, RuleId] with ForeignIdTable[FlagId] {
+  import io.circe.Codec as CirceCodec
+  import madrileno.utils.json.JsonProtocol.given
+
+  private given CirceCodec.AsObject[FlagVariant]   = CirceCodec.AsObject.derived
+  private given CirceCodec.AsObject[RuleCondition] = CirceCodec.AsObject.derived
+  private given CirceCodec.AsObject[RuleOutcome]   = CirceCodec.AsObject.derived
+
   override val id: Column[RuleId]             = column("id", uuid.as[RuleId])
   val flagId: Column[FlagId]                  = column("flag_id", uuid.as[FlagId])
   val position: Column[RulePosition]          = column("position", int4.as[RulePosition])

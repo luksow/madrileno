@@ -1,6 +1,6 @@
 package madrileno.utils.featureflag.domain
 
-import io.circe.{Codec, Json}
+import io.circe.Json
 import pl.iterators.kebs.opaque.Opaque
 
 import java.time.Instant
@@ -54,8 +54,6 @@ enum FlagVariant {
 }
 
 object FlagVariant {
-  given Codec.AsObject[FlagVariant] = Codec.AsObject.derived
-
   def fromJson(variantType: VariantType, json: Json): Either[String, FlagVariant] = variantType match {
     case VariantType.Boolean => json.asBoolean.toRight(s"expected boolean, got: ${json.noSpaces}").map(BoolVariant.apply)
     case VariantType.String  => json.asString.toRight(s"expected string, got: ${json.noSpaces}").map(StringVariant.apply)
