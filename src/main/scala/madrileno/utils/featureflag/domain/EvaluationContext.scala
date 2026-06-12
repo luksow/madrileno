@@ -34,12 +34,12 @@ enum EvaluationReason {
   case Disabled, TargetingMatch, Split, Default, Error
 }
 
-enum ErrorCode {
+enum EvaluationErrorCode {
   case FlagNotFound, TypeMismatch, General
 }
 
 final case class EvaluationDetail[+T](
   value: T,
   reason: EvaluationReason,
-  errorCode: Option[ErrorCode] = None,
+  errorCode: Option[EvaluationErrorCode] = None,
   errorMessage: Option[String] = None)

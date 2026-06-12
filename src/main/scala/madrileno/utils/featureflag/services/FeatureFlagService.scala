@@ -154,7 +154,7 @@ class FeatureFlagServiceLive(
   ): IO[EvaluationDetail[T]] =
     (invalidationStarted *> fetchFlag(key))
       .flatMap {
-        case None => IO.pure(EvaluationDetail(default, EvaluationReason.Error, Some(ErrorCode.FlagNotFound)))
+        case None => IO.pure(EvaluationDetail(default, EvaluationReason.Error, Some(EvaluationErrorCode.FlagNotFound)))
         case Some(flag) =>
           fetchSegments(flag).map { segments =>
             val result = FlagEvaluationEngine.evaluate(flag, segments, ctx)
@@ -165,7 +165,7 @@ class FeatureFlagServiceLive(
                 EvaluationDetail(
                   default,
                   EvaluationReason.Error,
-                  Some(ErrorCode.TypeMismatch),
+                  Some(EvaluationErrorCode.TypeMismatch),
                   Some(s"flag ${flag.key} returned $actual; caller expected a different type")
                 )
             }
@@ -174,7 +174,7 @@ class FeatureFlagServiceLive(
       .handleErrorWith(t =>
         logger
           .warn(t)(s"feature-flag eval failed for $key, using default")
-          .as(EvaluationDetail(default, EvaluationReason.Error, Some(ErrorCode.General), Option(t.getClass.getSimpleName)))
+          .as(EvaluationDetail(default, EvaluationReason.Error, Some(EvaluationErrorCode.General), Option(t.getClass.getSimpleName)))
       )
 
   override def evaluator(ctx: EvaluationContext): FlagEvaluator = new FlagEvaluator {

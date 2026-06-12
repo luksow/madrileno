@@ -17,12 +17,17 @@ class TestFeatureFlagService private (values: Map[FlagKey, FlagVariant]) extends
       extract: FlagVariant => Option[T]
     ): IO[EvaluationDetail[T]] =
       IO.pure(values.get(key) match {
-        case None => EvaluationDetail(default, EvaluationReason.Error, Some(ErrorCode.FlagNotFound))
+        case None => EvaluationDetail(default, EvaluationReason.Error, Some(EvaluationErrorCode.FlagNotFound))
         case Some(value) =>
           extract(value) match {
             case Some(v) => EvaluationDetail(v, EvaluationReason.Default)
             case None =>
-              EvaluationDetail(default, EvaluationReason.Error, Some(ErrorCode.TypeMismatch), Some(s"stubbed flag $key is ${value.variantType}"))
+              EvaluationDetail(
+                default,
+                EvaluationReason.Error,
+                Some(EvaluationErrorCode.TypeMismatch),
+                Some(s"stubbed flag $key is ${value.variantType}")
+              )
           }
       })
 

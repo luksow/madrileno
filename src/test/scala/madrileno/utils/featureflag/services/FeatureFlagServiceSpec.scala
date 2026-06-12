@@ -70,36 +70,36 @@ class FeatureFlagServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matcher
       }
     }
 
-    "return the caller default with ErrorCode.FlagNotFound when the flag does not exist" in {
+    "return the caller default with EvaluationErrorCode.FlagNotFound when the flag does not exist" in {
       service
         .evaluator(ctx)
         .booleanDetail(FlagKey("phase1-missing"), default = false)
         .asserting { result =>
           result.value shouldBe false
           result.reason shouldBe EvaluationReason.Error
-          result.errorCode shouldBe Some(ErrorCode.FlagNotFound)
+          result.errorCode shouldBe Some(EvaluationErrorCode.FlagNotFound)
         }
     }
 
-    "return ErrorCode.TypeMismatch when the flag's variant doesn't match the caller's typed call" in {
+    "return EvaluationErrorCode.TypeMismatch when the flag's variant doesn't match the caller's typed call" in {
       for {
         _      <- seedFlag("phase1-string-flag", defaultValue = FlagVariant.StringVariant("v3"))
         result <- service.evaluator(ctx).booleanDetail(FlagKey("phase1-string-flag"), default = false)
       } yield {
         result.value shouldBe false
         result.reason shouldBe EvaluationReason.Error
-        result.errorCode shouldBe Some(ErrorCode.TypeMismatch)
+        result.errorCode shouldBe Some(EvaluationErrorCode.TypeMismatch)
       }
     }
 
-    "return ErrorCode.TypeMismatch when calling evaluateJson on a non-Json flag" in {
+    "return EvaluationErrorCode.TypeMismatch when calling evaluateJson on a non-Json flag" in {
       for {
         _      <- seedFlag("phase1-bool-as-json")
         result <- service.evaluator(ctx).jsonDetail(FlagKey("phase1-bool-as-json"), default = io.circe.Json.Null)
       } yield {
         result.value shouldBe io.circe.Json.Null
         result.reason shouldBe EvaluationReason.Error
-        result.errorCode shouldBe Some(ErrorCode.TypeMismatch)
+        result.errorCode shouldBe Some(EvaluationErrorCode.TypeMismatch)
       }
     }
 
