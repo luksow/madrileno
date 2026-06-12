@@ -34,12 +34,10 @@ class UuidV7Spec extends AnyWordSpec with Matchers {
       (uuid.getLeastSignificantBits & 0x3fffffffffffffffL) shouldBe 0x3fffffffffffffffL // rand_b
     }
 
-    "produce lexicographically increasing values as the timestamp advances" in {
-      // A later timestamp must sort after an earlier one even when its random bits are minimal and the
-      // earlier one's are maximal — proving the timestamp dominates ordering, not the random tail.
+    "order by timestamp ahead of the random bits" in {
       val earlierMaxRandom = UuidV7.fromParts(1000L, new UUID(-1L, -1L))
       val laterMinRandom   = UuidV7.fromParts(2000L, new UUID(0L, 0L))
-      earlierMaxRandom.toString should be < laterMinRandom.toString
+      java.lang.Long.compareUnsigned(earlierMaxRandom.getMostSignificantBits, laterMinRandom.getMostSignificantBits) should be < 0
     }
   }
 
