@@ -128,13 +128,12 @@ class FeatureFlagServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matcher
       }
     }
 
-    "update an existing flag through saveFlag and invalidate the cache" in {
+    "update an existing flag through saveFlag and see the change immediately on the writing instance" in {
       val key = FlagKey("phase2-toggle")
       for {
         flag     <- seedFlag(key.unwrap, enabled = true)
         first    <- service.evaluator(ctx).booleanDetail(key, default = false)
         _        <- service.saveFlag(flag.copy(enabled = false))
-        _        <- IO.sleep(200.millis)
         afterInv <- service.evaluator(ctx).booleanDetail(key, default = false)
       } yield {
         first.reason shouldBe EvaluationReason.Fallthrough
@@ -149,9 +148,32 @@ class FeatureFlagServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matcher
       for {
         flag   <- seedFlag(key.unwrap, defaultValue = FlagVariant.StringVariant("default"), rules = List(ruleA))
         _      <- service.saveFlag(flag.copy(rules = List(ruleB)))
-        _      <- IO.sleep(200.millis)
         result <- service.evaluator(ctx).stringDetail(key, default = "caller-default")
       } yield result.value shouldBe "b"
+    }
+
+    "propagate invalidation to other service instances via the event bus" in {
+      val key = FlagKey("phase2-cross-instance")
+      val reader =
+        new FeatureFlagServiceLive(
+          new FeatureFlagRepository(new RuleRepository),
+          new SegmentRepository,
+          TestCacheRuntime.unbounded,
+          transactor,
+          eventBus
+        )
+      for {
+        flag <- seedFlag(key.unwrap, enabled = true)
+        // first eval warms the reader's cache and starts its subscription
+        first      <- reader.evaluator(ctx).booleanDetail(key, default = false)
+        _          <- IO.sleep(100.millis) // let the reader's subscription establish
+        _          <- service.saveFlag(flag.copy(enabled = false))
+        _          <- IO.sleep(200.millis) // event propagation
+        afterEvent <- reader.evaluator(ctx).booleanDetail(key, default = false)
+      } yield {
+        first.reason shouldBe EvaluationReason.Fallthrough
+        afterEvent.reason shouldBe EvaluationReason.FlagDisabled
+      }
     }
 
     "reject saveFlag when a rule outcome's variant type doesn't match the flag's" in {
@@ -174,7 +196,6 @@ class FeatureFlagServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matcher
         _      <- seedFlag(key.unwrap, defaultValue = FlagVariant.BoolVariant(false), rules = List(rule))
         before <- service.evaluator(ctxBeta).booleanDetail(key, default = false)
         _      <- service.saveSegment(segmentV1.copy(conditions = List(RuleCondition.StringEquals(AttributeName("plan"), "enterprise"))))
-        _      <- IO.sleep(200.millis)
         after  <- service.evaluator(ctxBeta).booleanDetail(key, default = false)
       } yield {
         before.reason shouldBe EvaluationReason.RuleMatch

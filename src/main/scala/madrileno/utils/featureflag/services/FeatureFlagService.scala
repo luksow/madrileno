@@ -1,7 +1,7 @@
 package madrileno.utils.featureflag.services
 
 import cats.effect.std.Supervisor
-import cats.effect.{IO, Ref}
+import cats.effect.{Clock, IO, Ref}
 import cats.syntax.all.*
 import io.circe.Json
 import madrileno.utils.async.Memoize
@@ -75,21 +75,33 @@ class FeatureFlagServiceLive(
     IO.raiseError(
       new IllegalArgumentException(s"flag ${flag.key} is $expected but rules at ${mismatched.map(_.position)} carry a different variant type")
     ).whenA(mismatched.nonEmpty) *>
-      transactor.inTransaction(repository.save(flag)) *>
-      eventBus.publish(FeatureFlagEvent.Invalidated(flag.key))
+      Clock[IO].realTimeInstant.flatMap(now => transactor.inTransaction(repository.save(flag.copy(updatedAt = now)))) *>
+      invalidateFlag(flag.key) *>
+      publishBestEffort(FeatureFlagEvent.Invalidated(flag.key))
   }
 
   def saveSegment(segment: Segment): IO[Unit] =
-    transactor.inSession(segmentRepository.save(segment)) *> eventBus.publish(FeatureFlagEvent.SegmentsChanged)
+    Clock[IO].realTimeInstant.flatMap(now => transactor.inSession(segmentRepository.save(segment.copy(updatedAt = now)))) *>
+      invalidateSegments *>
+      publishBestEffort(FeatureFlagEvent.SegmentsChanged)
 
   private val invalidationEpoch: Ref[IO, Long] = Ref.unsafe(0L)
+
+  private def invalidateFlag(key: FlagKey): IO[Unit] =
+    invalidationEpoch.update(_ + 1) *> flagCache.invalidate(key)
+
+  private val invalidateSegments: IO[Unit] =
+    invalidationEpoch.update(_ + 1) *> segmentCache.invalidate(())
+
+  private def publishBestEffort(event: FeatureFlagEvent): IO[Unit] =
+    eventBus.publish(event).handleErrorWith(t => logger.warn(t)(s"feature-flag event publish failed, peers stay stale until TTL: $event"))
 
   private val invalidationLoop: IO[Nothing] = {
     eventBus.subscribeAwait
       .use {
         _.evalTap {
-          case FeatureFlagEvent.Invalidated(key) => invalidationEpoch.update(_ + 1) *> flagCache.invalidate(key)
-          case FeatureFlagEvent.SegmentsChanged  => invalidationEpoch.update(_ + 1) *> segmentCache.invalidate(())
+          case FeatureFlagEvent.Invalidated(key) => invalidateFlag(key)
+          case FeatureFlagEvent.SegmentsChanged  => invalidateSegments
         }.compile.drain
       }
       .handleErrorWith(t => logger.warn(t)("feature-flag invalidation stream failed, resubscribing")) *>
@@ -99,6 +111,9 @@ class FeatureFlagServiceLive(
   private val invalidationStarted: IO[Unit] =
     Memoize(summon[Supervisor[IO]].supervise(invalidationLoop).void)
 
+  // put-then-verify: the loop bumps the epoch before invalidating, so a load that raced an
+  // invalidation either sees the moved epoch (and removes its own entry) or its entry is
+  // removed by the invalidation that follows the bump — every interleaving converges.
   private def cachedLoad[K, V](
     cache: Cache[K, V],
     key: K,
@@ -110,8 +125,9 @@ class FeatureFlagServiceLive(
         for {
           before <- invalidationEpoch.get
           loaded <- load
+          _      <- cache.put(key, loaded)
           after  <- invalidationEpoch.get
-          _      <- cache.put(key, loaded).whenA(before == after)
+          _      <- cache.invalidate(key).whenA(before != after)
         } yield loaded
     }
 
