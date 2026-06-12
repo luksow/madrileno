@@ -111,9 +111,6 @@ class FeatureFlagServiceLive(
   private val invalidationStarted: IO[Unit] =
     Memoize(summon[Supervisor[IO]].supervise(invalidationLoop).void)
 
-  // put-then-verify: the loop bumps the epoch before invalidating, so a load that raced an
-  // invalidation either sees the moved epoch (and removes its own entry) or its entry is
-  // removed by the invalidation that follows the bump — every interleaving converges.
   private def cachedLoad[K, V](
     cache: Cache[K, V],
     key: K,

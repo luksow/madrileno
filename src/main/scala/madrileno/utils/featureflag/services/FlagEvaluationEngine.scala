@@ -46,8 +46,7 @@ object FlagEvaluationEngine {
     case IntGreaterThan(attr, v)   => attr.lookup(context).flatMap(_.toIntOption).exists(_ > v)
     case IntLessThan(attr, v)      => attr.lookup(context).flatMap(_.toIntOption).exists(_ < v)
     case BoolEquals(attr, v)       => attr.lookup(context).flatMap(_.toBooleanOption).exists(_ == v)
-    case SegmentMatch(name)        =>
-      // missing segment or reference cycle → never matches; `visitedSegments` breaks cycles
+    case SegmentMatch(name) =>
       !visitedSegments(name) && segments.get(name).exists(_.conditions.forall(matches(_, segments, context, visitedSegments + name)))
   }
 
