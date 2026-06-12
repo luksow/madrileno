@@ -92,6 +92,10 @@ Three things to know:
 - **`mapping`** is the heart of the table. It enumerates the columns in row order and produces the row codec via twiddle types. Adding a column is one line in the case class, one column declaration, and one tuple entry in `mapping`.
 - **Implementing the marker traits** (`IdTable`, `SoftDeleteTable`, `ForeignIdTable`) is what unlocks the corresponding repository.
 
+## Identifiers
+
+Primary keys are `UUID` columns. The application mints them via `IdGenerator.generateId(SomeId)`, which produces **time-ordered UUIDv7** (RFC 9562) rather than random v4 — see `madrileno.utils.crypto.UuidV7`. The leading 48 bits are a Unix-millisecond timestamp, so freshly inserted rows land near each other in the B-tree primary-key index instead of scattering, which is the index-locality win over v4. The Postgres `UUID` type and the `uuid.as[…]` codec are version-agnostic, so nothing in the schema or repositories changes; v4 rows created before the switch keep working and intermix freely. Resolution is milliseconds, so IDs minted within the same millisecond are not ordered relative to each other — this is index locality, not a sortable-sequence guarantee.
+
 ## The repository traits
 
 Each trait gives you a vocabulary of operations.

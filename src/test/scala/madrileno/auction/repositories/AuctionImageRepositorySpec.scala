@@ -11,7 +11,6 @@ import org.scalatest.wordspec.AsyncWordSpec
 
 import java.time.Instant
 import java.time.temporal.ChronoUnit
-import java.util.UUID
 
 class AuctionImageRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matchers with TestTransactor {
 
@@ -112,7 +111,7 @@ class AuctionImageRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Mat
       val (seller, auction) = setup()
       val image             = TestData.auctionImage(auctionId = auction.id)
       val thumb = AuctionImageVariant(
-        id = AuctionImageVariantId(UUID.randomUUID()),
+        id = TestData.randomAuctionImageVariantId(),
         auctionImageId = image.id,
         spec = VariantSpec.Thumb,
         storageKey = StorageKey(s"auctions/${auction.id}/${image.id}/thumb.jpg"),
@@ -122,7 +121,7 @@ class AuctionImageRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Mat
         generatedAt = Instant.now().truncatedTo(ChronoUnit.MICROS)
       )
       val medium = thumb.copy(
-        id = AuctionImageVariantId(UUID.randomUUID()),
+        id = TestData.randomAuctionImageVariantId(),
         spec = VariantSpec.Medium,
         storageKey = StorageKey(s"auctions/${auction.id}/${image.id}/medium.jpg"),
         width = Width(1024),

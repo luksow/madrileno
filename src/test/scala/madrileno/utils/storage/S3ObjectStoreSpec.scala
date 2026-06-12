@@ -5,6 +5,7 @@ import cats.effect.{IO, Resource}
 import com.dimafeng.testcontainers.GenericContainer
 import com.dimafeng.testcontainers.scalatest.TestContainerForAll
 import fs2.Stream
+import madrileno.support.TestData
 import org.http4s.MediaType
 import org.http4s.headers.`Content-Type`
 import org.scalatest.matchers.should.Matchers
@@ -20,7 +21,6 @@ import sttp.client4.httpurlconnection.HttpURLConnectionBackend
 import sttp.model.Uri as SttpUri
 
 import java.net.URI
-import java.util.UUID
 import scala.concurrent.duration.DurationInt
 
 class S3ObjectStoreSpec extends AsyncWordSpec with AsyncIOSpec with Matchers with TestContainerForAll {
@@ -38,7 +38,7 @@ class S3ObjectStoreSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wit
     objectStorage = S3Config(
       endpoint = s"http://${container.host}:${container.mappedPort(9000)}",
       region = "us-east-1",
-      bucket = s"test-${UUID.randomUUID()}",
+      bucket = s"test-${TestData.randomUuid()}",
       accessKeyId = "minioadmin",
       secretAccessKey = "minioadmin"
     )
