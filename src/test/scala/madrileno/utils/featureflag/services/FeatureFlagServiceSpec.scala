@@ -162,14 +162,17 @@ class FeatureFlagServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matcher
           transactor,
           eventBus
         )
+      // republishing compensates for events published before the reader's background subscription was live
+      def pollUntilDisabled(attempts: Int): IO[EvaluationDetail[Boolean]] =
+        reader.evaluator(ctx).booleanDetail(key, default = false).flatMap { detail =>
+          if (detail.reason == EvaluationReason.FlagDisabled || attempts <= 0) IO.pure(detail)
+          else eventBus.publish(FeatureFlagEvent.Invalidated(key)) *> IO.sleep(50.millis) *> pollUntilDisabled(attempts - 1)
+        }
       for {
-        flag <- seedFlag(key.unwrap, enabled = true)
-        // first eval warms the reader's cache and starts its subscription
+        flag       <- seedFlag(key.unwrap, enabled = true)
         first      <- reader.evaluator(ctx).booleanDetail(key, default = false)
-        _          <- IO.sleep(100.millis) // let the reader's subscription establish
         _          <- service.saveFlag(flag.copy(enabled = false))
-        _          <- IO.sleep(200.millis) // event propagation
-        afterEvent <- reader.evaluator(ctx).booleanDetail(key, default = false)
+        afterEvent <- pollUntilDisabled(attempts = 100)
       } yield {
         first.reason shouldBe EvaluationReason.Fallthrough
         afterEvent.reason shouldBe EvaluationReason.FlagDisabled
