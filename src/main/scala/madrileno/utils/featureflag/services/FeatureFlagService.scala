@@ -6,11 +6,13 @@ import cats.syntax.all.*
 import io.circe.Json
 import madrileno.utils.async.Memoize
 import madrileno.utils.cache.{Cache, CacheRuntime}
+import madrileno.utils.crypto.IdGenerator
 import madrileno.utils.db.transactor.Transactor
 import madrileno.utils.events.EventBus
 import madrileno.utils.featureflag.domain.*
-import madrileno.utils.featureflag.repositories.{FeatureFlagRepository, SegmentRepository}
+import madrileno.utils.featureflag.repositories.{FeatureFlagAuditRepository, FeatureFlagRepository, RuleRepository, SegmentRepository}
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
+import madrileno.utils.pagination.PageRequest
 
 import scala.concurrent.duration.*
 
@@ -53,7 +55,9 @@ object FlagEvaluator {
 
 class FeatureFlagServiceLive(
   repository: FeatureFlagRepository,
+  ruleRepository: RuleRepository,
   segmentRepository: SegmentRepository,
+  auditRepository: FeatureFlagAuditRepository,
   cacheRuntime: CacheRuntime,
   transactor: Transactor,
   eventBus: EventBus[FeatureFlagEvent]
@@ -69,32 +73,152 @@ class FeatureFlagServiceLive(
   private val segmentCache: Cache[Unit, Map[SegmentName, Segment]] =
     cacheRuntime.expiring[Unit, Map[SegmentName, Segment]](expireAfterWrite = 60.seconds, maxSize = 1)
 
-  def saveFlag(flag: FeatureFlag): IO[Unit] =
-    validate(flag) *>
-      Clock[IO].realTimeInstant.flatMap(now => transactor.inTransaction(repository.save(flag.updated(now)))) *>
-      invalidateFlag(flag.key) *>
-      publishBestEffort(FeatureFlagEvent.Invalidated(flag.key))
+  private val clientFlagsCache: Cache[Unit, List[FeatureFlag]] =
+    cacheRuntime.expiring[Unit, List[FeatureFlag]](expireAfterWrite = 60.seconds, maxSize = 1)
 
-  private def validate(flag: FeatureFlag): IO[Unit] = {
+  def createFlag(flag: FeatureFlag, actor: Actor): IO[CreateFlagResult] =
+    validate(flag) match {
+      case Left(message) => IO.pure(CreateFlagResult.Invalid(message))
+      case Right(()) =>
+        transactor.inSession(repository.findByKey(flag.key)).flatMap {
+          case Some(_) => IO.pure(CreateFlagResult.KeyExists)
+          case None    => persistFlag(flag, AuditAction.Created, before = None, actor).map(CreateFlagResult.Created.apply)
+        }
+    }
+
+  def updateFlag(
+    key: FlagKey,
+    transform: FeatureFlag => FeatureFlag,
+    actor: Actor
+  ): IO[UpdateFlagResult] = modifyFlag(key, transform, AuditAction.Updated, actor)
+
+  def toggleFlag(
+    key: FlagKey,
+    enabled: Boolean,
+    actor: Actor
+  ): IO[UpdateFlagResult] = modifyFlag(key, _.copy(enabled = enabled), AuditAction.Toggled, actor)
+
+  private def modifyFlag(
+    key: FlagKey,
+    transform: FeatureFlag => FeatureFlag,
+    action: AuditAction,
+    actor: Actor
+  ): IO[UpdateFlagResult] =
+    transactor.inSession(repository.findByKey(key)).flatMap {
+      case None => IO.pure(UpdateFlagResult.NotFound)
+      case Some(existing) =>
+        val next = transform(existing).copy(id = existing.id, key = existing.key, createdAt = existing.createdAt)
+        validate(next) match {
+          case Left(message) => IO.pure(UpdateFlagResult.Invalid(message))
+          case Right(())     => persistFlag(next, action, before = Some(existing), actor).map(UpdateFlagResult.Updated.apply)
+        }
+    }
+
+  def deleteFlag(key: FlagKey, actor: Actor): IO[DeleteFlagResult] =
+    transactor.inSession(repository.findByKey(key)).flatMap {
+      case None => IO.pure(DeleteFlagResult.NotFound)
+      case Some(flag) =>
+        for {
+          now     <- Clock[IO].realTimeInstant
+          entryId <- IdGenerator.generateId(AuditEntryId)
+          _ <- transactor.inTransaction {
+                 auditRepository
+                   .append(AuditEntry(entryId, flagId = None, flag.key, actor, AuditAction.Deleted, Some(flag), after = None, now)) *>
+                   auditRepository.detachFlag(flag.id) *>
+                   ruleRepository.deleteByFlagId(flag.id) *>
+                   repository.deleteById(flag.id)
+               }
+          _ <- invalidateFlag(flag.key)
+          _ <- publishBestEffort(FeatureFlagEvent.Invalidated(flag.key))
+        } yield DeleteFlagResult.Deleted
+    }
+
+  def listFlags: IO[List[FeatureFlag]] = transactor.inSession(repository.findAll)
+
+  def getFlag(key: FlagKey): IO[Option[FeatureFlag]] = transactor.inSession(repository.findByKey(key))
+
+  def listAudit(key: FlagKey, page: PageRequest[AuditSortField]): IO[(List[AuditEntry], Long)] =
+    transactor.inSession(auditRepository.listByFlagKey(key, page))
+
+  def listSegments: IO[List[Segment]] = transactor.inSession(segmentRepository.findAll)
+
+  def createSegment(segment: Segment): IO[CreateSegmentResult] =
+    transactor.inSession(segmentRepository.findByName(segment.name)).flatMap {
+      case Some(_) => IO.pure(CreateSegmentResult.NameExists)
+      case None    => persistSegment(segment).map(CreateSegmentResult.Created.apply)
+    }
+
+  def updateSegment(name: SegmentName, transform: Segment => Segment): IO[UpdateSegmentResult] =
+    transactor.inSession(segmentRepository.findByName(name)).flatMap {
+      case None => IO.pure(UpdateSegmentResult.NotFound)
+      case Some(existing) =>
+        val next = transform(existing).copy(id = existing.id, name = existing.name, createdAt = existing.createdAt)
+        persistSegment(next).map(UpdateSegmentResult.Updated.apply)
+    }
+
+  def deleteSegment(name: SegmentName): IO[DeleteSegmentResult] =
+    transactor.inSession(segmentRepository.findByName(name)).flatMap {
+      case None => IO.pure(DeleteSegmentResult.NotFound)
+      case Some(segment) =>
+        transactor.inSession(segmentRepository.deleteById(segment.id)) *>
+          invalidateSegments *>
+          publishBestEffort(FeatureFlagEvent.SegmentsChanged).as(DeleteSegmentResult.Deleted)
+    }
+
+  def evaluateForDebug(key: FlagKey, ctx: EvaluationContext): IO[Option[FlagEvaluationEngine.Result]] =
+    transactor.inSession {
+      repository.findByKey(key).flatMap {
+        case None => IO.pure(None)
+        case Some(flag) =>
+          segmentRepository.findAll.map(segments => Some(FlagEvaluationEngine.evaluate(flag, segments.map(s => s.name -> s).toMap, ctx)))
+      }
+    }
+
+  def evaluateClientExposed(ctx: EvaluationContext): IO[Map[FlagKey, Json]] =
+    (invalidationStarted *> cachedLoad(clientFlagsCache, (), transactor.inSession(repository.findAllClientExposed)))
+      .flatMap(_.traverse(flag => fetchSegments(flag).map(segments => flag.key -> FlagEvaluationEngine.evaluate(flag, segments, ctx).value.toJson)))
+      .map(_.toMap)
+
+  private def persistFlag(
+    flag: FeatureFlag,
+    action: AuditAction,
+    before: Option[FeatureFlag],
+    actor: Actor
+  ): IO[FeatureFlag] =
+    for {
+      now <- Clock[IO].realTimeInstant
+      stamped = flag.updated(now)
+      entryId <- IdGenerator.generateId(AuditEntryId)
+      _ <- transactor.inTransaction {
+             repository.save(stamped) *>
+               auditRepository.append(AuditEntry(entryId, Some(stamped.id), stamped.key, actor, action, before, Some(stamped), now))
+           }
+      _ <- invalidateFlag(stamped.key)
+      _ <- publishBestEffort(FeatureFlagEvent.Invalidated(stamped.key))
+    } yield stamped
+
+  private def persistSegment(segment: Segment): IO[Segment] =
+    for {
+      now <- Clock[IO].realTimeInstant
+      stamped = segment.updated(now)
+      _ <- transactor.inSession(segmentRepository.save(stamped))
+      _ <- invalidateSegments
+      _ <- publishBestEffort(FeatureFlagEvent.SegmentsChanged)
+    } yield stamped
+
+  private def validate(flag: FeatureFlag): Either[String, Unit] = {
     val expected   = flag.defaultValue.variantType
     val mismatched = flag.rules.filter(_.outcome.variant.variantType != expected)
     val duplicated = flag.rules.groupBy(_.position).collect { case (position, rules) if rules.sizeIs > 1 => position }
-    IO.raiseError(
-      new IllegalArgumentException(s"flag ${flag.key} is $expected but rules at ${mismatched.map(_.position)} carry a different variant type")
-    ).whenA(mismatched.nonEmpty) *>
-      IO.raiseError(new IllegalArgumentException(s"flag ${flag.key} has duplicate rule positions: ${duplicated.mkString(", ")}"))
-        .whenA(duplicated.nonEmpty)
+    if (mismatched.nonEmpty) Left(s"flag ${flag.key} is $expected but rules at ${mismatched.map(_.position)} carry a different variant type")
+    else if (duplicated.nonEmpty) Left(s"flag ${flag.key} has duplicate rule positions: ${duplicated.mkString(", ")}")
+    else Right(())
   }
-
-  def saveSegment(segment: Segment): IO[Unit] =
-    Clock[IO].realTimeInstant.flatMap(now => transactor.inSession(segmentRepository.save(segment.updated(now)))) *>
-      invalidateSegments *>
-      publishBestEffort(FeatureFlagEvent.SegmentsChanged)
 
   private val invalidationEpoch: Ref[IO, Long] = Ref.unsafe(0L)
 
   private def invalidateFlag(key: FlagKey): IO[Unit] =
-    invalidationEpoch.update(_ + 1) *> flagCache.invalidate(key)
+    invalidationEpoch.update(_ + 1) *> flagCache.invalidate(key) *> clientFlagsCache.invalidate(())
 
   private val invalidateSegments: IO[Unit] =
     invalidationEpoch.update(_ + 1) *> segmentCache.invalidate(())
@@ -183,4 +307,34 @@ class FeatureFlagServiceLive(
     override def intDetail(key: FlagKey, default: Int): IO[EvaluationDetail[Int]]             = evalDetail(key, default, FlagEvaluator.asInt, ctx)
     override def jsonDetail(key: FlagKey, default: Json): IO[EvaluationDetail[Json]]          = evalDetail(key, default, FlagEvaluator.asJson, ctx)
   }
+}
+
+enum CreateFlagResult {
+  case Created(flag: FeatureFlag) extends CreateFlagResult
+  case KeyExists                  extends CreateFlagResult
+  case Invalid(message: String)   extends CreateFlagResult
+}
+
+enum UpdateFlagResult {
+  case Updated(flag: FeatureFlag) extends UpdateFlagResult
+  case NotFound                   extends UpdateFlagResult
+  case Invalid(message: String)   extends UpdateFlagResult
+}
+
+enum DeleteFlagResult {
+  case Deleted, NotFound
+}
+
+enum CreateSegmentResult {
+  case Created(segment: Segment) extends CreateSegmentResult
+  case NameExists                extends CreateSegmentResult
+}
+
+enum UpdateSegmentResult {
+  case Updated(segment: Segment) extends UpdateSegmentResult
+  case NotFound                  extends UpdateSegmentResult
+}
+
+enum DeleteSegmentResult {
+  case Deleted, NotFound
 }

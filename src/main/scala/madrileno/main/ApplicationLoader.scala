@@ -1,5 +1,6 @@
 package madrileno.main
 
+import cats.effect.std.Supervisor
 import cats.effect.unsafe.IORuntime
 import cats.effect.{Clock, IO}
 import com.comcast.ip4s.{Ipv4Address, Port}
@@ -11,6 +12,9 @@ import madrileno.user.UserModule
 import madrileno.utils.cache.CacheRuntime
 import madrileno.utils.db.transactor.Transactor
 import madrileno.utils.events.EventBusRuntime
+import madrileno.utils.featureflag.FeatureFlagModule
+import madrileno.utils.featureflag.domain.Actor
+import madrileno.utils.featureflag.routers.FeatureFlagAdminRouter
 import madrileno.utils.http.{ApplicationRouteProvider, Handlers, RateLimiterRuntime}
 import madrileno.utils.mailer.{MailContext, MailPreviewProvider, MailPreviewRouter, Mailer, MailerConfig, SmtpSender}
 import madrileno.utils.observability.*
@@ -76,7 +80,9 @@ class ApplicationLoader(
   val eventBusRuntime: EventBusRuntime,
   val circuitBreakerRuntime: CircuitBreakerRuntime,
   val ioRuntime: IORuntime
-)(using TelemetryContext)
+)(using
+  TelemetryContext,
+  Supervisor[IO])
     extends ApplicationRouteProvider
     with ApplicationTaskProvider
     with MailPreviewProvider
@@ -85,11 +91,13 @@ class ApplicationLoader(
     with AuthModule
     with UserModule
     with AuctionModule
+    with FeatureFlagModule
     with HealthCheckModule {
   lazy val httpConfig: HttpConfig             = config.at("http").loadOrThrow[HttpConfig]
   lazy val appConfig: AppConfig               = config.at("app").loadOrThrow[AppConfig]
   lazy val adminConfig: AdminConfig           = config.at("admin").loadOrThrow[AdminConfig]
   lazy val telemetryContext: TelemetryContext = summon[TelemetryContext]
+  lazy val supervisor: Supervisor[IO]         = summon[Supervisor[IO]]
   lazy val mailContext: MailContext           = MailContext(httpConfig.baseUrl)
   val objectStore: ObjectStore                = objectStoreRuntime.objectStore
 
@@ -129,15 +137,16 @@ class ApplicationLoader(
 
   private lazy val rawConfig: Config = config.config().fold(f => throw new ConfigReaderException[Config](f), identity)
 
-  lazy val schedulerAdminRouter: SchedulerAdminRouter   = new SchedulerAdminRouter(recurringTasks, oneTimeTasks, customTasks, schedulerClient)
-  lazy val loggersAdminRouter: LoggersAdminRouter       = new LoggersAdminRouter
-  lazy val configAdminRouter: ConfigAdminRouter         = new ConfigAdminRouter(rawConfig, adminConfig.config.redactedPaths)
-  lazy val threaddumpAdminRouter: ThreaddumpAdminRouter = new ThreaddumpAdminRouter(ioRuntime)
-  lazy val heapdumpAdminRouter: HeapdumpAdminRouter     = new HeapdumpAdminRouter
+  lazy val schedulerAdminRouter: SchedulerAdminRouter     = new SchedulerAdminRouter(recurringTasks, oneTimeTasks, customTasks, schedulerClient)
+  lazy val loggersAdminRouter: LoggersAdminRouter         = new LoggersAdminRouter
+  lazy val configAdminRouter: ConfigAdminRouter           = new ConfigAdminRouter(rawConfig, adminConfig.config.redactedPaths)
+  lazy val threaddumpAdminRouter: ThreaddumpAdminRouter   = new ThreaddumpAdminRouter(ioRuntime)
+  lazy val heapdumpAdminRouter: HeapdumpAdminRouter       = new HeapdumpAdminRouter
+  lazy val featureFlagAdminRouter: FeatureFlagAdminRouter = new FeatureFlagAdminRouter(featureFlagService, Actor(adminConfig.user))
 
   lazy val adminRoutes: Route = pathPrefix("admin") {
     authenticateBasic(realm = "madrileno-admin", authenticator = adminAuthenticator) { _ =>
-      adminRoute ~ schedulerAdminRouter.routes ~ loggersAdminRouter.routes ~ configAdminRouter.routes ~ threaddumpAdminRouter.routes ~ heapdumpAdminRouter.routes
+      adminRoute ~ schedulerAdminRouter.routes ~ loggersAdminRouter.routes ~ configAdminRouter.routes ~ threaddumpAdminRouter.routes ~ heapdumpAdminRouter.routes ~ featureFlagAdminRouter.routes
     }
   }
 

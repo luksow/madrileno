@@ -47,8 +47,14 @@ class SegmentRepository {
   def findAll: DB[List[Segment]] =
     repository.findByFilter(SegmentRowFilter()).map(_.map(_.toSegment))
 
+  def findByName(name: SegmentName): DB[Option[Segment]] =
+    repository.findOneByFilter(SegmentRowFilter(name = p.equal(name))).map(_.map(_.toSegment))
+
   def save(segment: Segment): DB[Unit] =
     repository.upsert(SegmentRow(segment))
+
+  def deleteById(id: SegmentId): DB[Unit] =
+    repository.deleteById(id)
 
   private val repository: IdRepository[SegmentRow, SegmentId] & FilteringRepository[SegmentRow, SegmentRowFilter] =
     new IdRepository[SegmentRow, SegmentId](_.id) with FilteringRepository[SegmentRow, SegmentRowFilter] {
@@ -56,7 +62,8 @@ class SegmentRepository {
     }
 }
 
-private[repositories] final case class SegmentRowFilter(id: SqlPredicate[SegmentId] = p.any) extends SqlFilter {
+private[repositories] final case class SegmentRowFilter(id: SqlPredicate[SegmentId] = p.any, name: SqlPredicate[SegmentName] = p.any)
+    extends SqlFilter {
   override def filterFragment: AppliedFragment =
-    SqlFilterDerivation.filterFragment(this, Tuple1(SegmentRowTable.id))
+    SqlFilterDerivation.filterFragment(this, (SegmentRowTable.id, SegmentRowTable.name))
 }

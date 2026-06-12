@@ -1,5 +1,6 @@
 package madrileno.support
 
+import cats.effect.std.Supervisor
 import cats.effect.unsafe.IORuntime
 import cats.effect.unsafe.implicits.global
 import cats.effect.{Clock, IO}
@@ -37,6 +38,8 @@ trait TestApplicationLoader extends TestContainersForAll with TestMailpit { self
   given Tracer[IO]       = Tracer.noop[IO]
   given Meter[IO]        = Meter.noop[IO]
   given TelemetryContext = TelemetryContext(Meter.noop[IO], Tracer.noop[IO], io.opentelemetry.api.OpenTelemetry.noop())
+  // Finalizer discarded — supervised fibers live for the spec's JVM lifetime, same rationale as the pool below.
+  given Supervisor[IO] = Supervisor[IO].allocated.unsafeRunSync()._1
 
   // Stable across the spec lifetime so tests can seed users matching the fake firebase verifier
   val firebaseToken: VerifiedExternalToken = TestData.verifiedExternalToken()
