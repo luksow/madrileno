@@ -75,13 +75,13 @@ class FeatureFlagServiceLive(
     IO.raiseError(
       new IllegalArgumentException(s"flag ${flag.key} is $expected but rules at ${mismatched.map(_.position)} carry a different variant type")
     ).whenA(mismatched.nonEmpty) *>
-      Clock[IO].realTimeInstant.flatMap(now => transactor.inTransaction(repository.save(flag.copy(updatedAt = now)))) *>
+      Clock[IO].realTimeInstant.flatMap(now => transactor.inTransaction(repository.save(flag.updated(now)))) *>
       invalidateFlag(flag.key) *>
       publishBestEffort(FeatureFlagEvent.Invalidated(flag.key))
   }
 
   def saveSegment(segment: Segment): IO[Unit] =
-    Clock[IO].realTimeInstant.flatMap(now => transactor.inSession(segmentRepository.save(segment.copy(updatedAt = now)))) *>
+    Clock[IO].realTimeInstant.flatMap(now => transactor.inSession(segmentRepository.save(segment.updated(now)))) *>
       invalidateSegments *>
       publishBestEffort(FeatureFlagEvent.SegmentsChanged)
 

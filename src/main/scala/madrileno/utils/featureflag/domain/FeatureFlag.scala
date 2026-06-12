@@ -71,4 +71,6 @@ final case class FeatureFlag(
   clientExposed: Boolean,
   rules: List[Rule],
   createdAt: Instant,
-  updatedAt: Instant)
+  updatedAt: Instant) {
+  def updated(now: Instant): FeatureFlag = copy(updatedAt = now)
+}

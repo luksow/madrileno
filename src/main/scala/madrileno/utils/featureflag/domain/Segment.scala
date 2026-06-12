@@ -22,4 +22,6 @@ final case class Segment(
   description: FlagDescription,
   conditions: List[RuleCondition],
   createdAt: Instant,
-  updatedAt: Instant)
+  updatedAt: Instant) {
+  def updated(now: Instant): Segment = copy(updatedAt = now)
+}
