@@ -4,14 +4,13 @@ import cats.effect.IO
 import cats.effect.std.Supervisor
 import cats.effect.testing.scalatest.AsyncIOSpec
 import cats.syntax.all.*
-import madrileno.support.TestTransactor
+import madrileno.support.{TestData, TestTransactor}
 import madrileno.utils.observability.TelemetryContext
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AsyncWordSpec
 import org.typelevel.otel4s.metrics.Meter
 import org.typelevel.otel4s.trace.Tracer
 
-import java.util.UUID
 import scala.concurrent.duration.*
 
 class PostgresEventBusSpec extends AsyncWordSpec with AsyncIOSpec with Matchers with TestTransactor {
@@ -21,7 +20,7 @@ class PostgresEventBusSpec extends AsyncWordSpec with AsyncIOSpec with Matchers 
   private final case class Sample(id: Int, name: String) derives EventCodec
 
   // Unique per-test channel names so concurrent test runs against the same Postgres can't cross-talk.
-  private def channel(prefix: String): String = s"${prefix}_${UUID.randomUUID().toString.replace("-", "_")}"
+  private def channel(prefix: String): String = s"${prefix}_${TestData.randomUuid().toString.replace("-", "_")}"
 
   private val testTimeout: FiniteDuration = 10.seconds
 
