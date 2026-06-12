@@ -15,8 +15,8 @@ object FlagEvaluationEngine {
     segments: Map[SegmentName, Segment],
     context: EvaluationContext
   ): Result =
-    if (!flag.enabled) Result(flag.defaultValue, EvaluationReason.FlagDisabled)
-    else firstMatch(flag.rules, segments, context).getOrElse(Result(flag.defaultValue, EvaluationReason.Fallthrough))
+    if (!flag.enabled) Result(flag.defaultValue, EvaluationReason.Disabled)
+    else firstMatch(flag.rules, segments, context).getOrElse(Result(flag.defaultValue, EvaluationReason.Default))
 
   private def firstMatch(
     rules: List[Rule],
@@ -51,9 +51,9 @@ object FlagEvaluationEngine {
   }
 
   private def applyOutcome(outcome: RuleOutcome, context: EvaluationContext): Option[Result] = outcome match {
-    case FixedValue(value) => Some(Result(value, EvaluationReason.RuleMatch))
+    case FixedValue(value) => Some(Result(value, EvaluationReason.TargetingMatch))
     case PercentageRollout(percentage, seed, onMatch) =>
-      if (inBucket(seed, context.targetingKey, percentage)) Some(Result(onMatch, EvaluationReason.PercentageRollout))
+      if (inBucket(seed, context.targetingKey, percentage)) Some(Result(onMatch, EvaluationReason.Split))
       else None
   }
 

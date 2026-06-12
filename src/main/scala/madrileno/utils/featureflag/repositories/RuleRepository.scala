@@ -1,7 +1,7 @@
 package madrileno.utils.featureflag.repositories
 
 import madrileno.utils.db.dsl.*
-import madrileno.utils.db.transactor.DB
+import madrileno.utils.db.transactor.{DB, DBInTransaction}
 import madrileno.utils.featureflag.domain.*
 import skunk.*
 import skunk.circe.codec.all.*
@@ -51,7 +51,7 @@ class RuleRepository {
   def findByFlagId(flagId: FlagId): DB[List[Rule]] =
     repository.findByForeignId(flagId).map(_.map(_.toRule).sortBy(_.position))
 
-  def replaceAll(flagId: FlagId, rules: List[Rule]): DB[Unit] =
+  def replaceAll(flagId: FlagId, rules: List[Rule]): DBInTransaction[Unit] =
     repository.deleteByForeignId(flagId) *> repository.createAll(rules.map(RuleRow(flagId, _))).void
 
   private val repository: IdRepository[RuleRow, RuleId] & ForeignIdRepository[RuleRow, FlagId] =

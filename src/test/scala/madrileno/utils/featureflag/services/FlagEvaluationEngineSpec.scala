@@ -20,19 +20,19 @@ class FlagEvaluationEngineSpec extends AnyWordSpec with Matchers {
     FlagEvaluationEngine.evaluate(flag, segments.map(s => s.name -> s).toMap, ctx)
 
   "FlagEvaluationEngine.evaluate" should {
-    "return defaultValue with Fallthrough reason when the flag is enabled and no rules" in {
+    "return defaultValue with Default reason when the flag is enabled and no rules" in {
       val f      = TestData.featureFlag(defaultValue = FlagVariant.BoolVariant(true))
       val result = evaluate(f, anon)
       result.value shouldBe FlagVariant.BoolVariant(true)
-      result.reason shouldBe EvaluationReason.Fallthrough
+      result.reason shouldBe EvaluationReason.Default
     }
 
-    "return defaultValue with FlagDisabled reason when the flag is disabled (even with rules)" in {
+    "return defaultValue with Disabled reason when the flag is disabled (even with rules)" in {
       val matching = TestData.flagRule(conditions = List(RuleCondition.StringEquals(AttributeName("plan"), "enterprise")))
       val f        = TestData.featureFlag(enabled = false, rules = List(matching))
       val result   = evaluate(f, ctxWith("plan" -> "enterprise"))
       result.value shouldBe FlagVariant.BoolVariant(false)
-      result.reason shouldBe EvaluationReason.FlagDisabled
+      result.reason shouldBe EvaluationReason.Disabled
     }
 
     "preserve the variant for all four types" in {
@@ -55,38 +55,38 @@ class FlagEvaluationEngineSpec extends AnyWordSpec with Matchers {
 
     "StringEquals matches exact" in {
       val f = withCondition(RuleCondition.StringEquals(AttributeName("plan"), "enterprise"))
-      evaluate(f, ctxWith("plan" -> "enterprise")).reason shouldBe EvaluationReason.RuleMatch
-      evaluate(f, ctxWith("plan" -> "free")).reason shouldBe EvaluationReason.Fallthrough
+      evaluate(f, ctxWith("plan" -> "enterprise")).reason shouldBe EvaluationReason.TargetingMatch
+      evaluate(f, ctxWith("plan" -> "free")).reason shouldBe EvaluationReason.Default
     }
 
     "StringIn matches set membership" in {
       val f = withCondition(RuleCondition.StringIn(AttributeName("region"), Set("eu-west-1", "eu-west-2")))
-      evaluate(f, ctxWith("region" -> "eu-west-2")).reason shouldBe EvaluationReason.RuleMatch
-      evaluate(f, ctxWith("region" -> "us-east-1")).reason shouldBe EvaluationReason.Fallthrough
+      evaluate(f, ctxWith("region" -> "eu-west-2")).reason shouldBe EvaluationReason.TargetingMatch
+      evaluate(f, ctxWith("region" -> "us-east-1")).reason shouldBe EvaluationReason.Default
     }
 
     "StringContains and StringStartsWith match substrings" in {
       val containsF   = withCondition(RuleCondition.StringContains(AttributeName("ua"), "Firefox"))
       val startsWithF = withCondition(RuleCondition.StringStartsWith(AttributeName("ua"), "Mozilla"))
-      evaluate(containsF, ctxWith("ua" -> "Mozilla/5.0 Firefox/120")).reason shouldBe EvaluationReason.RuleMatch
-      evaluate(containsF, ctxWith("ua" -> "Mozilla/5.0 Chrome/100")).reason shouldBe EvaluationReason.Fallthrough
-      evaluate(startsWithF, ctxWith("ua" -> "Mozilla/5.0 Firefox/120")).reason shouldBe EvaluationReason.RuleMatch
+      evaluate(containsF, ctxWith("ua" -> "Mozilla/5.0 Firefox/120")).reason shouldBe EvaluationReason.TargetingMatch
+      evaluate(containsF, ctxWith("ua" -> "Mozilla/5.0 Chrome/100")).reason shouldBe EvaluationReason.Default
+      evaluate(startsWithF, ctxWith("ua" -> "Mozilla/5.0 Firefox/120")).reason shouldBe EvaluationReason.TargetingMatch
     }
 
     "Int operators parse the attribute string and compare" in {
       val eqF = withCondition(RuleCondition.IntEquals(AttributeName("age"), 18))
       val gtF = withCondition(RuleCondition.IntGreaterThan(AttributeName("age"), 21))
       val ltF = withCondition(RuleCondition.IntLessThan(AttributeName("age"), 65))
-      evaluate(eqF, ctxWith("age" -> "18")).reason shouldBe EvaluationReason.RuleMatch
-      evaluate(gtF, ctxWith("age" -> "30")).reason shouldBe EvaluationReason.RuleMatch
-      evaluate(gtF, ctxWith("age" -> "15")).reason shouldBe EvaluationReason.Fallthrough
-      evaluate(ltF, ctxWith("age" -> "100")).reason shouldBe EvaluationReason.Fallthrough
+      evaluate(eqF, ctxWith("age" -> "18")).reason shouldBe EvaluationReason.TargetingMatch
+      evaluate(gtF, ctxWith("age" -> "30")).reason shouldBe EvaluationReason.TargetingMatch
+      evaluate(gtF, ctxWith("age" -> "15")).reason shouldBe EvaluationReason.Default
+      evaluate(ltF, ctxWith("age" -> "100")).reason shouldBe EvaluationReason.Default
     }
 
     "BoolEquals parses the attribute string" in {
       val f = withCondition(RuleCondition.BoolEquals(AttributeName("verified"), true))
-      evaluate(f, ctxWith("verified" -> "true")).reason shouldBe EvaluationReason.RuleMatch
-      evaluate(f, ctxWith("verified" -> "false")).reason shouldBe EvaluationReason.Fallthrough
+      evaluate(f, ctxWith("verified" -> "true")).reason shouldBe EvaluationReason.TargetingMatch
+      evaluate(f, ctxWith("verified" -> "false")).reason shouldBe EvaluationReason.Default
     }
 
     "all conditions in a rule must match (AND within rule)" in {
@@ -97,9 +97,9 @@ class FlagEvaluationEngineSpec extends AnyWordSpec with Matchers {
           )
         )
       )
-      evaluate(f, ctxWith("plan" -> "enterprise", "region" -> "eu-west-1")).reason shouldBe EvaluationReason.RuleMatch
-      evaluate(f, ctxWith("plan" -> "enterprise", "region" -> "us-east-1")).reason shouldBe EvaluationReason.Fallthrough
-      evaluate(f, ctxWith("plan" -> "free", "region" -> "eu-west-1")).reason shouldBe EvaluationReason.Fallthrough
+      evaluate(f, ctxWith("plan" -> "enterprise", "region" -> "eu-west-1")).reason shouldBe EvaluationReason.TargetingMatch
+      evaluate(f, ctxWith("plan" -> "enterprise", "region" -> "us-east-1")).reason shouldBe EvaluationReason.Default
+      evaluate(f, ctxWith("plan" -> "free", "region" -> "eu-west-1")).reason shouldBe EvaluationReason.Default
     }
 
     "first matching rule wins (rules evaluated in position order)" in {
@@ -129,15 +129,15 @@ class FlagEvaluationEngineSpec extends AnyWordSpec with Matchers {
           List(RuleCondition.StringEquals(AttributeName("plan"), "enterprise"), RuleCondition.StringIn(AttributeName("region"), Set("eu-west-1")))
       )
       val f = flagMatchingSegment("enterprise-eu")
-      evaluate(f, ctxWith("plan" -> "enterprise", "region" -> "eu-west-1"), List(segment)).reason shouldBe EvaluationReason.RuleMatch
-      evaluate(f, ctxWith("plan" -> "free", "region" -> "eu-west-1"), List(segment)).reason shouldBe EvaluationReason.Fallthrough
+      evaluate(f, ctxWith("plan" -> "enterprise", "region" -> "eu-west-1"), List(segment)).reason shouldBe EvaluationReason.TargetingMatch
+      evaluate(f, ctxWith("plan" -> "free", "region" -> "eu-west-1"), List(segment)).reason shouldBe EvaluationReason.Default
     }
 
     "never match a missing segment, even when the caller forges sentinel-like attributes" in {
       val f = flagMatchingSegment("deleted-segment")
-      evaluate(f, anon).reason shouldBe EvaluationReason.Fallthrough
-      evaluate(f, ctxWith("__segment_missing__" -> "true")).reason shouldBe EvaluationReason.Fallthrough
-      evaluate(f, ctxWith("deleted-segment" -> "true")).reason shouldBe EvaluationReason.Fallthrough
+      evaluate(f, anon).reason shouldBe EvaluationReason.Default
+      evaluate(f, ctxWith("__segment_missing__" -> "true")).reason shouldBe EvaluationReason.Default
+      evaluate(f, ctxWith("deleted-segment" -> "true")).reason shouldBe EvaluationReason.Default
     }
 
     "resolve segments nested inside segments" in {
@@ -148,24 +148,24 @@ class FlagEvaluationEngineSpec extends AnyWordSpec with Matchers {
       )
       val f        = flagMatchingSegment("enterprise-eu")
       val segments = List(eu, enterpriseEu)
-      evaluate(f, ctxWith("plan" -> "enterprise", "region" -> "eu-west-1"), segments).reason shouldBe EvaluationReason.RuleMatch
-      evaluate(f, ctxWith("plan" -> "enterprise", "region" -> "us-east-1"), segments).reason shouldBe EvaluationReason.Fallthrough
+      evaluate(f, ctxWith("plan" -> "enterprise", "region" -> "eu-west-1"), segments).reason shouldBe EvaluationReason.TargetingMatch
+      evaluate(f, ctxWith("plan" -> "enterprise", "region" -> "us-east-1"), segments).reason shouldBe EvaluationReason.Default
     }
 
     "never match a segment reference cycle" in {
       val a = TestData.flagSegment(name = SegmentName("seg-a"), conditions = List(RuleCondition.SegmentMatch(SegmentName("seg-b"))))
       val b = TestData.flagSegment(name = SegmentName("seg-b"), conditions = List(RuleCondition.SegmentMatch(SegmentName("seg-a"))))
       val f = flagMatchingSegment("seg-a")
-      evaluate(f, anon, List(a, b)).reason shouldBe EvaluationReason.Fallthrough
+      evaluate(f, anon, List(a, b)).reason shouldBe EvaluationReason.Default
     }
   }
 
   "PercentageRollout" should {
-    "return PercentageRollout reason for users in the bucket; Fallthrough otherwise" in {
+    "return Split reason for users in the bucket; Default otherwise" in {
       val r = TestData.flagRule(outcome = RuleOutcome.PercentageRollout(Percentage(50), RolloutSeed("phase2-test"), FlagVariant.BoolVariant(true)))
       val f = TestData.featureFlag(rules = List(r))
       val results = (1 to 200).map(i => evaluate(f, EvaluationContext.anonymous(TargetingKey(s"user-$i"))).reason)
-      val hits    = results.count(_ == EvaluationReason.PercentageRollout)
+      val hits    = results.count(_ == EvaluationReason.Split)
       hits should (be >= 70 and be <= 130)
     }
 
@@ -187,8 +187,8 @@ class FlagEvaluationEngineSpec extends AnyWordSpec with Matchers {
       val fFull = TestData.featureFlag(rules = List(full))
       (1 to 50).foreach { i =>
         val ctx = EvaluationContext.anonymous(TargetingKey(s"u-$i"))
-        evaluate(fZero, ctx).reason shouldBe EvaluationReason.Fallthrough
-        evaluate(fFull, ctx).reason shouldBe EvaluationReason.PercentageRollout
+        evaluate(fZero, ctx).reason shouldBe EvaluationReason.Default
+        evaluate(fFull, ctx).reason shouldBe EvaluationReason.Split
       }
     }
   }

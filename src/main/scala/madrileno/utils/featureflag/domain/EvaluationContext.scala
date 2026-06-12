@@ -31,10 +31,15 @@ object EvaluationContext {
 }
 
 enum EvaluationReason {
-  case FlagDisabled, RuleMatch, PercentageRollout, Fallthrough, FlagNotFound, Error, VariantTypeMismatch
+  case Disabled, TargetingMatch, Split, Default, Error
+}
+
+enum ErrorCode {
+  case FlagNotFound, TypeMismatch, General
 }
 
 final case class EvaluationDetail[+T](
   value: T,
   reason: EvaluationReason,
+  errorCode: Option[ErrorCode] = None,
   errorMessage: Option[String] = None)

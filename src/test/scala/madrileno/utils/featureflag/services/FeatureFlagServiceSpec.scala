@@ -56,47 +56,50 @@ class FeatureFlagServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matcher
         result <- service.evaluator(ctx).booleanDetail(FlagKey("phase1-bool-on"), default = false)
       } yield {
         result.value shouldBe true
-        result.reason shouldBe EvaluationReason.Fallthrough
+        result.reason shouldBe EvaluationReason.Default
       }
     }
 
-    "return defaultValue with FlagDisabled when the flag is disabled" in {
+    "return defaultValue with Disabled when the flag is disabled" in {
       for {
         _      <- seedFlag("phase1-bool-off", enabled = false)
         result <- service.evaluator(ctx).booleanDetail(FlagKey("phase1-bool-off"), default = false)
       } yield {
         result.value shouldBe true
-        result.reason shouldBe EvaluationReason.FlagDisabled
+        result.reason shouldBe EvaluationReason.Disabled
       }
     }
 
-    "return the caller default with FlagNotFound when the flag does not exist" in {
+    "return the caller default with ErrorCode.FlagNotFound when the flag does not exist" in {
       service
         .evaluator(ctx)
         .booleanDetail(FlagKey("phase1-missing"), default = false)
         .asserting { result =>
           result.value shouldBe false
-          result.reason shouldBe EvaluationReason.FlagNotFound
+          result.reason shouldBe EvaluationReason.Error
+          result.errorCode shouldBe Some(ErrorCode.FlagNotFound)
         }
     }
 
-    "return VariantTypeMismatch when the flag's variant doesn't match the caller's typed call" in {
+    "return ErrorCode.TypeMismatch when the flag's variant doesn't match the caller's typed call" in {
       for {
         _      <- seedFlag("phase1-string-flag", defaultValue = FlagVariant.StringVariant("v3"))
         result <- service.evaluator(ctx).booleanDetail(FlagKey("phase1-string-flag"), default = false)
       } yield {
         result.value shouldBe false
-        result.reason shouldBe EvaluationReason.VariantTypeMismatch
+        result.reason shouldBe EvaluationReason.Error
+        result.errorCode shouldBe Some(ErrorCode.TypeMismatch)
       }
     }
 
-    "return VariantTypeMismatch when calling evaluateJson on a non-Json flag" in {
+    "return ErrorCode.TypeMismatch when calling evaluateJson on a non-Json flag" in {
       for {
         _      <- seedFlag("phase1-bool-as-json")
         result <- service.evaluator(ctx).jsonDetail(FlagKey("phase1-bool-as-json"), default = io.circe.Json.Null)
       } yield {
         result.value shouldBe io.circe.Json.Null
-        result.reason shouldBe EvaluationReason.VariantTypeMismatch
+        result.reason shouldBe EvaluationReason.Error
+        result.errorCode shouldBe Some(ErrorCode.TypeMismatch)
       }
     }
 
@@ -122,9 +125,9 @@ class FeatureFlagServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matcher
         fr  <- service.evaluator(ctxFree).booleanDetail(FlagKey("phase2-rule"), default = false)
       } yield {
         ent.value shouldBe true
-        ent.reason shouldBe EvaluationReason.RuleMatch
+        ent.reason shouldBe EvaluationReason.TargetingMatch
         fr.value shouldBe false
-        fr.reason shouldBe EvaluationReason.Fallthrough
+        fr.reason shouldBe EvaluationReason.Default
       }
     }
 
@@ -136,8 +139,8 @@ class FeatureFlagServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matcher
         _        <- service.saveFlag(flag.copy(enabled = false))
         afterInv <- service.evaluator(ctx).booleanDetail(key, default = false)
       } yield {
-        first.reason shouldBe EvaluationReason.Fallthrough
-        afterInv.reason shouldBe EvaluationReason.FlagDisabled
+        first.reason shouldBe EvaluationReason.Default
+        afterInv.reason shouldBe EvaluationReason.Disabled
       }
     }
 
@@ -165,7 +168,7 @@ class FeatureFlagServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matcher
       // republishing compensates for events published before the reader's background subscription was live
       def pollUntilDisabled(attempts: Int): IO[EvaluationDetail[Boolean]] =
         reader.evaluator(ctx).booleanDetail(key, default = false).flatMap { detail =>
-          if (detail.reason == EvaluationReason.FlagDisabled || attempts <= 0) IO.pure(detail)
+          if (detail.reason == EvaluationReason.Disabled || attempts <= 0) IO.pure(detail)
           else eventBus.publish(FeatureFlagEvent.Invalidated(key)) *> IO.sleep(50.millis) *> pollUntilDisabled(attempts - 1)
         }
       for {
@@ -174,9 +177,17 @@ class FeatureFlagServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matcher
         _          <- service.saveFlag(flag.copy(enabled = false))
         afterEvent <- pollUntilDisabled(attempts = 100)
       } yield {
-        first.reason shouldBe EvaluationReason.Fallthrough
-        afterEvent.reason shouldBe EvaluationReason.FlagDisabled
+        first.reason shouldBe EvaluationReason.Default
+        afterEvent.reason shouldBe EvaluationReason.Disabled
       }
+    }
+
+    "reject saveFlag when rules share a position" in {
+      val duplicated = TestData.featureFlag(
+        key = FlagKey("phase2-dup-positions"),
+        rules = List(TestData.flagRule(position = RulePosition(0)), TestData.flagRule(position = RulePosition(0)))
+      )
+      service.saveFlag(duplicated).attempt.asserting(_.left.toOption.get shouldBe an[IllegalArgumentException])
     }
 
     "reject saveFlag when a rule outcome's variant type doesn't match the flag's" in {
@@ -201,8 +212,8 @@ class FeatureFlagServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matcher
         _      <- service.saveSegment(segmentV1.copy(conditions = List(RuleCondition.StringEquals(AttributeName("plan"), "enterprise"))))
         after  <- service.evaluator(ctxBeta).booleanDetail(key, default = false)
       } yield {
-        before.reason shouldBe EvaluationReason.RuleMatch
-        after.reason shouldBe EvaluationReason.Fallthrough
+        before.reason shouldBe EvaluationReason.TargetingMatch
+        after.reason shouldBe EvaluationReason.Default
       }
     }
   }

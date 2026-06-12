@@ -69,15 +69,21 @@ class FeatureFlagServiceLive(
   private val segmentCache: Cache[Unit, Map[SegmentName, Segment]] =
     cacheRuntime.expiring[Unit, Map[SegmentName, Segment]](expireAfterWrite = 60.seconds, maxSize = 1)
 
-  def saveFlag(flag: FeatureFlag): IO[Unit] = {
-    val expected   = flag.defaultValue.variantType
-    val mismatched = flag.rules.filter(_.outcome.variant.variantType != expected)
-    IO.raiseError(
-      new IllegalArgumentException(s"flag ${flag.key} is $expected but rules at ${mismatched.map(_.position)} carry a different variant type")
-    ).whenA(mismatched.nonEmpty) *>
+  def saveFlag(flag: FeatureFlag): IO[Unit] =
+    validate(flag) *>
       Clock[IO].realTimeInstant.flatMap(now => transactor.inTransaction(repository.save(flag.updated(now)))) *>
       invalidateFlag(flag.key) *>
       publishBestEffort(FeatureFlagEvent.Invalidated(flag.key))
+
+  private def validate(flag: FeatureFlag): IO[Unit] = {
+    val expected   = flag.defaultValue.variantType
+    val mismatched = flag.rules.filter(_.outcome.variant.variantType != expected)
+    val duplicated = flag.rules.groupBy(_.position).collect { case (position, rules) if rules.sizeIs > 1 => position }
+    IO.raiseError(
+      new IllegalArgumentException(s"flag ${flag.key} is $expected but rules at ${mismatched.map(_.position)} carry a different variant type")
+    ).whenA(mismatched.nonEmpty) *>
+      IO.raiseError(new IllegalArgumentException(s"flag ${flag.key} has duplicate rule positions: ${duplicated.mkString(", ")}"))
+        .whenA(duplicated.nonEmpty)
   }
 
   def saveSegment(segment: Segment): IO[Unit] =
@@ -148,7 +154,7 @@ class FeatureFlagServiceLive(
   ): IO[EvaluationDetail[T]] =
     (invalidationStarted *> fetchFlag(key))
       .flatMap {
-        case None => IO.pure(EvaluationDetail(default, EvaluationReason.FlagNotFound))
+        case None => IO.pure(EvaluationDetail(default, EvaluationReason.Error, Some(ErrorCode.FlagNotFound)))
         case Some(flag) =>
           fetchSegments(flag).map { segments =>
             val result = FlagEvaluationEngine.evaluate(flag, segments, ctx)
@@ -158,7 +164,8 @@ class FeatureFlagServiceLive(
                 val actual = result.value.variantType
                 EvaluationDetail(
                   default,
-                  EvaluationReason.VariantTypeMismatch,
+                  EvaluationReason.Error,
+                  Some(ErrorCode.TypeMismatch),
                   Some(s"flag ${flag.key} returned $actual; caller expected a different type")
                 )
             }
@@ -167,7 +174,7 @@ class FeatureFlagServiceLive(
       .handleErrorWith(t =>
         logger
           .warn(t)(s"feature-flag eval failed for $key, using default")
-          .as(EvaluationDetail(default, EvaluationReason.Error, Option(t.getClass.getSimpleName)))
+          .as(EvaluationDetail(default, EvaluationReason.Error, Some(ErrorCode.General), Option(t.getClass.getSimpleName)))
       )
 
   override def evaluator(ctx: EvaluationContext): FlagEvaluator = new FlagEvaluator {
