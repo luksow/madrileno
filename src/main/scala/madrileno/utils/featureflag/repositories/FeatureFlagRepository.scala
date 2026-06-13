@@ -96,11 +96,9 @@ class FeatureFlagRepository(ruleRepository: RuleRepository) {
                }
     } yield flags.sortBy(_.key.unwrap)
 
-  // INSERT a brand-new flag; relies on UNIQUE(key) to reject duplicates (the service maps that to KeyExists).
   def insert(flag: FeatureFlag): DBInTransaction[Unit] =
     repository.create(FeatureFlagRow(flag)).void *> ruleRepository.replaceAll(flag.id, flag.rules)
 
-  // UPDATE an existing row (no upsert) — callers hold a row lock, so a concurrently deleted flag is never resurrected.
   def update(flag: FeatureFlag): DBInTransaction[Unit] =
     repository.update(FeatureFlagRow(flag)) *> ruleRepository.replaceAll(flag.id, flag.rules)
 

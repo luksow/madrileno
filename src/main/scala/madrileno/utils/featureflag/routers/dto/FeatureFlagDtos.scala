@@ -7,9 +7,6 @@ import madrileno.utils.json.JsonProtocol.*
 
 import java.time.Instant
 
-// FlagVariant / RuleCondition / RuleOutcome are sum types with payloads — circe's `derives` on the enclosing DTOs
-// does not auto-derive instances for them (unlike the opaque leaves, which JsonProtocol/kebs handles), so we derive
-// them explicitly here. Held private to the DTO layer; the repository layer keeps its own copies for JSONB columns.
 private given Codec.AsObject[FlagVariant]   = Codec.AsObject.derived
 private given Codec.AsObject[RuleCondition] = Codec.AsObject.derived
 private given Codec.AsObject[RuleOutcome]   = Codec.AsObject.derived

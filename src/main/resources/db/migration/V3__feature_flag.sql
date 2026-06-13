@@ -43,5 +43,4 @@ CREATE TABLE feature_flag_audit (
     created_at      TIMESTAMPTZ NOT NULL
 );
 
--- Audit is only ever queried by flag_key (flag_id is nulled on delete), newest-first with id as a stable tie-break.
 CREATE INDEX feature_flag_audit_flag_key_idx ON feature_flag_audit (flag_key, created_at DESC, id);

@@ -14,7 +14,7 @@ import madrileno.utils.featureflag.domain.*
 import madrileno.utils.featureflag.repositories.{FeatureFlagAuditRepository, FeatureFlagRepository, RuleRepository, SegmentRepository}
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
 import madrileno.utils.pagination.PageRequest
-import skunk.SqlState
+import pl.iterators.sealedmonad.syntax.*
 
 import java.time.Instant
 import scala.concurrent.duration.*
@@ -80,12 +80,23 @@ class FeatureFlagServiceLive(
     cacheRuntime.expiring[Unit, List[FeatureFlag]](expireAfterWrite = 60.seconds, maxSize = 1)
 
   def createFlag(command: CreateFlagCommand): IO[CreateFlagResult] =
-    buildFlag(command).flatMap { flag =>
-      validate(flag) match {
-        case Left(message) => IO.pure(CreateFlagResult.Invalid(message))
-        case Right(())     => persistNewFlag(flag, command.actor)
+    transactor
+      .inTransaction {
+        (for {
+          flag <- buildFlag(command).seal[CreateFlagResult].attempt(f => validate(f).left.map(CreateFlagResult.Invalid.apply).map(_ => f))
+          _ <- repository.findByKey(flag.key).seal[CreateFlagResult].attempt {
+                 case Some(_) => Left(CreateFlagResult.KeyExists)
+                 case None    => Right(())
+               }
+          entryId <- IdGenerator.generateId(AuditEntryId).seal
+          entry = AuditEntry(entryId, Some(flag.id), flag.key, command.actor, AuditAction.Created, before = None, after = Some(flag), flag.createdAt)
+          _ <- (repository.insert(flag) *> auditRepository.append(entry)).seal
+        } yield CreateFlagResult.Created(flag)).run
       }
-    }
+      .flatTap {
+        case CreateFlagResult.Created(flag) => invalidateAndPublishFlag(flag.key)
+        case _                              => IO.unit
+      }
 
   def updateFlag(command: UpdateFlagCommand): IO[UpdateFlagResult] =
     modifyFlag(command.key, command.actor, AuditAction.Updated) { (existing, now) =>
@@ -106,8 +117,6 @@ class FeatureFlagServiceLive(
       IO.pure(existing.copy(enabled = command.enabled, updatedAt = now))
     }
 
-  // Read-under-lock, validate, write and audit-append happen in one transaction; the FOR UPDATE lock on the existing
-  // row makes a concurrent delete wait, so an update can never resurrect a flag that was deleted in between.
   private def modifyFlag(
     key: FlagKey,
     actor: Actor,
@@ -115,67 +124,37 @@ class FeatureFlagServiceLive(
   )(
     transform: (FeatureFlag, Instant) => IO[FeatureFlag]
   ): IO[UpdateFlagResult] =
-    for {
-      now     <- Clock[IO].realTimeInstant
-      entryId <- IdGenerator.generateId(AuditEntryId)
-      result <- transactor.inTransaction {
-                  repository.findByKey(key, Lock.ForUpdate).flatMap {
-                    case None => IO.pure(UpdateFlagResult.NotFound)
-                    case Some(existing) =>
-                      transform(existing, now).flatMap { next =>
-                        validate(next) match {
-                          case Left(message) => IO.pure(UpdateFlagResult.Invalid(message))
-                          case Right(()) =>
-                            val entry = AuditEntry(entryId, Some(next.id), next.key, actor, action, Some(existing), Some(next), now)
-                            (repository.update(next) *> auditRepository.append(entry)).as(UpdateFlagResult.Updated(next))
-                        }
-                      }
-                  }
-                }
-      _ <- result match {
-             case UpdateFlagResult.Updated(_) => invalidateAndPublishFlag(key)
-             case _                           => IO.unit
-           }
-    } yield result
-
-  private def persistNewFlag(flag: FeatureFlag, actor: Actor): IO[CreateFlagResult] =
-    for {
-      entryId <- IdGenerator.generateId(AuditEntryId)
-      entry = AuditEntry(entryId, Some(flag.id), flag.key, actor, AuditAction.Created, before = None, after = Some(flag), flag.createdAt)
-      result <- transactor
-                  .inTransaction {
-                    repository.findByKey(flag.key).flatMap {
-                      case Some(_) => IO.pure(CreateFlagResult.KeyExists)
-                      case None    => (repository.insert(flag) *> auditRepository.append(entry)).as[CreateFlagResult](CreateFlagResult.Created(flag))
-                    }
-                  }
-                  .recover { case SqlState.UniqueViolation(_) => CreateFlagResult.KeyExists }
-      _ <- result match {
-             case CreateFlagResult.Created(_) => invalidateAndPublishFlag(flag.key)
-             case _                           => IO.unit
-           }
-    } yield result
+    transactor
+      .inTransaction {
+        (for {
+          now      <- Clock[IO].realTimeInstant.seal[UpdateFlagResult]
+          existing <- repository.findByKey(key, Lock.ForUpdate).valueOr[UpdateFlagResult](UpdateFlagResult.NotFound)
+          next     <- transform(existing, now).seal[UpdateFlagResult].attempt(n => validate(n).left.map(UpdateFlagResult.Invalid.apply).map(_ => n))
+          entryId  <- IdGenerator.generateId(AuditEntryId).seal
+          entry = AuditEntry(entryId, Some(next.id), next.key, actor, action, Some(existing), Some(next), now)
+          _ <- (repository.update(next) *> auditRepository.append(entry)).seal
+        } yield UpdateFlagResult.Updated(next)).run
+      }
+      .flatTap {
+        case UpdateFlagResult.Updated(_) => invalidateAndPublishFlag(key)
+        case _                           => IO.unit
+      }
 
   def deleteFlag(command: DeleteFlagCommand): IO[DeleteFlagResult] =
-    for {
-      now     <- Clock[IO].realTimeInstant
-      entryId <- IdGenerator.generateId(AuditEntryId)
-      result <- transactor.inTransaction {
-                  repository.findByKey(command.key, Lock.ForUpdate).flatMap {
-                    case None       => IO.pure(DeleteFlagResult.NotFound)
-                    case Some(flag) =>
-                      // The delete entry carries flagId = None; the FK's ON DELETE SET NULL detaches earlier
-                      // entries automatically once the flag row is removed, keeping the trail queryable by key.
-                      val entry = AuditEntry(entryId, flagId = None, flag.key, command.actor, AuditAction.Deleted, Some(flag), after = None, now)
-                      (auditRepository.append(entry) *> ruleRepository.deleteByFlagId(flag.id) *> repository.deleteById(flag.id))
-                        .as(DeleteFlagResult.Deleted)
-                  }
-                }
-      _ <- result match {
-             case DeleteFlagResult.Deleted => invalidateAndPublishFlag(command.key)
-             case _                        => IO.unit
-           }
-    } yield result
+    transactor
+      .inTransaction {
+        (for {
+          now     <- Clock[IO].realTimeInstant.seal[DeleteFlagResult]
+          entryId <- IdGenerator.generateId(AuditEntryId).seal
+          flag    <- repository.findByKey(command.key, Lock.ForUpdate).valueOr[DeleteFlagResult](DeleteFlagResult.NotFound)
+          entry = AuditEntry(entryId, flagId = None, flag.key, command.actor, AuditAction.Deleted, before = Some(flag), after = None, now)
+          _ <- (auditRepository.append(entry) *> ruleRepository.deleteByFlagId(flag.id) *> repository.deleteById(flag.id)).seal
+        } yield DeleteFlagResult.Deleted).run
+      }
+      .flatTap {
+        case DeleteFlagResult.Deleted => invalidateAndPublishFlag(command.key)
+        case _                        => IO.unit
+      }
 
   def listFlags: IO[List[FeatureFlag]] = transactor.inSession(repository.findAll)
 
@@ -187,45 +166,44 @@ class FeatureFlagServiceLive(
   def listSegments: IO[List[Segment]] = transactor.inSession(segmentRepository.findAll)
 
   def createSegment(command: CreateSegmentCommand): IO[CreateSegmentResult] =
-    buildSegment(command).flatMap { segment =>
-      transactor
-        .inTransaction {
-          segmentRepository.findByName(segment.name).flatMap {
-            case Some(_) => IO.pure(CreateSegmentResult.NameExists)
-            case None    => segmentRepository.insert(segment).as[CreateSegmentResult](CreateSegmentResult.Created(segment))
-          }
-        }
-        .recover { case SqlState.UniqueViolation(_) => CreateSegmentResult.NameExists }
-        .flatTap {
-          case CreateSegmentResult.Created(_) => invalidateAndPublishSegments
-          case _                              => IO.unit
-        }
-    }
+    transactor
+      .inTransaction {
+        (for {
+          segment <- buildSegment(command).seal[CreateSegmentResult]
+          _ <- segmentRepository.findByName(segment.name).seal[CreateSegmentResult].attempt {
+                 case Some(_) => Left(CreateSegmentResult.NameExists)
+                 case None    => Right(())
+               }
+          _ <- segmentRepository.insert(segment).seal
+        } yield CreateSegmentResult.Created(segment)).run
+      }
+      .flatTap {
+        case CreateSegmentResult.Created(_) => invalidateAndPublishSegments
+        case _                              => IO.unit
+      }
 
   def updateSegment(command: UpdateSegmentCommand): IO[UpdateSegmentResult] =
-    for {
-      now <- Clock[IO].realTimeInstant
-      result <- transactor.inTransaction {
-                  segmentRepository.findByName(command.name, Lock.ForUpdate).flatMap {
-                    case None => IO.pure(UpdateSegmentResult.NotFound)
-                    case Some(existing) =>
-                      val next = existing.copy(description = command.description, conditions = command.conditions, updatedAt = now)
-                      segmentRepository.update(next).as(UpdateSegmentResult.Updated(next))
-                  }
-                }
-      _ <- result match {
-             case UpdateSegmentResult.Updated(_) => invalidateAndPublishSegments
-             case _                              => IO.unit
-           }
-    } yield result
+    transactor
+      .inTransaction {
+        (for {
+          now      <- Clock[IO].realTimeInstant.seal[UpdateSegmentResult]
+          existing <- segmentRepository.findByName(command.name, Lock.ForUpdate).valueOr[UpdateSegmentResult](UpdateSegmentResult.NotFound)
+          next = existing.copy(description = command.description, conditions = command.conditions, updatedAt = now)
+          _ <- segmentRepository.update(next).seal
+        } yield UpdateSegmentResult.Updated(next)).run
+      }
+      .flatTap {
+        case UpdateSegmentResult.Updated(_) => invalidateAndPublishSegments
+        case _                              => IO.unit
+      }
 
   def deleteSegment(command: DeleteSegmentCommand): IO[DeleteSegmentResult] =
     transactor
       .inTransaction {
-        segmentRepository.findByName(command.name, Lock.ForUpdate).flatMap {
-          case None          => IO.pure(DeleteSegmentResult.NotFound)
-          case Some(segment) => segmentRepository.deleteById(segment.id).as(DeleteSegmentResult.Deleted)
-        }
+        (for {
+          segment <- segmentRepository.findByName(command.name, Lock.ForUpdate).valueOr[DeleteSegmentResult](DeleteSegmentResult.NotFound)
+          _       <- segmentRepository.deleteById(segment.id).seal
+        } yield DeleteSegmentResult.Deleted).run
       }
       .flatTap {
         case DeleteSegmentResult.Deleted => invalidateAndPublishSegments
@@ -233,7 +211,6 @@ class FeatureFlagServiceLive(
       }
 
   def evaluateForDebug(command: EvaluateFlagCommand): IO[Option[FlagEvaluationEngine.Result]] =
-    // Built inside IO so an invalid attribute name surfaces as a handled failure (→ 400), not a synchronous throw.
     IO(EvaluationContext(command.targetingKey, command.attributes.map { case (name, value) => AttributeName(name) -> AttributeValue(value) }))
       .flatMap { context =>
         transactor.inSession {
@@ -376,7 +353,6 @@ class FeatureFlagServiceLive(
   }
 }
 
-// Rule as supplied by an admin: identity and timestamp are assigned by the service, not the caller.
 final case class RuleData(
   position: RulePosition,
   description: FlagDescription,

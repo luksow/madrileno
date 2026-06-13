@@ -11,7 +11,6 @@ import pl.iterators.stir.server.Route
 
 class FeatureFlagAdminRouter(service: FeatureFlagServiceLive)(using TelemetryContext) extends BaseRouter {
 
-  // All admin mutations are attributed to the basic-auth admin principal; the route is already behind admin auth.
   private val actor = Actor("Admin")
 
   val routes: Route =
