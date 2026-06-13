@@ -74,7 +74,7 @@ Every flag mutation is written in one transaction with its audit entry — actor
 
 ## Client bootstrap
 
-`GET /v1/feature-flags` (authenticated) evaluates every `clientExposed` flag for the current user and returns a `{ key: value }` map — the frontend fetches it once at startup. The evaluation context is built by an injected resolver so the module stays domain-agnostic; the default (`FeatureFlagModule.featureFlagContext`) keys on the user id and carries `email-verified` as an attribute. Override it to expose whatever your segments target on.
+`GET /v1/feature-flags` (authenticated) evaluates every `clientExposed` flag for the current user and returns a `{ key: value }` map — the frontend fetches it once at startup. The evaluation context keys on the user id, and every scalar field of the `AuthContext` is flattened into an attribute (so `emailVerified` is available to segments out of the box); add a field to `AuthContext` and it shows up automatically.
 
 ## Worked example: the auction module
 
