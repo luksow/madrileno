@@ -161,6 +161,17 @@ class AuctionDomainSpec extends AnyWordSpec with Matchers {
       auction.placeBid(bidder, Price(BigDecimal(50)), bidId, now, None) shouldBe Left(BidRejection.BidTooLow(Price(BigDecimal(100))))
     }
 
+    "raise the floor by the minimum increment percentage" in {
+      auction.placeBid(bidder, Price(BigDecimal(104)), bidId, now, None, minIncrementPct = 5) shouldBe Left(
+        BidRejection.BidTooLow(Price(BigDecimal(105)))
+      )
+      auction.placeBid(bidder, Price(BigDecimal(106)), bidId, now, None, minIncrementPct = 5) shouldBe a[Right[?, ?]]
+    }
+
+    "clamp a negative minimum increment to zero" in {
+      auction.placeBid(bidder, Price(BigDecimal(150)), bidId, now, None, minIncrementPct = -200) shouldBe a[Right[?, ?]]
+    }
+
     "reject bid equal to current highest" in {
       auction.placeBid(bidder, Price(BigDecimal(200)), bidId, now, highestBidFrom(other, Price(BigDecimal(200)))) shouldBe Left(
         BidRejection.BidTooLow(Price(BigDecimal(200)))

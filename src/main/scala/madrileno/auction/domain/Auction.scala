@@ -141,7 +141,7 @@ final case class Auction(
     minIncrementPct: Int = 0
   ): Either[BidRejection, Bid] = {
     val floor     = currentHighest.map(_.amount).getOrElse(startingPrice)
-    val threshold = Price((floor.unwrap * (100 + minIncrementPct)) / 100)
+    val threshold = Price((floor.unwrap * (100 + math.max(0, minIncrementPct))) / 100)
     if (status != AuctionStatus.Open) Left(BidRejection.AuctionNotOpen)
     else if (now.isBefore(startsAt)) Left(BidRejection.AuctionNotStarted)
     else if (!now.isBefore(endsAt)) Left(BidRejection.AuctionEnded)

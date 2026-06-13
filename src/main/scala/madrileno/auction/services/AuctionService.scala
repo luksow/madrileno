@@ -128,33 +128,40 @@ class AuctionService(
   }
 
   def placeBid(command: PlaceBidCommand): IO[PlaceBidResult] = {
+    // Resolve the flag before opening the write transaction so its own session is never nested inside ours.
     transactor
-      .inTransaction {
-        (for {
-          auction <- auctionRepository
-                       .findForUpdate(command.auctionId)
-                       .valueOr[PlaceBidResult](PlaceBidResult.AuctionNotFound)
-          previousHighest <- bidRepository.highestBid(command.auctionId).seal
-          now             <- Clock[IO].realTimeInstant.seal
-          bidId           <- IdGenerator.generateId(BidId).seal
-          minIncrementPct <- featureFlagService
-                               .evaluateInt(FlagKey("auction.min-bid-increment-pct"), bidContext(command.bidderId, auction), default = 0)
-                               .seal
-          bid <- auction
-                   .placeBid(command.bidderId, command.amount, bidId, now, previousHighest, minIncrementPct)
-                   .left
-                   .map {
-                     case BidRejection.AuctionNotOpen        => PlaceBidResult.AuctionNotOpen
-                     case BidRejection.AuctionNotStarted     => PlaceBidResult.AuctionNotStarted
-                     case BidRejection.AuctionEnded          => PlaceBidResult.AuctionEnded
-                     case BidRejection.CannotBidOnOwnAuction => PlaceBidResult.CannotBidOnOwnAuction
-                     case BidRejection.AlreadyHighestBidder  => PlaceBidResult.AlreadyHighestBidder
-                     case BidRejection.BidTooLow(highest)    => PlaceBidResult.BidTooLow(highest)
-                   }
-                   .rethrow[IO]
-          saved <- bidRepository.save(bid).seal
-          _     <- notifyOutbid(previousHighest, auction, saved.amount).seal
-        } yield PlaceBidResult.BidPlaced(saved, auction)).run
+      .inSession(auctionRepository.find(command.auctionId))
+      .flatMap {
+        case None => IO.pure(PlaceBidResult.AuctionNotFound)
+        case Some(auction) =>
+          featureFlagService
+            .evaluateInt(FlagKey("auction.min-bid-increment-pct"), bidContext(command.bidderId, auction), default = 0)
+            .flatMap { minIncrementPct =>
+              transactor.inTransaction {
+                (for {
+                  locked <- auctionRepository
+                              .findForUpdate(command.auctionId)
+                              .valueOr[PlaceBidResult](PlaceBidResult.AuctionNotFound)
+                  previousHighest <- bidRepository.highestBid(command.auctionId).seal
+                  now             <- Clock[IO].realTimeInstant.seal
+                  bidId           <- IdGenerator.generateId(BidId).seal
+                  bid <- locked
+                           .placeBid(command.bidderId, command.amount, bidId, now, previousHighest, minIncrementPct)
+                           .left
+                           .map {
+                             case BidRejection.AuctionNotOpen        => PlaceBidResult.AuctionNotOpen
+                             case BidRejection.AuctionNotStarted     => PlaceBidResult.AuctionNotStarted
+                             case BidRejection.AuctionEnded          => PlaceBidResult.AuctionEnded
+                             case BidRejection.CannotBidOnOwnAuction => PlaceBidResult.CannotBidOnOwnAuction
+                             case BidRejection.AlreadyHighestBidder  => PlaceBidResult.AlreadyHighestBidder
+                             case BidRejection.BidTooLow(highest)    => PlaceBidResult.BidTooLow(highest)
+                           }
+                           .rethrow[IO]
+                  saved <- bidRepository.save(bid).seal
+                  _     <- notifyOutbid(previousHighest, locked, saved.amount).seal
+                } yield PlaceBidResult.BidPlaced(saved, locked)).run
+              }
+            }
       }
       .flatTap {
         case PlaceBidResult.BidPlaced(bid, auction) => publish(AuctionEvent.bidPlaced(bid, auction))
