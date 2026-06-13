@@ -21,7 +21,19 @@ enum FlagVariant:           // the value a flag resolves to; the type is fixed p
   case JsonVariant(value: Json)
 ```
 
-Rules are evaluated in `position` order; the first whose conditions all match wins. A `RuleOutcome` is either a `FixedValue(FlagVariant)` or a `PercentageRollout(percentage, seed, onMatch)`. Conditions match against the evaluation context — `StringEquals/In/Contains/StartsWith`, `IntEquals/GreaterThan/LessThan`, `BoolEquals`, and `SegmentMatch(name)`. A `Segment` is a named, reusable condition list (e.g. `premium-wines`) referenced from rules via `SegmentMatch`, so the same audience can drive many flags.
+The vocabulary, smallest to largest:
+
+- **Variant** (`FlagVariant`) — the value a flag resolves to, in one of four types: boolean, string, int, or JSON. A flag's type is fixed: its default and every rule outcome must produce the same variant type.
+- **Condition** (`RuleCondition`) — a single predicate evaluated against the context. Either an attribute comparison (`StringEquals/In/Contains/StartsWith`, `IntEquals/GreaterThan/LessThan`, `BoolEquals`) or `SegmentMatch(name)`.
+- **Segment** — a named, reusable list of conditions (e.g. `premium-wines`, `verified-users`). A segment matches when *all* its conditions hold. Rules reference it by name via `SegmentMatch`, so one audience definition is maintained in one place and reused across many flags.
+- **Outcome** (`RuleOutcome`) — what a matched rule yields: a `FixedValue(variant)`, or a `PercentageRollout(percentage, seed, onMatch)` that hashes the targeting key into a bucket and returns `onMatch` for the chosen fraction (and the flag's default for everyone else).
+- **Rule** — a `(conditions, outcome)` pair with a `position`. A flag's rules are evaluated in `position` order and the first whose conditions *all* match wins; its conditions are AND-ed.
+- **Feature flag** (`FeatureFlag`) — the aggregate above: a typed `defaultValue`, an `enabled` master switch, a `clientExposed` flag (does it ride the client bootstrap?), and the ordered `rules`. Evaluation returns the first matching rule's outcome; if the flag is disabled or no rule matches, the `defaultValue`.
+
+Two more types describe a single evaluation rather than the flag's configuration:
+
+- **Evaluation context** (`EvaluationContext`) — the input: a `targetingKey` and `attributes` (see [below](#targeting-key-vs-attributes)).
+- **Evaluation detail** (`EvaluationDetail`) — the output: the resolved value plus a `reason` (and, on failure, an `errorCode`). The plain `evaluateX` calls hand back just the value; `evaluateXDetail` returns the whole record.
 
 Every variant-type mismatch is caught at write time: a rule whose outcome variant doesn't match the flag's default type is rejected (`400`), as are duplicate rule positions.
 
