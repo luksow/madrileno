@@ -232,17 +232,18 @@ class FeatureFlagServiceLive(
         case _                           => IO.unit
       }
 
-  def evaluateForDebug(command: EvaluateFlagCommand): IO[Option[FlagEvaluationEngine.Result]] = {
-    val context =
-      EvaluationContext(command.targetingKey, command.attributes.map { case (name, value) => AttributeName(name) -> AttributeValue(value) })
-    transactor.inSession {
-      repository.findByKey(command.key).flatMap {
-        case None => IO.pure(None)
-        case Some(flag) =>
-          segmentRepository.findAll.map(segments => Some(FlagEvaluationEngine.evaluate(flag, segments.map(s => s.name -> s).toMap, context)))
+  def evaluateForDebug(command: EvaluateFlagCommand): IO[Option[FlagEvaluationEngine.Result]] =
+    // Built inside IO so an invalid attribute name surfaces as a handled failure (→ 400), not a synchronous throw.
+    IO(EvaluationContext(command.targetingKey, command.attributes.map { case (name, value) => AttributeName(name) -> AttributeValue(value) }))
+      .flatMap { context =>
+        transactor.inSession {
+          repository.findByKey(command.key).flatMap {
+            case None => IO.pure(None)
+            case Some(flag) =>
+              segmentRepository.findAll.map(segments => Some(FlagEvaluationEngine.evaluate(flag, segments.map(s => s.name -> s).toMap, context)))
+          }
+        }
       }
-    }
-  }
 
   def evaluateClientExposed(ctx: EvaluationContext): IO[Map[FlagKey, Json]] =
     (invalidationStarted *> cachedLoad(clientFlagsCache, (), transactor.inSession(repository.findAllClientExposed)))
