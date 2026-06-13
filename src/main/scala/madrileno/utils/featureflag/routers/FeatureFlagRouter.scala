@@ -1,21 +1,20 @@
 package madrileno.utils.featureflag.routers
 
 import madrileno.auth.domain.AuthContext
-import madrileno.utils.featureflag.domain.{EvaluationContext, TargetingKey}
+import madrileno.utils.featureflag.domain.EvaluationContext
 import madrileno.utils.featureflag.routers.dto.ClientFlagsDto
 import madrileno.utils.featureflag.services.FeatureFlagServiceLive
 import madrileno.utils.http.BaseRouter
 import pl.iterators.stir.marshalling.ToResponseMarshallable
 import pl.iterators.stir.server.Route
 
-class FeatureFlagRouter(service: FeatureFlagServiceLive) extends BaseRouter {
+class FeatureFlagRouter(service: FeatureFlagServiceLive, resolveContext: AuthContext => EvaluationContext) extends BaseRouter {
 
   def authedRoutes(auth: AuthContext): Route =
     (get & path("feature-flags") & pathEndOrSingleSlash) {
       complete {
-        val ctx = EvaluationContext.of(TargetingKey(auth.userId.toString))
         service
-          .evaluateClientExposed(ctx)
+          .evaluateClientExposed(resolveContext(auth))
           .map[ToResponseMarshallable](flags => Ok -> ClientFlagsDto(flags))
       }
     }

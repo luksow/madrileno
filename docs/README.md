@@ -31,6 +31,7 @@ Skim the **Start here** path on day one. Reach for the rest by topic.
 - [`imaging.md`](imaging.md) — image utilities (info / EXIF / convert / resize / cover / crop / rotate / strip).
 - [`cache.md`](cache.md) — `CacheRuntime` over Caffeine; per-JVM scope; multi-instance considerations.
 - [`rate-limiting.md`](rate-limiting.md) — fixed-window directive, per-route buckets, IP / user / header discriminators.
+- [`feature-flags.md`](feature-flags.md) — typed variants, targeting rules + segments, percentage rollouts, admin API + audit, client bootstrap; the auction showcase.
 
 ## Tooling
 

@@ -12,6 +12,8 @@ import madrileno.user.repositories.UserRepository
 import madrileno.utils.crypto.IdGenerator
 import madrileno.utils.db.transactor.{DB, DBInTransaction, Transactor}
 import madrileno.utils.events.EventBus
+import madrileno.utils.featureflag.domain.{AttributeName, AttributeValue, EvaluationContext, FlagKey, TargetingKey}
+import madrileno.utils.featureflag.services.FeatureFlagService
 import madrileno.utils.mailer.{Language, Mailer}
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
 import madrileno.utils.pagination.{Page, PageRequest}
@@ -28,7 +30,8 @@ class AuctionService(
   vivinoGateway: VivinoGateway,
   eventBus: EventBus[AuctionEvent],
   transactor: Transactor,
-  mailer: Mailer
+  mailer: Mailer,
+  featureFlagService: FeatureFlagService
 )(using
   TelemetryContext,
   UUIDGen[IO],
@@ -86,10 +89,26 @@ class AuctionService(
         }
       }
       .flatMap {
-        case Some(view) => vivinoGateway.findRating(view.wineName, view.vintage).map(r => Some(view.copy(rating = r)))
-        case None       => IO.pure(None)
+        case Some(view) =>
+          featureFlagService
+            .evaluateBoolean(FlagKey("auction-show-wine-ratings"), default = true)(using EvaluationContext.of(TargetingKey("anonymous")))
+            .flatMap {
+              case true  => vivinoGateway.findRating(view.wineName, view.vintage).map(r => Some(view.copy(rating = r)))
+              case false => IO.pure(Some(view))
+            }
+        case None => IO.pure(None)
       }
   }
+
+  private def bidContext(bidderId: UserId, auction: Auction): EvaluationContext =
+    EvaluationContext(
+      TargetingKey(bidderId.toString),
+      Map(
+        AttributeName("wine-region") -> AttributeValue(auction.region.unwrap),
+        AttributeName("wine-color")  -> AttributeValue(auction.color.toString),
+        AttributeName("bottle-size") -> AttributeValue(auction.bottleSize.toString)
+      ) ++ auction.vintage.map(v => AttributeName("wine-vintage") -> AttributeValue(v.unwrap.toString))
+    )
 
   def listAuctions(filter: ListAuctionsFilter): IO[Page[AuctionView]] = {
     transactor.inSession {
@@ -118,8 +137,11 @@ class AuctionService(
           previousHighest <- bidRepository.highestBid(command.auctionId).seal
           now             <- Clock[IO].realTimeInstant.seal
           bidId           <- IdGenerator.generateId(BidId).seal
+          minIncrementPct <- featureFlagService
+                               .evaluateInt(FlagKey("auction-min-bid-increment-pct"), default = 0)(using bidContext(command.bidderId, auction))
+                               .seal
           bid <- auction
-                   .placeBid(command.bidderId, command.amount, bidId, now, previousHighest)
+                   .placeBid(command.bidderId, command.amount, bidId, now, previousHighest, minIncrementPct)
                    .left
                    .map {
                      case BidRejection.AuctionNotOpen        => PlaceBidResult.AuctionNotOpen

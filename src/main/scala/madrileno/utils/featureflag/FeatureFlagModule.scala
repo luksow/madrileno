@@ -7,7 +7,7 @@ import madrileno.auth.domain.AuthContext
 import madrileno.utils.cache.CacheRuntime
 import madrileno.utils.db.transactor.Transactor
 import madrileno.utils.events.{EventBus, EventBusRuntime}
-import madrileno.utils.featureflag.domain.FeatureFlagEvent
+import madrileno.utils.featureflag.domain.{AttributeName, AttributeValue, EvaluationContext, FeatureFlagEvent, TargetingKey}
 import madrileno.utils.featureflag.repositories.{FeatureFlagAuditRepository, FeatureFlagRepository, RuleRepository, SegmentRepository}
 import madrileno.utils.featureflag.routers.FeatureFlagRouter
 import madrileno.utils.featureflag.services.FeatureFlagServiceLive
@@ -32,7 +32,10 @@ trait FeatureFlagModule extends AuthRouteProvider {
 
   lazy val featureFlagService: FeatureFlagServiceLive = wire[FeatureFlagServiceLive]
 
-  private lazy val featureFlagRouter = wire[FeatureFlagRouter]
+  protected def featureFlagContext: AuthContext => EvaluationContext = auth =>
+    EvaluationContext(TargetingKey(auth.userId.toString), Map(AttributeName("email-verified") -> AttributeValue(auth.emailVerified.toString)))
+
+  private lazy val featureFlagRouter = new FeatureFlagRouter(featureFlagService, featureFlagContext)
 
   override abstract def route(auth: AuthContext): Route = {
     super.route(auth) ~ featureFlagRouter.authedRoutes(auth)

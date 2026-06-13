@@ -7,10 +7,11 @@ import io.opentelemetry.api.OpenTelemetry
 import madrileno.auction.domain.*
 import madrileno.auction.gateways.VivinoGateway
 import madrileno.auction.repositories.{AuctionRepository, BidRepository}
-import madrileno.support.{TestData, TestGivens, TestMailpit, TestTransactor}
+import madrileno.support.{TestData, TestFeatureFlagService, TestGivens, TestMailpit, TestTransactor}
 import madrileno.user.domain.{User, UserId}
 import madrileno.user.repositories.UserRepository
 import madrileno.utils.events.{EventBus, EventBusRuntime}
+import madrileno.utils.featureflag.domain.{FlagKey, FlagVariant}
 import madrileno.utils.mailer.*
 import madrileno.utils.observability.TelemetryContext
 import madrileno.utils.pagination.{Limit, Offset, PageRequest, SortDirection}
@@ -43,7 +44,8 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
   private lazy val mailer     = new Mailer(smtpSender, client, MailContext(baseUrl = URI("https://example.com")))
   private val vivinoGateway: VivinoGateway     = (_, _) => IO.pure(None)
   private val eventBus: EventBus[AuctionEvent] = EventBusRuntime.local.topic[AuctionEvent]("auction_events_test", maxQueued = 64)
-  private lazy val service                     = new AuctionService(auctionRepo, bidRepo, userRepo, vivinoGateway, eventBus, transactor, mailer)
+  private val featureFlags                     = TestFeatureFlagService.empty
+  private lazy val service = new AuctionService(auctionRepo, bidRepo, userRepo, vivinoGateway, eventBus, transactor, mailer, featureFlags)
 
   private val eur = Currency.getInstance("EUR")
 
@@ -140,7 +142,7 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
 
     "populate the auction with a rating when the gateway returns one" in {
       val ratedGateway: VivinoGateway = (_, _) => IO.pure(Some(VivinoRating(Rating(BigDecimal(4.7)), RatingsCount(12345))))
-      val ratedService                = new AuctionService(auctionRepo, bidRepo, userRepo, ratedGateway, eventBus, transactor, mailer)
+      val ratedService                = new AuctionService(auctionRepo, bidRepo, userRepo, ratedGateway, eventBus, transactor, mailer, featureFlags)
       for {
         seller  <- seedUser()
         created <- createAuctionOrFail(createCommand(seller.id))
@@ -149,6 +151,25 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
         found.flatMap(_.rating).map(_.rating.unwrap) shouldBe Some(BigDecimal(4.7))
         found.flatMap(_.rating).map(_.ratingsCount.unwrap) shouldBe Some(12345)
       }
+    }
+
+    "skip the ratings gateway when auction-show-wine-ratings is off" in {
+      val ratedGateway: VivinoGateway = (_, _) => IO.pure(Some(VivinoRating(Rating(BigDecimal(4.7)), RatingsCount(12345))))
+      val gatedService = new AuctionService(
+        auctionRepo,
+        bidRepo,
+        userRepo,
+        ratedGateway,
+        eventBus,
+        transactor,
+        mailer,
+        TestFeatureFlagService(FlagKey("auction-show-wine-ratings") -> FlagVariant.BoolVariant(false))
+      )
+      for {
+        seller  <- seedUser()
+        created <- createAuctionOrFail(createCommand(seller.id))
+        found   <- gatedService.getAuction(created.id)
+      } yield found.flatMap(_.rating) shouldBe None
     }
 
     "publish AuctionCreated when createAuction succeeds" in {
@@ -277,6 +298,29 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
         val bid = result.asInstanceOf[PlaceBidResult.BidPlaced].bid // scalafix:ok DisableSyntax.asInstanceOf
         bid.amount shouldBe Price(BigDecimal(150))
         bid.bidderId shouldBe bidder.id
+      }
+    }
+
+    "enforce a minimum increment driven by the auction-min-bid-increment-pct flag" in {
+      val flagged = new AuctionService(
+        auctionRepo,
+        bidRepo,
+        userRepo,
+        vivinoGateway,
+        eventBus,
+        transactor,
+        mailer,
+        TestFeatureFlagService(FlagKey("auction-min-bid-increment-pct") -> FlagVariant.IntVariant(5))
+      )
+      for {
+        seller  <- seedUser()
+        bidder  <- seedUser()
+        auction <- createAuctionOrFail(createCommand(seller.id))
+        tooLow  <- flagged.placeBid(PlaceBidCommand(auction.id, bidder.id, Price(BigDecimal(104))))
+        placed  <- flagged.placeBid(PlaceBidCommand(auction.id, bidder.id, Price(BigDecimal(106))))
+      } yield {
+        tooLow shouldBe a[PlaceBidResult.BidTooLow]
+        placed shouldBe a[PlaceBidResult.BidPlaced]
       }
     }
 
