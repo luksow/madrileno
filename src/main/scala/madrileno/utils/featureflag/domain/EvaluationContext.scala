@@ -26,7 +26,8 @@ object AttributeValue extends Opaque[AttributeValue, String] {
 final case class EvaluationContext(targetingKey: TargetingKey, attributes: Map[AttributeName, AttributeValue])
 
 object EvaluationContext {
-  def anonymous(targetingKey: TargetingKey): EvaluationContext =
+  // A context carrying only a targeting key and no attributes — rules that match purely on the key still apply.
+  def of(targetingKey: TargetingKey): EvaluationContext =
     EvaluationContext(targetingKey, Map.empty)
 }
 

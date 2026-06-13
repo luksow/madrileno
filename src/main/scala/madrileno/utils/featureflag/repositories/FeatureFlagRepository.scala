@@ -66,8 +66,8 @@ private[repositories] final case class FeatureFlagRowFilter(
 }
 
 class FeatureFlagRepository(ruleRepository: RuleRepository) {
-  def findByKey(key: FlagKey): DB[Option[FeatureFlag]] =
-    repository.findOneByFilter(FeatureFlagRowFilter(key = p.equal(key))).flatMap {
+  def findByKey(key: FlagKey, lock: Lock = Lock.NoLock): DB[Option[FeatureFlag]] =
+    repository.findOneByFilter(FeatureFlagRowFilter(key = p.equal(key)), lock).flatMap {
       case None => IO.pure(None)
       case Some(row) =>
         ruleRepository.findByFlagId(row.id).flatMap { rules =>
@@ -87,7 +87,7 @@ class FeatureFlagRepository(ruleRepository: RuleRepository) {
   private def listByFilter(filter: FeatureFlagRowFilter): DB[List[FeatureFlag]] =
     for {
       rows        <- repository.findByFilter(filter)
-      rulesByFlag <- ruleRepository.findAllGrouped
+      rulesByFlag <- ruleRepository.findByFlagIds(rows.map(_.id))
       flags <- rows.traverse { row =>
                  row.toFeatureFlag(rulesByFlag.getOrElse(row.id, Nil)) match {
                    case Right(f)  => IO.pure(f)
@@ -96,8 +96,13 @@ class FeatureFlagRepository(ruleRepository: RuleRepository) {
                }
     } yield flags.sortBy(_.key.unwrap)
 
-  def save(flag: FeatureFlag): DBInTransaction[Unit] =
-    repository.upsert(FeatureFlagRow(flag)) *> ruleRepository.replaceAll(flag.id, flag.rules)
+  // INSERT a brand-new flag; relies on UNIQUE(key) to reject duplicates (the service maps that to KeyExists).
+  def insert(flag: FeatureFlag): DBInTransaction[Unit] =
+    repository.create(FeatureFlagRow(flag)).void *> ruleRepository.replaceAll(flag.id, flag.rules)
+
+  // UPDATE an existing row (no upsert) — callers hold a row lock, so a concurrently deleted flag is never resurrected.
+  def update(flag: FeatureFlag): DBInTransaction[Unit] =
+    repository.update(FeatureFlagRow(flag)) *> ruleRepository.replaceAll(flag.id, flag.rules)
 
   def deleteById(id: FlagId): DB[Unit] =
     repository.deleteById(id)

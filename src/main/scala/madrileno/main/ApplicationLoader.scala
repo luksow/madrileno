@@ -13,7 +13,6 @@ import madrileno.utils.cache.CacheRuntime
 import madrileno.utils.db.transactor.Transactor
 import madrileno.utils.events.EventBusRuntime
 import madrileno.utils.featureflag.FeatureFlagModule
-import madrileno.utils.featureflag.domain.Actor
 import madrileno.utils.featureflag.routers.FeatureFlagAdminRouter
 import madrileno.utils.http.{ApplicationRouteProvider, Handlers, RateLimiterRuntime}
 import madrileno.utils.mailer.{MailContext, MailPreviewProvider, MailPreviewRouter, Mailer, MailerConfig, SmtpSender}
@@ -142,7 +141,7 @@ class ApplicationLoader(
   lazy val configAdminRouter: ConfigAdminRouter           = new ConfigAdminRouter(rawConfig, adminConfig.config.redactedPaths)
   lazy val threaddumpAdminRouter: ThreaddumpAdminRouter   = new ThreaddumpAdminRouter(ioRuntime)
   lazy val heapdumpAdminRouter: HeapdumpAdminRouter       = new HeapdumpAdminRouter
-  lazy val featureFlagAdminRouter: FeatureFlagAdminRouter = new FeatureFlagAdminRouter(featureFlagService, Actor(adminConfig.user))
+  lazy val featureFlagAdminRouter: FeatureFlagAdminRouter = new FeatureFlagAdminRouter(featureFlagService)
 
   lazy val adminRoutes: Route = pathPrefix("admin") {
     authenticateBasic(realm = "madrileno-admin", authenticator = adminAuthenticator) { _ =>

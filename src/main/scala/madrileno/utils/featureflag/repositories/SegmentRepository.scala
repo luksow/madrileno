@@ -47,11 +47,16 @@ class SegmentRepository {
   def findAll: DB[List[Segment]] =
     repository.findByFilter(SegmentRowFilter()).map(_.map(_.toSegment))
 
-  def findByName(name: SegmentName): DB[Option[Segment]] =
-    repository.findOneByFilter(SegmentRowFilter(name = p.equal(name))).map(_.map(_.toSegment))
+  def findByName(name: SegmentName, lock: Lock = Lock.NoLock): DB[Option[Segment]] =
+    repository.findOneByFilter(SegmentRowFilter(name = p.equal(name)), lock).map(_.map(_.toSegment))
 
-  def save(segment: Segment): DB[Unit] =
-    repository.upsert(SegmentRow(segment))
+  // INSERT a brand-new segment; relies on UNIQUE(name) to reject duplicates (the service maps that to NameExists).
+  def insert(segment: Segment): DB[Unit] =
+    repository.create(SegmentRow(segment)).void
+
+  // UPDATE an existing row (no upsert) — callers hold a row lock, so a concurrently deleted segment is never resurrected.
+  def update(segment: Segment): DB[Unit] =
+    repository.update(SegmentRow(segment))
 
   def deleteById(id: SegmentId): DB[Unit] =
     repository.deleteById(id)

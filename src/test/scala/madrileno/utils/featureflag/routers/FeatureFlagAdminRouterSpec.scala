@@ -1,9 +1,9 @@
 package madrileno.utils.featureflag.routers
 
-import madrileno.support.{BaseRouteSpec, TestApplicationLoader, TestData}
+import madrileno.support.{BaseRouteSpec, TestApplicationLoader}
 import madrileno.utils.featureflag.domain.*
 import madrileno.utils.featureflag.routers.dto.*
-import madrileno.utils.featureflag.services.{CreateFlagResult, CreateSegmentResult}
+import madrileno.utils.featureflag.services.*
 import madrileno.utils.http.Error
 import madrileno.utils.json.JsonProtocol.given
 import madrileno.utils.pagination.{Page, SortDirection}
@@ -38,23 +38,20 @@ class FeatureFlagAdminRouterSpec extends BaseRouteSpec with TestApplicationLoade
     enabled: Boolean = true,
     defaultValue: FlagVariant = FlagVariant.BoolVariant(true),
     clientExposed: Boolean = false,
-    rules: List[Rule] = Nil
+    rules: List[RuleData] = Nil
   ): FeatureFlag = {
-    val flag =
-      TestData.featureFlag(key = FlagKey(key), enabled = enabled, defaultValue = defaultValue, clientExposed = clientExposed, rules = rules)
-    application.featureFlagService.createFlag(flag, actor).unsafeRunSync() match {
+    val command = CreateFlagCommand(FlagKey(key), FlagDescription(""), enabled, defaultValue, clientExposed, rules, actor)
+    application.featureFlagService.createFlag(command).unsafeRunSync() match {
       case CreateFlagResult.Created(created) => created
       case other                             => fail(s"seeding '$key' failed: $other")
     }
   }
 
-  private def seedSegment(name: String): Segment = {
-    val segment = TestData.flagSegment(name = SegmentName(name))
-    application.featureFlagService.createSegment(segment).unsafeRunSync() match {
+  private def seedSegment(name: String): Segment =
+    application.featureFlagService.createSegment(CreateSegmentCommand(SegmentName(name), FlagDescription(""), Nil)).unsafeRunSync() match {
       case CreateSegmentResult.Created(created) => created
       case other                                => fail(s"seeding segment '$name' failed: $other")
     }
-  }
 
   private def sampleCreateRequest(key: String) =
     CreateFlagRequest(
@@ -252,7 +249,7 @@ class FeatureFlagAdminRouterSpec extends BaseRouteSpec with TestApplicationLoade
     )(
       withSetup {
         val flag = seedFlag("admin-audit")
-        val _    = application.featureFlagService.toggleFlag(flag.key, enabled = false, actor).unsafeRunSync()
+        val _    = application.featureFlagService.toggleFlag(ToggleFlagCommand(flag.key, enabled = false, actor)).unsafeRunSync()
         flag
       }.request(flag =>
         onRequest(
@@ -280,7 +277,9 @@ class FeatureFlagAdminRouterSpec extends BaseRouteSpec with TestApplicationLoade
       tags = Seq("Admin")
     )(
       withSetup {
-        val rule = TestData.flagRule(
+        val rule = RuleData(
+          RulePosition(0),
+          FlagDescription(""),
           conditions = List(RuleCondition.StringEquals(AttributeName("plan"), "enterprise")),
           outcome = RuleOutcome.FixedValue(FlagVariant.BoolVariant(false))
         )

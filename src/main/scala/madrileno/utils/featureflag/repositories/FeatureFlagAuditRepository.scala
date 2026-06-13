@@ -6,7 +6,6 @@ import madrileno.utils.featureflag.domain.*
 import madrileno.utils.pagination.PageRequest
 import skunk.*
 import skunk.codec.all.*
-import skunk.implicits.*
 
 import java.time.Instant
 
@@ -70,12 +69,6 @@ class FeatureFlagAuditRepository {
     repository
       .findPageByFilter(AuditRowFilter(flagKey = p.equal(key), page = Some(page)))
       .map { case (rows, total) => (rows.map(_.toAuditEntry), total) }
-
-  def detachFlag(flagId: FlagId): DB[Unit] = { session ?=>
-    session
-      .execute(sql"UPDATE ${AuditRowTable.n} SET ${AuditRowTable.flagId.n} = NULL WHERE ${AuditRowTable.flagId.n} = $uuid".command)(flagId.unwrap)
-      .void
-  }
 
   private val repository: IdRepository[AuditRow, AuditEntryId] & FilteringRepository[AuditRow, AuditRowFilter] =
     new IdRepository[AuditRow, AuditEntryId](_.id) with FilteringRepository[AuditRow, AuditRowFilter] {

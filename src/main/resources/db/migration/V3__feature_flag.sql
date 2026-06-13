@@ -34,7 +34,7 @@ CREATE TABLE feature_flag_segment (
 
 CREATE TABLE feature_flag_audit (
     id              UUID        PRIMARY KEY,
-    flag_id         UUID        REFERENCES feature_flag (id),
+    flag_id         UUID        REFERENCES feature_flag (id) ON DELETE SET NULL,
     flag_key        TEXT        NOT NULL,
     actor           TEXT        NOT NULL,
     action          TEXT        NOT NULL CHECK (action IN ('Created', 'Updated', 'Deleted', 'Toggled')),
@@ -43,4 +43,5 @@ CREATE TABLE feature_flag_audit (
     created_at      TIMESTAMPTZ NOT NULL
 );
 
-CREATE INDEX feature_flag_audit_flag_id_idx ON feature_flag_audit (flag_id, created_at DESC);
+-- Audit is only ever queried by flag_key (flag_id is nulled on delete), newest-first with id as a stable tie-break.
+CREATE INDEX feature_flag_audit_flag_key_idx ON feature_flag_audit (flag_key, created_at DESC, id);

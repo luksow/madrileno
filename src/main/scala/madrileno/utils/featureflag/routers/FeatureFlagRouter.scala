@@ -13,10 +13,10 @@ class FeatureFlagRouter(service: FeatureFlagServiceLive) extends BaseRouter {
   def authedRoutes(auth: AuthContext): Route =
     (get & path("feature-flags") & pathEndOrSingleSlash) {
       complete {
-        val ctx = EvaluationContext.anonymous(TargetingKey(auth.userId.toString))
+        val ctx = EvaluationContext.of(TargetingKey(auth.userId.toString))
         service
           .evaluateClientExposed(ctx)
-          .map[ToResponseMarshallable](flags => Ok -> ClientFlagsDto(flags.map { case (key, value) => key.unwrap -> value }))
+          .map[ToResponseMarshallable](flags => Ok -> ClientFlagsDto(flags))
       }
     }
 }

@@ -1,14 +1,21 @@
 package madrileno.utils.featureflag.routers.dto
 
-import io.circe.Json
+import io.circe.{Json, KeyDecoder, KeyEncoder}
 import madrileno.utils.featureflag.domain.*
+import madrileno.utils.featureflag.services.{CreateFlagCommand, RuleData, UpdateFlagCommand}
 import madrileno.utils.json.JsonProtocol.*
 
 import java.time.Instant
 
+// FlagVariant / RuleCondition / RuleOutcome are sum types with payloads — circe's `derives` on the enclosing DTOs
+// does not auto-derive instances for them (unlike the opaque leaves, which JsonProtocol/kebs handles), so we derive
+// them explicitly here. Held private to the DTO layer; the repository layer keeps its own copies for JSONB columns.
 private given Codec.AsObject[FlagVariant]   = Codec.AsObject.derived
 private given Codec.AsObject[RuleCondition] = Codec.AsObject.derived
 private given Codec.AsObject[RuleOutcome]   = Codec.AsObject.derived
+
+private given KeyEncoder[FlagKey] = KeyEncoder.encodeKeyString.contramap(_.unwrap)
+private given KeyDecoder[FlagKey] = KeyDecoder.instance(FlagKey.from(_).toOption)
 
 final case class RuleDto(
   id: RuleId,
@@ -55,6 +62,12 @@ final case class RuleRequest(
     derives Encoder.AsObject,
       Decoder
 
+object RuleRequest {
+  extension (rules: List[RuleRequest]) {
+    def toRuleData: List[RuleData] = rules.map(r => RuleData(r.position, r.description, r.conditions, r.outcome))
+  }
+}
+
 final case class CreateFlagRequest(
   key: FlagKey,
   description: FlagDescription,
@@ -65,6 +78,22 @@ final case class CreateFlagRequest(
     derives Encoder.AsObject,
       Decoder
 
+object CreateFlagRequest {
+  import RuleRequest.toRuleData
+  extension (request: CreateFlagRequest) {
+    def toCommand(actor: Actor): CreateFlagCommand =
+      CreateFlagCommand(
+        request.key,
+        request.description,
+        request.enabled,
+        request.defaultValue,
+        request.clientExposed,
+        request.rules.toRuleData,
+        actor
+      )
+  }
+}
+
 final case class UpdateFlagRequest(
   description: FlagDescription,
   enabled: Boolean,
@@ -73,6 +102,14 @@ final case class UpdateFlagRequest(
   rules: List[RuleRequest])
     derives Encoder.AsObject,
       Decoder
+
+object UpdateFlagRequest {
+  import RuleRequest.toRuleData
+  extension (request: UpdateFlagRequest) {
+    def toCommand(key: FlagKey, actor: Actor): UpdateFlagCommand =
+      UpdateFlagCommand(key, request.description, request.enabled, request.defaultValue, request.clientExposed, request.rules.toRuleData, actor)
+  }
+}
 
 final case class ToggleFlagRequest(enabled: Boolean) derives Encoder.AsObject, Decoder
 
@@ -129,4 +166,4 @@ final case class EvaluateFlagRequest(targetingKey: TargetingKey, attributes: Map
 
 final case class EvaluationResultDto(value: Json, reason: EvaluationReason) derives Encoder.AsObject, Decoder
 
-final case class ClientFlagsDto(flags: Map[String, Json]) derives Encoder.AsObject, Decoder
+final case class ClientFlagsDto(flags: Map[FlagKey, Json]) derives Encoder.AsObject, Decoder

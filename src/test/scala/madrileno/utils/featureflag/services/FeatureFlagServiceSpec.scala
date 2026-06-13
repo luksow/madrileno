@@ -4,7 +4,7 @@ import cats.effect.IO
 import cats.effect.std.Supervisor
 import cats.effect.testing.scalatest.AsyncIOSpec
 import io.opentelemetry.api.OpenTelemetry
-import madrileno.support.{TestCacheRuntime, TestData, TestTransactor}
+import madrileno.support.{TestCacheRuntime, TestTransactor}
 import madrileno.utils.events.{EventBus, EventBusRuntime}
 import madrileno.utils.featureflag.domain.*
 import madrileno.utils.featureflag.repositories.{FeatureFlagAuditRepository, FeatureFlagRepository, RuleRepository, SegmentRepository}
@@ -50,18 +50,23 @@ class FeatureFlagServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matcher
 
   private lazy val service = newService
 
-  private val ctx = EvaluationContext.anonymous(TargetingKey("user-1"))
+  private val ctx = EvaluationContext.of(TargetingKey("user-1"))
+
+  private def ruleData(
+    position: RulePosition = RulePosition(0),
+    conditions: List[RuleCondition] = Nil,
+    outcome: RuleOutcome = RuleOutcome.FixedValue(FlagVariant.BoolVariant(true))
+  ): RuleData = RuleData(position, FlagDescription(""), conditions, outcome)
 
   private def seedFlag(
     key: String,
     enabled: Boolean = true,
     defaultValue: FlagVariant = FlagVariant.BoolVariant(true),
     clientExposed: Boolean = false,
-    rules: List[Rule] = Nil
+    rules: List[RuleData] = Nil
   ): IO[FeatureFlag] = {
-    val flag =
-      TestData.featureFlag(key = FlagKey(key), enabled = enabled, defaultValue = defaultValue, clientExposed = clientExposed, rules = rules)
-    service.createFlag(flag, actor).flatMap {
+    val command = CreateFlagCommand(FlagKey(key), FlagDescription(""), enabled, defaultValue, clientExposed, rules, actor)
+    service.createFlag(command).flatMap {
       case CreateFlagResult.Created(created) => IO.pure(created)
       case other                             => IO.raiseError(new IllegalStateException(s"seeding '$key' failed: $other"))
     }
@@ -134,7 +139,7 @@ class FeatureFlagServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matcher
     }
 
     "persist rules through createFlag and match them on evaluation" in {
-      val enterpriseRule = TestData.flagRule(conditions = List(RuleCondition.StringEquals(AttributeName("plan"), "enterprise")))
+      val enterpriseRule = ruleData(conditions = List(RuleCondition.StringEquals(AttributeName("plan"), "enterprise")))
       val ctxEnterprise  = EvaluationContext(TargetingKey("user-x"), Map(AttributeName("plan") -> AttributeValue("enterprise")))
       val ctxFree        = EvaluationContext(TargetingKey("user-y"), Map(AttributeName("plan") -> AttributeValue("free")))
       for {
@@ -152,9 +157,11 @@ class FeatureFlagServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matcher
     "update an existing flag through updateFlag and see the change immediately on the writing instance" in {
       val key = FlagKey("phase2-toggle")
       for {
-        _        <- seedFlag(key.unwrap, enabled = true)
-        first    <- service.evaluator(ctx).booleanDetail(key, default = false)
-        _        <- service.updateFlag(key, _.copy(enabled = false), actor)
+        _     <- seedFlag(key.unwrap, enabled = true)
+        first <- service.evaluator(ctx).booleanDetail(key, default = false)
+        _ <- service.updateFlag(
+               UpdateFlagCommand(key, FlagDescription(""), enabled = false, FlagVariant.BoolVariant(true), clientExposed = false, Nil, actor)
+             )
         afterInv <- service.evaluator(ctx).booleanDetail(key, default = false)
       } yield {
         first.reason shouldBe EvaluationReason.Default
@@ -164,11 +171,21 @@ class FeatureFlagServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matcher
 
     "replace rules on updateFlag instead of accumulating them" in {
       val key   = FlagKey("phase2-rule-replace")
-      val ruleA = TestData.flagRule(outcome = RuleOutcome.FixedValue(FlagVariant.StringVariant("a")))
-      val ruleB = TestData.flagRule(outcome = RuleOutcome.FixedValue(FlagVariant.StringVariant("b")))
+      val ruleA = ruleData(outcome = RuleOutcome.FixedValue(FlagVariant.StringVariant("a")))
+      val ruleB = ruleData(outcome = RuleOutcome.FixedValue(FlagVariant.StringVariant("b")))
       for {
-        _      <- seedFlag(key.unwrap, defaultValue = FlagVariant.StringVariant("default"), rules = List(ruleA))
-        _      <- service.updateFlag(key, _.copy(rules = List(ruleB)), actor)
+        _ <- seedFlag(key.unwrap, defaultValue = FlagVariant.StringVariant("default"), rules = List(ruleA))
+        _ <- service.updateFlag(
+               UpdateFlagCommand(
+                 key,
+                 FlagDescription(""),
+                 enabled = true,
+                 FlagVariant.StringVariant("default"),
+                 clientExposed = false,
+                 List(ruleB),
+                 actor
+               )
+             )
         result <- service.evaluator(ctx).stringDetail(key, default = "caller-default")
       } yield result.value shouldBe "b"
     }
@@ -185,7 +202,7 @@ class FeatureFlagServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matcher
       for {
         _          <- seedFlag(key.unwrap, enabled = true)
         first      <- reader.evaluator(ctx).booleanDetail(key, default = false)
-        _          <- service.toggleFlag(key, enabled = false, actor)
+        _          <- service.toggleFlag(ToggleFlagCommand(key, enabled = false, actor))
         afterEvent <- pollUntilDisabled(attempts = 100)
       } yield {
         first.reason shouldBe EvaluationReason.Default
@@ -194,34 +211,46 @@ class FeatureFlagServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matcher
     }
 
     "reject createFlag when rules share a position" in {
-      val duplicated = TestData.featureFlag(
-        key = FlagKey("phase2-dup-positions"),
-        rules = List(TestData.flagRule(position = RulePosition(0)), TestData.flagRule(position = RulePosition(0)))
+      val command = CreateFlagCommand(
+        FlagKey("phase2-dup-positions"),
+        FlagDescription(""),
+        enabled = true,
+        FlagVariant.BoolVariant(true),
+        clientExposed = false,
+        List(ruleData(position = RulePosition(0)), ruleData(position = RulePosition(0))),
+        actor
       )
-      service.createFlag(duplicated, actor).asserting(_ shouldBe a[CreateFlagResult.Invalid])
+      service.createFlag(command).asserting(_ shouldBe a[CreateFlagResult.Invalid])
     }
 
     "reject createFlag when a rule outcome's variant type doesn't match the flag's" in {
-      val mismatched = TestData.featureFlag(
-        key = FlagKey("phase2-mismatched"),
-        defaultValue = FlagVariant.BoolVariant(false),
-        rules = List(TestData.flagRule(outcome = RuleOutcome.FixedValue(FlagVariant.StringVariant("oops"))))
+      val command = CreateFlagCommand(
+        FlagKey("phase2-mismatched"),
+        FlagDescription(""),
+        enabled = true,
+        FlagVariant.BoolVariant(false),
+        clientExposed = false,
+        List(ruleData(outcome = RuleOutcome.FixedValue(FlagVariant.StringVariant("oops")))),
+        actor
       )
-      service.createFlag(mismatched, actor).asserting(_ shouldBe a[CreateFlagResult.Invalid])
+      service.createFlag(command).asserting(_ shouldBe a[CreateFlagResult.Invalid])
     }
 
     "evaluate segment-driven rules and pick up segment changes" in {
       val key         = FlagKey("phase2-segment")
       val segmentName = SegmentName("phase2-beta")
-      val segmentV1   = TestData.flagSegment(name = segmentName, conditions = List(RuleCondition.StringEquals(AttributeName("plan"), "beta")))
-      val rule        = TestData.flagRule(conditions = List(RuleCondition.SegmentMatch(segmentName)))
+      val rule        = ruleData(conditions = List(RuleCondition.SegmentMatch(segmentName)))
       val ctxBeta     = EvaluationContext(TargetingKey("user-b"), Map(AttributeName("plan") -> AttributeValue("beta")))
       for {
-        _      <- service.createSegment(segmentV1)
+        _ <- service.createSegment(
+               CreateSegmentCommand(segmentName, FlagDescription(""), List(RuleCondition.StringEquals(AttributeName("plan"), "beta")))
+             )
         _      <- seedFlag(key.unwrap, defaultValue = FlagVariant.BoolVariant(false), rules = List(rule))
         before <- service.evaluator(ctxBeta).booleanDetail(key, default = false)
-        _      <- service.updateSegment(segmentName, _.copy(conditions = List(RuleCondition.StringEquals(AttributeName("plan"), "enterprise"))))
-        after  <- service.evaluator(ctxBeta).booleanDetail(key, default = false)
+        _ <- service.updateSegment(
+               UpdateSegmentCommand(segmentName, FlagDescription(""), List(RuleCondition.StringEquals(AttributeName("plan"), "enterprise")))
+             )
+        after <- service.evaluator(ctxBeta).booleanDetail(key, default = false)
       } yield {
         before.reason shouldBe EvaluationReason.TargetingMatch
         after.reason shouldBe EvaluationReason.Default
@@ -230,17 +259,29 @@ class FeatureFlagServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matcher
 
     "return KeyExists when creating a flag with an already-used key" in {
       for {
-        _      <- seedFlag("phase3-dup-key")
-        result <- service.createFlag(TestData.featureFlag(key = FlagKey("phase3-dup-key")), actor)
+        _ <- seedFlag("phase3-dup-key")
+        result <- service.createFlag(
+                    CreateFlagCommand(
+                      FlagKey("phase3-dup-key"),
+                      FlagDescription(""),
+                      enabled = true,
+                      FlagVariant.BoolVariant(true),
+                      clientExposed = false,
+                      Nil,
+                      actor
+                    )
+                  )
       } yield result shouldBe CreateFlagResult.KeyExists
     }
 
     "return NotFound when updating, toggling or deleting a missing flag" in {
       val key = FlagKey("phase3-missing-admin")
       for {
-        updated <- service.updateFlag(key, identity, actor)
-        toggled <- service.toggleFlag(key, enabled = false, actor)
-        deleted <- service.deleteFlag(key, actor)
+        updated <- service.updateFlag(
+                     UpdateFlagCommand(key, FlagDescription(""), enabled = true, FlagVariant.BoolVariant(true), clientExposed = false, Nil, actor)
+                   )
+        toggled <- service.toggleFlag(ToggleFlagCommand(key, enabled = false, actor))
+        deleted <- service.deleteFlag(DeleteFlagCommand(key, actor))
       } yield {
         updated shouldBe UpdateFlagResult.NotFound
         toggled shouldBe UpdateFlagResult.NotFound
@@ -252,7 +293,10 @@ class FeatureFlagServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matcher
       val key = FlagKey("phase3-immutable-fields")
       for {
         created <- seedFlag(key.unwrap)
-        result  <- service.updateFlag(key, _.copy(description = FlagDescription("changed")), actor)
+        result <-
+          service.updateFlag(
+            UpdateFlagCommand(key, FlagDescription("changed"), enabled = true, FlagVariant.BoolVariant(true), clientExposed = false, Nil, actor)
+          )
         updated = result match {
                     case UpdateFlagResult.Updated(flag) => flag
                     case other                          => fail(s"expected Updated, got $other")
@@ -269,10 +313,12 @@ class FeatureFlagServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matcher
     "record an audit trail across create, update, toggle and delete" in {
       val key = FlagKey("phase3-audit")
       for {
-        _      <- seedFlag(key.unwrap)
-        _      <- service.updateFlag(key, _.copy(description = FlagDescription("updated")), actor)
-        _      <- service.toggleFlag(key, enabled = false, actor)
-        _      <- service.deleteFlag(key, actor)
+        _ <- seedFlag(key.unwrap)
+        _ <- service.updateFlag(
+               UpdateFlagCommand(key, FlagDescription("updated"), enabled = true, FlagVariant.BoolVariant(true), clientExposed = false, Nil, actor)
+             )
+        _      <- service.toggleFlag(ToggleFlagCommand(key, enabled = false, actor))
+        _      <- service.deleteFlag(DeleteFlagCommand(key, actor))
         result <- service.listAudit(key, PageRequest.firstPageBy(AuditSortField.CreatedAt))
         (entries, total) = result
       } yield {
@@ -286,7 +332,8 @@ class FeatureFlagServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matcher
         val deleted = entries.find(_.action == AuditAction.Deleted).get
         deleted.before.map(_.key) shouldBe Some(key)
         deleted.after shouldBe None
-        deleted.flagId shouldBe None
+        // delete detaches the flag reference (ON DELETE SET NULL); the trail stays queryable by key
+        all(entries.map(_.flagId)) shouldBe None
       }
     }
 
@@ -304,17 +351,17 @@ class FeatureFlagServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matcher
     "return NameExists when creating a segment with an already-used name" in {
       val name = SegmentName("phase3-dup-segment")
       for {
-        _      <- service.createSegment(TestData.flagSegment(name = name))
-        result <- service.createSegment(TestData.flagSegment(name = name))
+        _      <- service.createSegment(CreateSegmentCommand(name, FlagDescription(""), Nil))
+        result <- service.createSegment(CreateSegmentCommand(name, FlagDescription(""), Nil))
       } yield result shouldBe CreateSegmentResult.NameExists
     }
 
     "delete segments and report NotFound for missing ones" in {
       val name = SegmentName("phase3-delete-segment")
       for {
-        _       <- service.createSegment(TestData.flagSegment(name = name))
-        deleted <- service.deleteSegment(name)
-        missing <- service.deleteSegment(name)
+        _       <- service.createSegment(CreateSegmentCommand(name, FlagDescription(""), Nil))
+        deleted <- service.deleteSegment(DeleteSegmentCommand(name))
+        missing <- service.deleteSegment(DeleteSegmentCommand(name))
       } yield {
         deleted shouldBe DeleteSegmentResult.Deleted
         missing shouldBe DeleteSegmentResult.NotFound
