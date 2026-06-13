@@ -96,8 +96,11 @@ class FeatureFlagRepository(ruleRepository: RuleRepository) {
                }
     } yield flags.sortBy(_.key.unwrap)
 
-  def insert(flag: FeatureFlag): DBInTransaction[Unit] =
-    repository.create(FeatureFlagRow(flag)).void *> ruleRepository.replaceAll(flag.id, flag.rules)
+  def insert(flag: FeatureFlag): DBInTransaction[Boolean] =
+    repository.insertIfAbsent(FeatureFlagRow(flag)).flatMap {
+      case true  => ruleRepository.replaceAll(flag.id, flag.rules).as(true)
+      case false => IO.pure(false)
+    }
 
   def update(flag: FeatureFlag): DBInTransaction[Unit] =
     repository.update(FeatureFlagRow(flag)) *> ruleRepository.replaceAll(flag.id, flag.rules)

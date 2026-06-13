@@ -84,13 +84,13 @@ class FeatureFlagServiceLive(
       .inTransaction {
         (for {
           flag <- buildFlag(command).seal[CreateFlagResult].attempt(f => validate(f).left.map(CreateFlagResult.Invalid.apply).map(_ => f))
-          _ <- repository.findByKey(flag.key).seal[CreateFlagResult].attempt {
-                 case Some(_) => Left(CreateFlagResult.KeyExists)
-                 case None    => Right(())
+          _ <- repository.insert(flag).seal[CreateFlagResult].attempt {
+                 case true  => Right(())
+                 case false => Left(CreateFlagResult.KeyExists)
                }
           entryId <- IdGenerator.generateId(AuditEntryId).seal
           entry = AuditEntry(entryId, Some(flag.id), flag.key, command.actor, AuditAction.Created, before = None, after = Some(flag), flag.createdAt)
-          _ <- (repository.insert(flag) *> auditRepository.append(entry)).seal
+          _ <- auditRepository.append(entry).seal
         } yield CreateFlagResult.Created(flag)).run
       }
       .flatTap {
@@ -170,11 +170,10 @@ class FeatureFlagServiceLive(
       .inTransaction {
         (for {
           segment <- buildSegment(command).seal[CreateSegmentResult]
-          _ <- segmentRepository.findByName(segment.name).seal[CreateSegmentResult].attempt {
-                 case Some(_) => Left(CreateSegmentResult.NameExists)
-                 case None    => Right(())
+          _ <- segmentRepository.insert(segment).seal[CreateSegmentResult].attempt {
+                 case true  => Right(())
+                 case false => Left(CreateSegmentResult.NameExists)
                }
-          _ <- segmentRepository.insert(segment).seal
         } yield CreateSegmentResult.Created(segment)).run
       }
       .flatTap {

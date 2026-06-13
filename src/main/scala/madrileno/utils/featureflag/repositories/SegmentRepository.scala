@@ -50,8 +50,8 @@ class SegmentRepository {
   def findByName(name: SegmentName, lock: Lock = Lock.NoLock): DB[Option[Segment]] =
     repository.findOneByFilter(SegmentRowFilter(name = p.equal(name)), lock).map(_.map(_.toSegment))
 
-  def insert(segment: Segment): DB[Unit] =
-    repository.create(SegmentRow(segment)).void
+  def insert(segment: Segment): DB[Boolean] =
+    repository.insertIfAbsent(SegmentRow(segment))
 
   def update(segment: Segment): DB[Unit] =
     repository.update(SegmentRow(segment))
