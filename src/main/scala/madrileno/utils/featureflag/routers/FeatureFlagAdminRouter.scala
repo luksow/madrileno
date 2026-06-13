@@ -11,9 +11,8 @@ import pl.iterators.stir.server.Route
 
 class FeatureFlagAdminRouter(service: FeatureFlagServiceLive)(using TelemetryContext) extends BaseRouter {
 
-  private val actor = Actor("Admin")
-
-  val routes: Route =
+  def routes(adminUser: String): Route = {
+    val actor = Actor(adminUser)
     pathPrefix("feature-flags") {
       (get & pathEndOrSingleSlash) {
         complete(service.listFlags.map[ToResponseMarshallable](flags => Ok -> flags.map(FeatureFlagDto(_))))
@@ -106,4 +105,5 @@ class FeatureFlagAdminRouter(service: FeatureFlagServiceLive)(using TelemetryCon
             }
           }
       }
+  }
 }

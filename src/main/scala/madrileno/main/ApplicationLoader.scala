@@ -129,8 +129,8 @@ class ApplicationLoader(
       baklavaHttpRoutes.run(req).getOrElseF(IO.pure(Response[IO](Status.NotFound)))
   }
 
-  private val adminAuthenticator: CredentialsHelper => Option[Unit] = {
-    case p @ CredentialsHelper.Provided(id) if id == adminConfig.user && p.verify(adminConfig.password) => Some(())
+  private val adminAuthenticator: CredentialsHelper => Option[String] = {
+    case p @ CredentialsHelper.Provided(id) if id == adminConfig.user && p.verify(adminConfig.password) => Some(id)
     case _                                                                                              => None
   }
 
@@ -144,8 +144,9 @@ class ApplicationLoader(
   lazy val featureFlagAdminRouter: FeatureFlagAdminRouter = new FeatureFlagAdminRouter(featureFlagService)
 
   lazy val adminRoutes: Route = pathPrefix("admin") {
-    authenticateBasic(realm = "madrileno-admin", authenticator = adminAuthenticator) { _ =>
-      adminRoute ~ schedulerAdminRouter.routes ~ loggersAdminRouter.routes ~ configAdminRouter.routes ~ threaddumpAdminRouter.routes ~ heapdumpAdminRouter.routes ~ featureFlagAdminRouter.routes
+    authenticateBasic(realm = "madrileno-admin", authenticator = adminAuthenticator) { adminUser =>
+      adminRoute ~ schedulerAdminRouter.routes ~ loggersAdminRouter.routes ~ configAdminRouter.routes ~ threaddumpAdminRouter.routes ~ heapdumpAdminRouter.routes ~ featureFlagAdminRouter
+        .routes(adminUser)
     }
   }
 
