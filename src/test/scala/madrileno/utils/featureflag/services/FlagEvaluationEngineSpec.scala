@@ -7,7 +7,7 @@ import org.scalatest.wordspec.AnyWordSpec
 
 class FlagEvaluationEngineSpec extends AnyWordSpec with Matchers {
 
-  private val anon = EvaluationContext.of(TargetingKey("user-1"))
+  private val anon = EvaluationContext(TargetingKey("user-1"))
 
   private def ctxWith(attrs: (String, String)*): EvaluationContext =
     EvaluationContext(TargetingKey("user-1"), attrs.map { case (k, v) => AttributeName(k) -> AttributeValue(v) }.toMap)
@@ -164,7 +164,7 @@ class FlagEvaluationEngineSpec extends AnyWordSpec with Matchers {
     "return Split reason for users in the bucket; Default otherwise" in {
       val r = TestData.flagRule(outcome = RuleOutcome.PercentageRollout(Percentage(50), RolloutSeed("phase2-test"), FlagVariant.BoolVariant(true)))
       val f = TestData.featureFlag(rules = List(r))
-      val results = (1 to 200).map(i => evaluate(f, EvaluationContext.of(TargetingKey(s"user-$i"))).reason)
+      val results = (1 to 200).map(i => evaluate(f, EvaluationContext(TargetingKey(s"user-$i"))).reason)
       val hits    = results.count(_ == EvaluationReason.Split)
       hits should (be >= 70 and be <= 130)
     }
@@ -172,7 +172,7 @@ class FlagEvaluationEngineSpec extends AnyWordSpec with Matchers {
     "be sticky — same user, same seed, same bucket — across invocations" in {
       val r = TestData.flagRule(outcome = RuleOutcome.PercentageRollout(Percentage(50), RolloutSeed("phase2-sticky"), FlagVariant.BoolVariant(true)))
       val f = TestData.featureFlag(rules = List(r))
-      val ctx1 = EvaluationContext.of(TargetingKey("alice"))
+      val ctx1 = EvaluationContext(TargetingKey("alice"))
       val r1   = evaluate(f, ctx1).reason
       val r2   = evaluate(f, ctx1).reason
       val r3   = evaluate(f, ctx1).reason
@@ -186,7 +186,7 @@ class FlagEvaluationEngineSpec extends AnyWordSpec with Matchers {
       val fZero = TestData.featureFlag(rules = List(zero))
       val fFull = TestData.featureFlag(rules = List(full))
       (1 to 50).foreach { i =>
-        val ctx = EvaluationContext.of(TargetingKey(s"u-$i"))
+        val ctx = EvaluationContext(TargetingKey(s"u-$i"))
         evaluate(fZero, ctx).reason shouldBe EvaluationReason.Default
         evaluate(fFull, ctx).reason shouldBe EvaluationReason.Split
       }

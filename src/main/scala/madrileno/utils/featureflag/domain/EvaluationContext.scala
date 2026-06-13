@@ -23,12 +23,7 @@ object AttributeValue extends Opaque[AttributeValue, String] {
   override def validate(value: String): Either[String, AttributeValue] = Right(value.trim)
 }
 
-final case class EvaluationContext(targetingKey: TargetingKey, attributes: Map[AttributeName, AttributeValue])
-
-object EvaluationContext {
-  def of(targetingKey: TargetingKey): EvaluationContext =
-    EvaluationContext(targetingKey, Map.empty)
-}
+final case class EvaluationContext(targetingKey: TargetingKey, attributes: Map[AttributeName, AttributeValue] = Map.empty)
 
 enum EvaluationReason {
   case Disabled, TargetingMatch, Split, Default, Error

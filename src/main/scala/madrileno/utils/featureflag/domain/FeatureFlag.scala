@@ -11,11 +11,12 @@ object FlagId extends Opaque[FlagId, UUID]
 
 opaque type FlagKey = String
 object FlagKey extends Opaque[FlagKey, String] {
-  private val Pattern = "^[a-z][a-z0-9_-]*$".r
+  private val Pattern = "^[a-z][a-z0-9_-]*(\\.[a-z0-9_-]+)*$".r
   override def validate(value: String): Either[String, FlagKey] = {
     val trimmed = value.trim
     if (trimmed.isEmpty || trimmed.length > 128) Left("FlagKey must be 1-128 chars")
-    else if (!Pattern.matches(trimmed)) Left("FlagKey must match [a-z][a-z0-9_-]*")
+    else if (!Pattern.matches(trimmed))
+      Left("FlagKey must match [a-z][a-z0-9_-]*(\\.[a-z0-9_-]+)* (dot-separated hierarchy, e.g. auction.min-bid-pct)")
     else Right(trimmed)
   }
 }

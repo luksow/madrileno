@@ -91,7 +91,7 @@ class AuctionService(
       .flatMap {
         case Some(view) =>
           featureFlagService
-            .evaluateBoolean(FlagKey("auction-show-wine-ratings"), default = true)(using EvaluationContext.of(TargetingKey("anonymous")))
+            .evaluateBoolean(FlagKey("auction.show-wine-ratings"), EvaluationContext(TargetingKey("anonymous")), default = true)
             .flatMap {
               case true  => vivinoGateway.findRating(view.wineName, view.vintage).map(r => Some(view.copy(rating = r)))
               case false => IO.pure(Some(view))
@@ -138,7 +138,7 @@ class AuctionService(
           now             <- Clock[IO].realTimeInstant.seal
           bidId           <- IdGenerator.generateId(BidId).seal
           minIncrementPct <- featureFlagService
-                               .evaluateInt(FlagKey("auction-min-bid-increment-pct"), default = 0)(using bidContext(command.bidderId, auction))
+                               .evaluateInt(FlagKey("auction.min-bid-increment-pct"), bidContext(command.bidderId, auction), default = 0)
                                .seal
           bid <- auction
                    .placeBid(command.bidderId, command.amount, bidId, now, previousHighest, minIncrementPct)

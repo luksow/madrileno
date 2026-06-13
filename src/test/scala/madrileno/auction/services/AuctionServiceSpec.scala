@@ -153,7 +153,7 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
       }
     }
 
-    "skip the ratings gateway when auction-show-wine-ratings is off" in {
+    "skip the ratings gateway when auction.show-wine-ratings is off" in {
       val ratedGateway: VivinoGateway = (_, _) => IO.pure(Some(VivinoRating(Rating(BigDecimal(4.7)), RatingsCount(12345))))
       val gatedService = new AuctionService(
         auctionRepo,
@@ -163,7 +163,7 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
         eventBus,
         transactor,
         mailer,
-        TestFeatureFlagService(FlagKey("auction-show-wine-ratings") -> FlagVariant.BoolVariant(false))
+        TestFeatureFlagService(FlagKey("auction.show-wine-ratings") -> FlagVariant.BoolVariant(false))
       )
       for {
         seller  <- seedUser()
@@ -301,7 +301,7 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
       }
     }
 
-    "enforce a minimum increment driven by the auction-min-bid-increment-pct flag" in {
+    "enforce a minimum increment driven by the auction.min-bid-increment-pct flag" in {
       val flagged = new AuctionService(
         auctionRepo,
         bidRepo,
@@ -310,7 +310,7 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
         eventBus,
         transactor,
         mailer,
-        TestFeatureFlagService(FlagKey("auction-min-bid-increment-pct") -> FlagVariant.IntVariant(5))
+        TestFeatureFlagService(FlagKey("auction.min-bid-increment-pct") -> FlagVariant.IntVariant(5))
       )
       for {
         seller  <- seedUser()

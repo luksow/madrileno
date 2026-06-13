@@ -22,18 +22,50 @@ import scala.concurrent.duration.*
 trait FeatureFlagService {
   def evaluator(ctx: EvaluationContext): FlagEvaluator
 
-  final def evaluateBoolean(key: FlagKey, default: Boolean)(using ctx: EvaluationContext): IO[Boolean] = evaluator(ctx).boolean(key, default)
-  final def evaluateString(key: FlagKey, default: String)(using ctx: EvaluationContext): IO[String]    = evaluator(ctx).string(key, default)
-  final def evaluateInt(key: FlagKey, default: Int)(using ctx: EvaluationContext): IO[Int]             = evaluator(ctx).int(key, default)
-  final def evaluateJson(key: FlagKey, default: Json)(using ctx: EvaluationContext): IO[Json]          = evaluator(ctx).json(key, default)
+  final def evaluateBoolean(
+    key: FlagKey,
+    ctx: EvaluationContext,
+    default: Boolean
+  ): IO[Boolean] = evaluator(ctx).boolean(key, default)
+  final def evaluateString(
+    key: FlagKey,
+    ctx: EvaluationContext,
+    default: String
+  ): IO[String] = evaluator(ctx).string(key, default)
+  final def evaluateInt(
+    key: FlagKey,
+    ctx: EvaluationContext,
+    default: Int
+  ): IO[Int] = evaluator(ctx).int(key, default)
+  final def evaluateJson(
+    key: FlagKey,
+    ctx: EvaluationContext,
+    default: Json
+  ): IO[Json] = evaluator(ctx).json(key, default)
 
-  final def evaluateBooleanDetail(key: FlagKey, default: Boolean)(using ctx: EvaluationContext): IO[EvaluationDetail[Boolean]] =
+  final def evaluateBooleanDetail(
+    key: FlagKey,
+    ctx: EvaluationContext,
+    default: Boolean
+  ): IO[EvaluationDetail[Boolean]] =
     evaluator(ctx).booleanDetail(key, default)
-  final def evaluateStringDetail(key: FlagKey, default: String)(using ctx: EvaluationContext): IO[EvaluationDetail[String]] =
+  final def evaluateStringDetail(
+    key: FlagKey,
+    ctx: EvaluationContext,
+    default: String
+  ): IO[EvaluationDetail[String]] =
     evaluator(ctx).stringDetail(key, default)
-  final def evaluateIntDetail(key: FlagKey, default: Int)(using ctx: EvaluationContext): IO[EvaluationDetail[Int]] =
+  final def evaluateIntDetail(
+    key: FlagKey,
+    ctx: EvaluationContext,
+    default: Int
+  ): IO[EvaluationDetail[Int]] =
     evaluator(ctx).intDetail(key, default)
-  final def evaluateJsonDetail(key: FlagKey, default: Json)(using ctx: EvaluationContext): IO[EvaluationDetail[Json]] =
+  final def evaluateJsonDetail(
+    key: FlagKey,
+    ctx: EvaluationContext,
+    default: Json
+  ): IO[EvaluationDetail[Json]] =
     evaluator(ctx).jsonDetail(key, default)
 }
 

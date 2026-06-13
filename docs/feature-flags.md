@@ -30,10 +30,10 @@ Every variant-type mismatch is caught at write time: a rule whose outcome varian
 Inject `FeatureFlagService` and use the typed API. Each call takes a caller default that is returned on disabled / not-found / mismatch:
 
 ```scala
-given ctx: EvaluationContext = EvaluationContext.of(TargetingKey(user.id.toString))
-featureFlagService.evaluateBoolean(FlagKey("new-checkout"), default = false)
+val ctx = EvaluationContext(TargetingKey(user.id.toString))
+featureFlagService.evaluateBoolean(FlagKey("new-checkout"), ctx, default = false)
 // or the detail form, when you want the reason:
-featureFlagService.evaluateBooleanDetail(FlagKey("new-checkout"), default = false)
+featureFlagService.evaluateBooleanDetail(FlagKey("new-checkout"), ctx, default = false)
 //   => EvaluationDetail(value, reason, errorCode, errorMessage)
 ```
 
@@ -80,7 +80,7 @@ Every flag mutation is written in one transaction with its audit entry — actor
 
 Two flags wire feature flagging into the auction domain. Both ship **inert** — until you create them via the admin API they don't exist, so evaluation returns the caller default and behaviour is unchanged. They are not seeded.
 
-**`auction-min-bid-increment-pct`** (`IntVariant`, default `0`) — resolved on every bid in `AuctionService.placeBid` and passed into the pure `Auction.placeBid`, which raises the minimum acceptable bid to `floor × (100 + pct) / 100`. The context carries the *auction's* attributes (`wine-region`, `wine-color`, `wine-vintage`, `bottle-size`), so a `premium-wines` segment can demand a larger jump on high-end lots — a demonstration that context isn't always about *who* is asking.
+**`auction.min-bid-increment-pct`** (`IntVariant`, default `0`) — resolved on every bid in `AuctionService.placeBid` and passed into the pure `Auction.placeBid`, which raises the minimum acceptable bid to `floor × (100 + pct) / 100`. The context carries the *auction's* attributes (`wine-region`, `wine-color`, `wine-vintage`, `bottle-size`), so a `premium-wines` segment can demand a larger jump on high-end lots — a demonstration that context isn't always about *who* is asking.
 
 ```bash
 # require a 5% increment on Bordeaux lots
@@ -89,7 +89,7 @@ curl -u admin:admin -X POST localhost:9000/admin/feature-flag-segments -H 'conte
   "conditions": [{"StringEquals": {"attribute": "wine-region", "value": "Bordeaux"}}]
 }'
 curl -u admin:admin -X POST localhost:9000/admin/feature-flags -H 'content-type: application/json' -d '{
-  "key": "auction-min-bid-increment-pct", "description": "min bid increment %",
+  "key": "auction.min-bid-increment-pct", "description": "min bid increment %",
   "enabled": true, "defaultValue": {"IntVariant": {"value": 0}}, "clientExposed": false,
   "rules": [{"position": 0, "description": "premium lots step 5%",
     "conditions": [{"SegmentMatch": {"name": "premium-wines"}}],
@@ -97,11 +97,11 @@ curl -u admin:admin -X POST localhost:9000/admin/feature-flags -H 'content-type:
 }'
 ```
 
-**`auction-show-wine-ratings`** (`BoolVariant`, default `true`, `clientExposed`) — a global kill-switch: `getAuction` skips the Vivino [gateway](external-apis.md) call when it is off, and because the flag is client-exposed it also rides the bootstrap payload so the frontend can hide the ratings widget in step. `getAuction` is unauthenticated, so it evaluates with an anonymous context — a reminder that not every flag is personalised.
+**`auction.show-wine-ratings`** (`BoolVariant`, default `true`, `clientExposed`) — a global kill-switch: `getAuction` skips the Vivino [gateway](external-apis.md) call when it is off, and because the flag is client-exposed it also rides the bootstrap payload so the frontend can hide the ratings widget in step. `getAuction` is unauthenticated, so it evaluates with an anonymous context — a reminder that not every flag is personalised.
 
 ## Adding your own flag
 
-1. Pick a key (`[a-z][a-z0-9_-]*` — hyphen-namespaced, e.g. `billing-new-dunning`).
+1. Pick a key (`[a-z][a-z0-9_-]*(\.[a-z0-9_-]+)*` — lowercase, with `.` for hierarchy, e.g. `billing.new-dunning`).
 2. Evaluate it where the decision is made, with a sensible caller default, building the context from whatever the surrounding code already holds.
 3. Create it through the admin API (or leave it absent to keep the default). Mark it `clientExposed` only if the frontend needs it.
 
