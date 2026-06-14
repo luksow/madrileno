@@ -11,21 +11,21 @@ trait RateLimiter {
 
 trait RateLimiterRuntime {
   def rateLimiter: RateLimiter
+  def trustedProxies: List[Cidr[IpAddress]] = Nil
 }
 ```
 
 `increment(key, window)` is the whole API: bump the counter for `key` in the current `window`, return the new count. Returning `Long` (not `Boolean` or `Either`) keeps the policy in the caller — the directive layer decides what counts as "over" by comparing to the configured limit. Different routes might want soft warnings, hard 429s, or instrumentation around the same counter; the trait stays out of that decision.
 
-`RateLimiterRuntime` is the factory layer, mirroring `CacheRuntime` / `EventBusRuntime` / `ObjectStoreRuntime` / `CircuitBreakerRuntime`. One runtime per app, swapped in `Main`.
+`RateLimiterRuntime` is the factory layer, mirroring `CacheRuntime` / `EventBusRuntime` / `ObjectStoreRuntime` / `CircuitBreakerRuntime`. One runtime per app, swapped in `Main`. It also carries `trustedProxies` — the proxy ranges allowed to set `X-Forwarded-For` — because client-IP resolution is a property of the deployment, not of any single route. See [discriminator keys](#discriminator-keys).
 
 ## The `rateLimited` directive
 
 `RateLimitDirectives` mixes the directive into any router that needs it:
 
 ```scala
-class AuctionRouter(..., rateLimiterRuntime: RateLimiterRuntime)(using TelemetryContext)
+class AuctionRouter(..., override protected val rateLimiterRuntime: RateLimiterRuntime)(using TelemetryContext)
     extends BaseRouter with RateLimitDirectives {
-  override protected val rateLimiter: RateLimiter = rateLimiterRuntime.rateLimiter
 
   val routes: Route =
     (get & path("auctions") & pathEndOrSingleSlash) {
@@ -35,6 +35,8 @@ class AuctionRouter(..., rateLimiterRuntime: RateLimiterRuntime)(using Telemetry
     }
 }
 ```
+
+The trait's only requirement is the `rateLimiterRuntime` — satisfy it with the constructor parameter the router already takes (`override protected val`). The directive derives both the counter and the trusted-proxy list from it internally, so there's nothing else to wire and `trustedProxies` is never exposed for a router to get wrong.
 
 Inside the directive:
 
@@ -56,14 +58,31 @@ Three things to know:
 
 Three out-of-the-box extractors, plus your own:
 
-| Function                | What it returns                                                                       | When to use                                              |
-| ----------------------- | ------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| `byClientIp` (default)  | The socket-level remote IP. Ignores `X-Forwarded-For`.                                 | Direct clients (no proxy in front), or limiting bots.    |
-| `byClientIpForwarded`   | First IP from `X-Forwarded-For`, then `X-Real-Ip`, then `Remote-Address`, then socket. | Behind a trusted reverse proxy (CDN, load balancer).     |
-| `byHeader(name)`        | The value of an arbitrary header, or `"unknown"`.                                      | Internal-only paths keyed on an internal client ID.      |
-| Custom `Request[IO] => String` | Anything you can compute from the request. Most usefully, the authenticated user.  | Per-user limits inside an authed route.                  |
+| Function                       | What it returns                                                                            | When to use                                           |
+| ------------------------------ | ------------------------------------------------------------------------------------------ | ----------------------------------------------------- |
+| `byClientIpForwarded` (default) | The client IP, resolving `X-Forwarded-For` **only through configured trusted proxies**; otherwise the socket IP. | The default. Safe whether or not you sit behind a proxy. |
+| `byClientIp`                   | The socket-level remote IP. Always ignores `X-Forwarded-For`.                              | When you explicitly never want to honor forwarded headers. |
+| `byHeader(name)`               | The value of an arbitrary header, or `"unknown"`.                                          | Internal-only paths keyed on an internal client ID.   |
+| Custom `Request[IO] => String` | Anything you can compute from the request. Most usefully, the authenticated user.          | Per-user limits inside an authed route.               |
 
-The default-ignores-XFF is deliberate. If you accept arbitrary `X-Forwarded-For`, anyone can spoof a fresh bucket per request — limit becomes useless. Switch to `byClientIpForwarded` only when your edge is a proxy you trust to set the header. Production deployments behind nginx / Cloudflare / ELB usually want this; bare TCP exposure does not.
+### Why the default is trusted-proxy aware
+
+`X-Forwarded-For` is client-controlled. If you key on it blindly, anyone can rotate the header to mint a fresh bucket per request and the limit is useless. But ignoring it entirely is also wrong: behind a CDN or load balancer the socket IP is the proxy's, so *every* client collapses into one bucket. Neither naive option is safe, so `byClientIpForwarded` trusts the header only as far as the request actually arrived over proxies you've declared:
+
+- It honors `X-Forwarded-For` **only when the direct peer (socket address) is a configured trusted proxy.** A directly-reachable app ignores the header completely — a forged `X-Forwarded-For` from an arbitrary client can't move the bucket.
+- It then walks the forwarded chain from the nearest hop, **skips further trusted proxies, and takes the first untrusted address** as the client. Parsing from the right (not the leftmost entry) is what makes it correct behind proxies that *append* rather than overwrite — a client can prepend forged entries, but they sit to the left of the address the trusted proxy honestly recorded, so they're discarded.
+- With **no trusted proxies configured it is identical to `byClientIp`** (socket IP), so the default is safe out of the box.
+
+Configure trusted proxies in `application.conf` (or `RATE_LIMIT_TRUSTED_PROXIES`):
+
+```hocon
+rate-limit {
+  trusted-proxies = ""  # comma-separated CIDRs/IPs, e.g. "10.0.0.0/8,192.168.0.0/16"
+  trusted-proxies = ${?RATE_LIMIT_TRUSTED_PROXIES}
+}
+```
+
+**Deployment rule of thumb:** behind nginx / Cloudflare / an ELB, set this to the proxy's egress ranges — otherwise all clients share one bucket. On bare TCP exposure, leave it empty. If you only ever want the socket IP regardless of deployment, pass `by = byClientIp` explicitly.
 
 For per-user limits inside `authedRoutes`, build the extractor from the auth context:
 
@@ -102,11 +121,16 @@ val unbounded: RateLimiterRuntime = new RateLimiterRuntime {
 
 `increment` always returns `0` — well below any limit, so no test ever gets a `429` from rate limiting it didn't ask for. This is the right default; assert behaviour against the route's actual logic, not its rate-limiter friction.
 
-For tests that *want* to verify rate limiting (the `RateLimitDirectivesSpec` is the example), wire the production runtime explicitly:
+For tests that *want* to verify rate limiting, wire the production runtime explicitly. `RateLimitDirectivesSpec` mixes the directive into a bare router with a real Caffeine-backed runtime, varying `trustedProxies` to cover the forwarded-IP paths:
 
 ```scala
-val rl = RateLimiterRuntime.scaffeine().rateLimiter
+new BaseRouter with RateLimitDirectives {
+  override protected val rateLimiterRuntime: RateLimiterRuntime =
+    RateLimiterRuntime.scaffeine(trustedProxies = List(Cidr.fromString("10.0.0.0/8").get))
+}
 ```
+
+`AuthRateLimitSpec` and `AdminRateLimitSpec` go a level up: they drive the real routers with a bounded runtime and assert the `429` actually fires — auth through the full app (`TestApplicationLoader` exposes an overridable `rateLimiterRuntime`), admin by constructing the router directly. That's deliberate: with the inert default limiter, deleting a `rateLimited(...)` call would otherwise pass every router spec silently, so each rate-limited endpoint gets one test that fails if its limit disappears.
 
 ## Multi-instance considerations
 
@@ -157,6 +181,17 @@ auctions.bid            30/min   (write, by user)
 ```
 
 Reads are per-IP and generous; writes are per-user and tighter. That's a reasonable default starting point. Tune from real traffic, not from imagination.
+
+The auth and admin endpoints show the other two axes — pre-auth abuse surface and expensive operations:
+
+```
+auth.firebase / oidc / dev  10/min   (pre-auth, by client IP)
+auth.refresh                30/min   (pre-auth, by client IP)
+admin.threaddump            20/min   (by client IP)
+admin.heapdump               3/5min  (global key — protects a shared resource, the disk)
+```
+
+The auth limits are per-IP because they're public, pre-authentication endpoints — the brute-force / credential-stuffing surface. `admin.heapdump` uses a constant `by = _ => "global"` key instead of per-client: a heap dump writes a large file to disk, so the resource at risk is the box itself, and the cap must hold across *all* callers, not per-admin. When the danger is "this operation is expensive for the server," a global key is the right tool; when it's "this client is being abusive," a per-client key is.
 
 ## Naming the bucket
 
