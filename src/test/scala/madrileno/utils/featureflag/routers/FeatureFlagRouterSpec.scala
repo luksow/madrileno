@@ -19,7 +19,6 @@ import pl.iterators.stir.server.Route
 class FeatureFlagRouterSpec extends BaseRouteSpec with TestApplicationLoader {
   override def route: Route = application.routes(wsb)
 
-  // evaluated flag values are arbitrary JSON — no derivable OpenAPI shape
   private given Schema[Json] = FreeFormSchema("FlagValue")
 
   private val auth = AuthContext(TestData.user())
