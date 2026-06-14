@@ -51,8 +51,14 @@ class RuleRepository {
   def findByFlagId(flagId: FlagId): DB[List[Rule]] =
     repository.findByForeignId(flagId).map(_.map(_.toRule).sortBy(_.position))
 
+  def findByFlagIds(flagIds: List[FlagId]): DB[Map[FlagId, List[Rule]]] =
+    repository.findByForeignIds(flagIds).map(_.groupBy(_.flagId).view.mapValues(_.map(_.toRule).sortBy(_.position)).toMap)
+
   def replaceAll(flagId: FlagId, rules: List[Rule]): DBInTransaction[Unit] =
     repository.deleteByForeignId(flagId) *> repository.createAll(rules.map(RuleRow(flagId, _))).void
+
+  def deleteByFlagId(flagId: FlagId): DB[Unit] =
+    repository.deleteByForeignId(flagId)
 
   private val repository: IdRepository[RuleRow, RuleId] & ForeignIdRepository[RuleRow, FlagId] =
     new IdRepository[RuleRow, RuleId](_.id) with ForeignIdRepository[RuleRow, FlagId] {

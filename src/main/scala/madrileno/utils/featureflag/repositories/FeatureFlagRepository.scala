@@ -1,6 +1,7 @@
 package madrileno.utils.featureflag.repositories
 
 import cats.effect.IO
+import cats.syntax.all.*
 import io.circe.Json
 import madrileno.utils.db.dsl.*
 import madrileno.utils.db.transactor.{DB, DBInTransaction}
@@ -55,14 +56,18 @@ private[repositories] object FeatureFlagRowTable extends Table[FeatureFlagRow]("
     (id, key, description, variantType, enabled, defaultValue, clientExposed, createdAt, updatedAt)
 }
 
-private[repositories] final case class FeatureFlagRowFilter(id: SqlPredicate[FlagId] = p.any, key: SqlPredicate[FlagKey] = p.any) extends SqlFilter {
+private[repositories] final case class FeatureFlagRowFilter(
+  id: SqlPredicate[FlagId] = p.any,
+  key: SqlPredicate[FlagKey] = p.any,
+  clientExposed: SqlPredicate[Boolean] = p.any)
+    extends SqlFilter {
   override def filterFragment: AppliedFragment =
-    SqlFilterDerivation.filterFragment(this, (FeatureFlagRowTable.id, FeatureFlagRowTable.key))
+    SqlFilterDerivation.filterFragment(this, (FeatureFlagRowTable.id, FeatureFlagRowTable.key, FeatureFlagRowTable.clientExposed))
 }
 
 class FeatureFlagRepository(ruleRepository: RuleRepository) {
-  def findByKey(key: FlagKey): DB[Option[FeatureFlag]] =
-    repository.findOneByFilter(FeatureFlagRowFilter(key = p.equal(key))).flatMap {
+  def findByKey(key: FlagKey, lock: Lock = Lock.NoLock): DB[Option[FeatureFlag]] =
+    repository.findOneByFilter(FeatureFlagRowFilter(key = p.equal(key)), lock).flatMap {
       case None => IO.pure(None)
       case Some(row) =>
         ruleRepository.findByFlagId(row.id).flatMap { rules =>
@@ -73,8 +78,35 @@ class FeatureFlagRepository(ruleRepository: RuleRepository) {
         }
     }
 
-  def save(flag: FeatureFlag): DBInTransaction[Unit] =
-    repository.upsert(FeatureFlagRow(flag)) *> ruleRepository.replaceAll(flag.id, flag.rules)
+  def findAll: DB[List[FeatureFlag]] =
+    listByFilter(FeatureFlagRowFilter())
+
+  def findAllClientExposed: DB[List[FeatureFlag]] =
+    listByFilter(FeatureFlagRowFilter(clientExposed = p.equal(true)))
+
+  private def listByFilter(filter: FeatureFlagRowFilter): DB[List[FeatureFlag]] =
+    for {
+      rows        <- repository.findByFilter(filter)
+      rulesByFlag <- ruleRepository.findByFlagIds(rows.map(_.id))
+      flags <- rows.traverse { row =>
+                 row.toFeatureFlag(rulesByFlag.getOrElse(row.id, Nil)) match {
+                   case Right(f)  => IO.pure(f)
+                   case Left(err) => IO.raiseError[FeatureFlag](new IllegalStateException(s"Invalid feature_flag row for key=${row.key}: $err"))
+                 }
+               }
+    } yield flags.sortBy(_.key.unwrap)
+
+  def insert(flag: FeatureFlag): DBInTransaction[Boolean] =
+    repository.insertIfAbsent(FeatureFlagRow(flag)).flatMap {
+      case true  => ruleRepository.replaceAll(flag.id, flag.rules).as(true)
+      case false => IO.pure(false)
+    }
+
+  def update(flag: FeatureFlag): DBInTransaction[Unit] =
+    repository.update(FeatureFlagRow(flag)) *> ruleRepository.replaceAll(flag.id, flag.rules)
+
+  def deleteById(id: FlagId): DB[Unit] =
+    repository.deleteById(id)
 
   private val repository: IdRepository[FeatureFlagRow, FlagId] & FilteringRepository[FeatureFlagRow, FeatureFlagRowFilter] =
     new IdRepository[FeatureFlagRow, FlagId](_.id) with FilteringRepository[FeatureFlagRow, FeatureFlagRowFilter] {
