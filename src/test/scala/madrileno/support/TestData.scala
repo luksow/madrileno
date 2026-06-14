@@ -71,7 +71,7 @@ object TestData {
 
   def featureFlag(
     id: FlagId = randomFlagId(),
-    key: FlagKey = FlagKey(s"test-flag-${UUID.randomUUID()}"),
+    key: FlagKey = FlagKey(s"test-flag-${randomUuid()}"),
     description: FlagDescription = FlagDescription(""),
     enabled: Boolean = true,
     defaultValue: FlagVariant = FlagVariant.BoolVariant(false),
@@ -92,7 +92,7 @@ object TestData {
 
   def flagSegment(
     id: SegmentId = randomSegmentId(),
-    name: SegmentName = SegmentName(s"test-segment-${UUID.randomUUID()}"),
+    name: SegmentName = SegmentName(s"test-segment-${randomUuid()}"),
     description: FlagDescription = FlagDescription(""),
     conditions: List[RuleCondition] = Nil,
     createdAt: Instant = Instant.now(),
