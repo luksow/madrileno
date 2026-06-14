@@ -4,18 +4,24 @@ import com.comcast.ip4s.*
 import madrileno.auth.domain.{AuthContext, ExternalAuthToken, Provider, RefreshTokenId, UserAgent}
 import madrileno.auth.routers.dto.*
 import madrileno.auth.services.*
-import madrileno.utils.http.BaseRouter
+import madrileno.utils.http.{BaseRouter, RateLimitDirectives, RateLimiter, RateLimiterRuntime}
 import madrileno.utils.observability.TelemetryContext
 import pl.iterators.stir.marshalling.ToResponseMarshallable
 import pl.iterators.stir.server.Route
 
-class AuthRouter(authenticationService: AuthenticationService)(using TelemetryContext) extends BaseRouter {
+import scala.concurrent.duration.*
+
+class AuthRouter(authenticationService: AuthenticationService, rateLimiterRuntime: RateLimiterRuntime)(using TelemetryContext)
+    extends BaseRouter
+    with RateLimitDirectives {
+  override protected val rateLimiter: RateLimiter = rateLimiterRuntime.rateLimiter
+
   private val unknownIpAddress: IpAddress = ipv4"0.0.0.0"
 
   val routes: Route = {
-    (post & path("auth" / "firebase") & entity(as[AuthWithFirebaseRequest]) & pathEndOrSingleSlash & optionalHeaderValueByName(
-      "User-Agent"
-    ) & extractClientIP) {
+    (post & path("auth" / "firebase") & rateLimited("auth.firebase", to = 10, within = 1.minute, by = byClientIpForwarded) & entity(
+      as[AuthWithFirebaseRequest]
+    ) & pathEndOrSingleSlash & optionalHeaderValueByName("User-Agent") & extractClientIP) {
       (
         request,
         userAgent,
@@ -40,9 +46,9 @@ class AuthRouter(authenticationService: AuthenticationService)(using TelemetryCo
             }
         }
     } ~
-      (post & path("auth" / "refresh-token") & entity(as[AuthWithRefreshTokenRequest]) & pathEndOrSingleSlash & optionalHeaderValueByName(
-        "User-Agent"
-      ) & extractClientIP) {
+      (post & path("auth" / "refresh-token") & rateLimited("auth.refresh", to = 30, within = 1.minute, by = byClientIpForwarded) & entity(
+        as[AuthWithRefreshTokenRequest]
+      ) & pathEndOrSingleSlash & optionalHeaderValueByName("User-Agent") & extractClientIP) {
         (
           request,
           userAgent,
@@ -66,9 +72,9 @@ class AuthRouter(authenticationService: AuthenticationService)(using TelemetryCo
               }
           }
       } ~
-      (post & path("auth" / "oidc" / Segment.as[Provider]) & entity(as[AuthWithOidcRequest]) & pathEndOrSingleSlash & optionalHeaderValueByName(
-        "User-Agent"
-      ) & extractClientIP) {
+      (post & path("auth" / "oidc" / Segment.as[Provider]) & rateLimited("auth.oidc", to = 10, within = 1.minute, by = byClientIpForwarded) & entity(
+        as[AuthWithOidcRequest]
+      ) & pathEndOrSingleSlash & optionalHeaderValueByName("User-Agent") & extractClientIP) {
         (
           provider,
           request,
@@ -93,9 +99,9 @@ class AuthRouter(authenticationService: AuthenticationService)(using TelemetryCo
               }
           }
       } ~
-      (post & path("auth" / "dev") & entity(as[AuthWithEmailRequest]) & pathEndOrSingleSlash & optionalHeaderValueByName(
-        "User-Agent"
-      ) & extractClientIP) {
+      (post & path("auth" / "dev") & rateLimited("auth.dev", to = 10, within = 1.minute, by = byClientIpForwarded) & entity(
+        as[AuthWithEmailRequest]
+      ) & pathEndOrSingleSlash & optionalHeaderValueByName("User-Agent") & extractClientIP) {
         (
           request,
           userAgent,

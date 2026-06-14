@@ -3,7 +3,7 @@ package madrileno.utils.observability.admin
 import cats.effect.IO
 import cats.effect.kernel.Clock
 import com.sun.management.HotSpotDiagnosticMXBean
-import madrileno.utils.http.BaseRouter
+import madrileno.utils.http.{BaseRouter, RateLimitDirectives, RateLimiter, RateLimiterRuntime}
 import madrileno.utils.json.JsonProtocol.*
 import madrileno.utils.observability.TelemetryContext
 import pl.iterators.stir.marshalling.ToResponseMarshallable
@@ -12,6 +12,7 @@ import pl.iterators.stir.server.Route
 import java.io.{File, IOException}
 import java.lang.management.ManagementFactory
 import java.nio.file.FileAlreadyExistsException
+import scala.concurrent.duration.*
 
 final case class HeapdumpResultDto(
   path: String,
@@ -21,10 +22,16 @@ final case class HeapdumpResultDto(
     derives Encoder.AsObject,
       Decoder
 
-class HeapdumpAdminRouter(using TelemetryContext) extends BaseRouter {
+class HeapdumpAdminRouter(rateLimiterRuntime: RateLimiterRuntime)(using TelemetryContext) extends BaseRouter with RateLimitDirectives {
+  override protected val rateLimiter: RateLimiter = rateLimiterRuntime.rateLimiter
 
   val routes: Route =
-    (post & pathPrefix("heapdump") & pathEndOrSingleSlash & parameters("live".as[Boolean] ? true, "path".?)) { (live, pathOverride) =>
+    (post & pathPrefix("heapdump") & pathEndOrSingleSlash & rateLimited(
+      "admin.heapdump",
+      to = 3,
+      within = 5.minutes,
+      by = _ => "global"
+    ) & parameters("live".as[Boolean] ? true, "path".?)) { (live, pathOverride) =>
       complete {
         dump(live, pathOverride).map[ToResponseMarshallable] {
           case Right(dto)             => Ok -> dto
