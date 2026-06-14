@@ -128,7 +128,6 @@ class AuctionService(
   }
 
   def placeBid(command: PlaceBidCommand): IO[PlaceBidResult] = {
-    // Resolve the flag before opening the write transaction so its own session is never nested inside ours.
     transactor
       .inSession(auctionRepository.find(command.auctionId))
       .flatMap {

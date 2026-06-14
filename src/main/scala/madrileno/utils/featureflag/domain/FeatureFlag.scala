@@ -15,8 +15,7 @@ object FlagKey extends Opaque[FlagKey, String] {
   override def validate(value: String): Either[String, FlagKey] = {
     val trimmed = value.trim
     if (trimmed.isEmpty || trimmed.length > 128) Left("FlagKey must be 1-128 chars")
-    else if (!Pattern.matches(trimmed))
-      Left("FlagKey must match [a-z][a-z0-9_-]*(\\.[a-z0-9_-]+)* (dot-separated hierarchy, e.g. auction.min-bid-pct)")
+    else if (!Pattern.matches(trimmed)) Left("FlagKey must match [a-z][a-z0-9_-]*(\\.[a-z0-9_-]+)*")
     else Right(trimmed)
   }
 }
