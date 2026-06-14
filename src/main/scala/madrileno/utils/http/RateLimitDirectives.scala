@@ -10,9 +10,10 @@ import pl.iterators.stir.server.{Directive, Directive0}
 import scala.concurrent.duration.FiniteDuration
 
 trait RateLimitDirectives { self: BaseRouter =>
-  protected def rateLimiter: RateLimiter
+  protected def rateLimiterRuntime: RateLimiterRuntime
 
-  protected def trustedProxies: List[Cidr[IpAddress]] = Nil
+  private def rateLimiter: RateLimiter              = rateLimiterRuntime.rateLimiter
+  private def trustedProxies: List[Cidr[IpAddress]] = rateLimiterRuntime.trustedProxies
 
   val byClientIp: Request[IO] => String =
     req => req.remoteAddr.fold("unknown")(_.toString)

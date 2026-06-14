@@ -4,18 +4,16 @@ import com.comcast.ip4s.*
 import madrileno.auth.domain.{AuthContext, ExternalAuthToken, Provider, RefreshTokenId, UserAgent}
 import madrileno.auth.routers.dto.*
 import madrileno.auth.services.*
-import madrileno.utils.http.{BaseRouter, RateLimitDirectives, RateLimiter, RateLimiterRuntime}
+import madrileno.utils.http.{BaseRouter, RateLimitDirectives, RateLimiterRuntime}
 import madrileno.utils.observability.TelemetryContext
 import pl.iterators.stir.marshalling.ToResponseMarshallable
 import pl.iterators.stir.server.Route
 
 import scala.concurrent.duration.*
 
-class AuthRouter(authenticationService: AuthenticationService, rateLimiterRuntime: RateLimiterRuntime)(using TelemetryContext)
+class AuthRouter(authenticationService: AuthenticationService, override protected val rateLimiterRuntime: RateLimiterRuntime)(using TelemetryContext)
     extends BaseRouter
     with RateLimitDirectives {
-  override protected val rateLimiter: RateLimiter              = rateLimiterRuntime.rateLimiter
-  override protected def trustedProxies: List[Cidr[IpAddress]] = rateLimiterRuntime.trustedProxies
 
   private val unknownIpAddress: IpAddress = ipv4"0.0.0.0"
 

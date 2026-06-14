@@ -3,7 +3,7 @@ package madrileno.utils.observability.admin
 import cats.effect.IO
 import cats.effect.kernel.Clock
 import com.sun.management.HotSpotDiagnosticMXBean
-import madrileno.utils.http.{BaseRouter, RateLimitDirectives, RateLimiter, RateLimiterRuntime}
+import madrileno.utils.http.{BaseRouter, RateLimitDirectives, RateLimiterRuntime}
 import madrileno.utils.json.JsonProtocol.*
 import madrileno.utils.observability.TelemetryContext
 import pl.iterators.stir.marshalling.ToResponseMarshallable
@@ -22,8 +22,9 @@ final case class HeapdumpResultDto(
     derives Encoder.AsObject,
       Decoder
 
-class HeapdumpAdminRouter(rateLimiterRuntime: RateLimiterRuntime)(using TelemetryContext) extends BaseRouter with RateLimitDirectives {
-  override protected val rateLimiter: RateLimiter = rateLimiterRuntime.rateLimiter
+class HeapdumpAdminRouter(override protected val rateLimiterRuntime: RateLimiterRuntime)(using TelemetryContext)
+    extends BaseRouter
+    with RateLimitDirectives {
 
   val routes: Route =
     (post & pathPrefix("heapdump") & pathEndOrSingleSlash & rateLimited(

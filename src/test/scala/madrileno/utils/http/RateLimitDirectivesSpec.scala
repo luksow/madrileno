@@ -19,14 +19,16 @@ class RateLimitDirectivesSpec extends AnyFunSpec with Matchers {
   private given TelemetryContext = TelemetryContext(Meter.noop[IO], Tracer.noop[IO], io.opentelemetry.api.OpenTelemetry.noop())
   private given IORuntime        = IORuntime.global
 
-  private def routerWith(rl: RateLimiter, proxies: List[Cidr[IpAddress]] = Nil): BaseRouter & RateLimitDirectives =
+  private def routerWith(runtime: RateLimiterRuntime): BaseRouter & RateLimitDirectives =
     new BaseRouter with RateLimitDirectives {
-      override protected val rateLimiter: RateLimiter              = rl
-      override protected def trustedProxies: List[Cidr[IpAddress]] = proxies
+      override protected val rateLimiterRuntime: RateLimiterRuntime = runtime
     }
 
-  private def routesFor(rl: RateLimiter): Route = {
-    val router = routerWith(rl)
+  private def trusting(proxy: String): RateLimiterRuntime =
+    RateLimiterRuntime.scaffeine(trustedProxies = List(Cidr.fromString(proxy).get))
+
+  private def routesFor(runtime: RateLimiterRuntime): Route = {
+    val router = routerWith(runtime)
     import router.*
     (get & path("hello") & pathEndOrSingleSlash) {
       rateLimited("test", to = 3, within = 1.minute) {
@@ -57,7 +59,7 @@ class RateLimitDirectivesSpec extends AnyFunSpec with Matchers {
 
   describe("rateLimited directive") {
     it("passes through under the limit and returns 429 once exceeded") {
-      val routes = routesFor(RateLimiterRuntime.scaffeine().rateLimiter)
+      val routes = routesFor(RateLimiterRuntime.scaffeine())
       hit(routes).status shouldBe Status.Ok
       hit(routes).status shouldBe Status.Ok
       hit(routes).status shouldBe Status.Ok
@@ -67,9 +69,9 @@ class RateLimitDirectivesSpec extends AnyFunSpec with Matchers {
     }
 
     it("isolates buckets by discriminator key") {
-      val rl = RateLimiterRuntime.scaffeine().rateLimiter
+      val runtime = RateLimiterRuntime.scaffeine()
       val withKey: String => Route = clientId => {
-        val router = routerWith(rl)
+        val router = routerWith(runtime)
         import router.*
         (get & path("hello") & pathEndOrSingleSlash) {
           rateLimited("isolated", to = 1, within = 1.minute, by = byHeader("X-Client")) {
@@ -84,9 +86,8 @@ class RateLimitDirectivesSpec extends AnyFunSpec with Matchers {
     }
 
     it("does not increment the counter for branches that don't match the method/path") {
-      val rl = RateLimiterRuntime.scaffeine().rateLimiter
       val routes: Route = {
-        val router = routerWith(rl)
+        val router = routerWith(RateLimiterRuntime.scaffeine())
         import router.*
         (get & path("hello") & pathEndOrSingleSlash) {
           rateLimited("get-bucket", to = 1, within = 1.minute) {
@@ -109,9 +110,8 @@ class RateLimitDirectivesSpec extends AnyFunSpec with Matchers {
     }
 
     it("the default discriminator ignores X-Forwarded-For when there are no trusted proxies") {
-      val rl = RateLimiterRuntime.scaffeine().rateLimiter
       val routes: Route = {
-        val router = routerWith(rl)
+        val router = routerWith(RateLimiterRuntime.scaffeine())
         import router.*
         (get & path("hello") & pathEndOrSingleSlash) {
           rateLimited("direct", to = 1, within = 1.minute) {
@@ -125,9 +125,8 @@ class RateLimitDirectivesSpec extends AnyFunSpec with Matchers {
     }
 
     it("byClientIpForwarded ignores a spoofed X-Forwarded-For when the peer is not a trusted proxy") {
-      val rl = RateLimiterRuntime.scaffeine().rateLimiter
       val routes: Route = {
-        val router = routerWith(rl, proxies = List(Cidr.fromString("10.0.0.0/8").get))
+        val router = routerWith(trusting("10.0.0.0/8"))
         import router.*
         (get & path("hello") & pathEndOrSingleSlash) {
           rateLimited("untrusted", to = 1, within = 1.minute, by = byClientIpForwarded) {
@@ -141,9 +140,8 @@ class RateLimitDirectivesSpec extends AnyFunSpec with Matchers {
     }
 
     it("byClientIpForwarded resolves the client through X-Forwarded-For when the peer is a trusted proxy") {
-      val rl = RateLimiterRuntime.scaffeine().rateLimiter
       val routes: Route = {
-        val router = routerWith(rl, proxies = List(Cidr.fromString("10.0.0.0/8").get))
+        val router = routerWith(trusting("10.0.0.0/8"))
         import router.*
         (get & path("hello") & pathEndOrSingleSlash) {
           rateLimited("trusted", to = 1, within = 1.minute, by = byClientIpForwarded) {
@@ -158,9 +156,8 @@ class RateLimitDirectivesSpec extends AnyFunSpec with Matchers {
     }
 
     it("byClientIpForwarded falls back to the trusted proxy's socket address when X-Forwarded-For has no valid IP") {
-      val rl = RateLimiterRuntime.scaffeine().rateLimiter
       val routes: Route = {
-        val router = routerWith(rl, proxies = List(Cidr.fromString("10.0.0.0/8").get))
+        val router = routerWith(trusting("10.0.0.0/8"))
         import router.*
         (get & path("hello") & pathEndOrSingleSlash) {
           rateLimited("xff-invalid", to = 2, within = 1.minute, by = byClientIpForwarded) {
