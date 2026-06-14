@@ -140,18 +140,9 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
       }
     }
 
-    "populate the auction with a rating when auction.show-wine-ratings is on and the gateway returns one" in {
+    "populate the auction with a rating when the gateway returns one (ratings on by default)" in {
       val ratedGateway: VivinoGateway = (_, _) => IO.pure(Some(VivinoRating(Rating(BigDecimal(4.7)), RatingsCount(12345))))
-      val ratedService = new AuctionService(
-        auctionRepo,
-        bidRepo,
-        userRepo,
-        ratedGateway,
-        eventBus,
-        transactor,
-        mailer,
-        TestFeatureFlagService(FlagKey("auction.show-wine-ratings") -> FlagVariant.BoolVariant(true))
-      )
+      val ratedService                = new AuctionService(auctionRepo, bidRepo, userRepo, ratedGateway, eventBus, transactor, mailer, featureFlags)
       for {
         seller  <- seedUser()
         created <- createAuctionOrFail(createCommand(seller.id))
@@ -160,16 +151,6 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
         found.flatMap(_.rating).map(_.rating.unwrap) shouldBe Some(BigDecimal(4.7))
         found.flatMap(_.rating).map(_.ratingsCount.unwrap) shouldBe Some(12345)
       }
-    }
-
-    "skip the ratings gateway by default (flag absent)" in {
-      val ratedGateway: VivinoGateway = (_, _) => IO.pure(Some(VivinoRating(Rating(BigDecimal(4.7)), RatingsCount(12345))))
-      val defaultService              = new AuctionService(auctionRepo, bidRepo, userRepo, ratedGateway, eventBus, transactor, mailer, featureFlags)
-      for {
-        seller  <- seedUser()
-        created <- createAuctionOrFail(createCommand(seller.id))
-        found   <- defaultService.getAuction(created.id)
-      } yield found.flatMap(_.rating) shouldBe None
     }
 
     "skip the ratings gateway when auction.show-wine-ratings is off" in {

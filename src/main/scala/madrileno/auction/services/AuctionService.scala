@@ -91,7 +91,7 @@ class AuctionService(
       .flatMap {
         case Some(view) =>
           featureFlagService
-            .evaluateBoolean(FlagKey("auction.show-wine-ratings"), EvaluationContext(TargetingKey("anonymous")), default = false)
+            .evaluateBoolean(FlagKey("auction.show-wine-ratings"), EvaluationContext(TargetingKey("anonymous")), default = true)
             .flatMap {
               case true  => vivinoGateway.findRating(view.wineName, view.vintage).map(r => Some(view.copy(rating = r)))
               case false => IO.pure(Some(view))
