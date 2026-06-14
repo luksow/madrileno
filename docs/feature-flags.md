@@ -39,7 +39,7 @@ Every variant-type mismatch is caught at write time: a rule whose outcome varian
 
 ## Evaluating a flag
 
-Inject `FeatureFlagService` and use the typed API. Each call takes a caller default that is returned on disabled / not-found / mismatch:
+Inject `FeatureFlagService` and use the typed API. Each call takes a caller default, returned when the flag is missing, the call's type doesn't match the flag's variant, or evaluation errors. (A *disabled* flag is different: it returns the flag's own configured `defaultValue` — see the kill-switch note below.)
 
 ```scala
 val ctx = EvaluationContext(TargetingKey(user.id.toString))

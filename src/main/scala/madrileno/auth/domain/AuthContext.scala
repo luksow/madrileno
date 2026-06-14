@@ -21,7 +21,14 @@ object AuthContext {
   }
 
   import pl.iterators.kebs.circe.*
-  given Decoder[AuthContext] = Decoder.derived[AuthContext]
+  given Decoder[AuthContext] = Decoder.instance { c =>
+    for {
+      userId        <- c.get[UserId]("userId")
+      fullName      <- c.get[Option[FullName]]("fullName")
+      avatarUrl     <- c.get[Option[URI]]("avatarUrl")
+      emailVerified <- c.getOrElse[Boolean]("emailVerified")(false)
+    } yield AuthContext(userId, fullName, avatarUrl, emailVerified)
+  }
   given Encoder[AuthContext] = Encoder.AsObject[AuthContext]
 
   def from(json: Json): Either[String, AuthContext] = summon[Decoder[AuthContext]].decodeJson(json).left.map(_.toString)
