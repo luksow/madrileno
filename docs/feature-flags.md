@@ -90,7 +90,7 @@ Every flag mutation is written in one transaction with its audit entry — actor
 
 ## Worked example: the auction module
 
-Two flags wire feature flagging into the auction domain. Both ship **inert** — until you create them via the admin API they don't exist, so evaluation returns the caller default and behaviour is unchanged. They are not seeded.
+Two flags wire feature flagging into the auction domain. Both ship **inert** — until you create them via the admin API they don't exist, so evaluation falls back to the caller default (`0` increment, ratings off). They are not seeded.
 
 **`auction.min-bid-increment-pct`** (`IntVariant`, default `0`) — resolved on every bid in `AuctionService.placeBid` and passed into the pure `Auction.placeBid`, which raises the minimum acceptable bid to `floor × (100 + pct) / 100`. The context carries the *auction's* attributes (`wine-region`, `wine-color`, `wine-vintage`, `bottle-size`), so a `premium-wines` segment can demand a larger jump on high-end lots — a demonstration that context isn't always about *who* is asking.
 
@@ -109,7 +109,7 @@ curl -u admin:admin -X POST localhost:9000/admin/feature-flags -H 'content-type:
 }'
 ```
 
-**`auction.show-wine-ratings`** (`BoolVariant`, default `true`, `clientExposed`) — a global kill-switch: `getAuction` skips the Vivino [gateway](external-apis.md) call when it is off, and because the flag is client-exposed it also rides the bootstrap payload so the frontend can hide the ratings widget in step. `getAuction` is unauthenticated, so it evaluates with an anonymous context — a reminder that not every flag is personalised.
+**`auction.show-wine-ratings`** (`BoolVariant`, `clientExposed`) — an opt-in switch for the Vivino [gateway](external-apis.md) call in `getAuction`, which evaluates the flag with a caller default of **`false`**: a fresh clone makes no outbound rating call, and you turn ratings on by creating the flag with value `true` (or a rule). Because evaluation falls back to the caller default for an absent *or disabled* flag, "off" always means off — there's no toggle that secretly leaves it on. The flag is client-exposed, so it also rides the bootstrap payload for the frontend's ratings widget. `getAuction` is unauthenticated, so it evaluates with an anonymous context — a reminder that not every flag is personalised.
 
 ## Adding your own flag
 
