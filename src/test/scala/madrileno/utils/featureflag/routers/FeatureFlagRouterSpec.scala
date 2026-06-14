@@ -1,5 +1,6 @@
 package madrileno.utils.featureflag.routers
 
+import io.circe.Json
 import madrileno.auth.domain.AuthContext
 import madrileno.support.{BaseRouteSpec, TestApplicationLoader, TestData}
 import madrileno.utils.featureflag.domain.*
@@ -15,8 +16,7 @@ import pl.iterators.stir.server.Route
 class FeatureFlagRouterSpec extends BaseRouteSpec with TestApplicationLoader {
   override def route: Route = application.routes(wsb)
 
-  // evaluated flag values are arbitrary JSON — no derivable OpenAPI shape
-  private given Schema[io.circe.Json] = FreeFormSchema("FlagValue")
+  private given Schema[Json] = FreeFormSchema("FlagValue")
 
   private val auth = AuthContext(TestData.user())
 
@@ -45,7 +45,7 @@ class FeatureFlagRouterSpec extends BaseRouteSpec with TestApplicationLoader {
         .respondsWith[ClientFlagsDto](Ok, description = "Map of flag key to evaluated value")
         .assert { case (ctx, _) =>
           val response = ctx.performRequest(allRoutes)
-          response.body.flags.get(FlagKey("bootstrap-exposed")) shouldBe Some(io.circe.Json.True)
+          response.body.flags.get(FlagKey("bootstrap-exposed")) shouldBe Some(Json.True)
           response.body.flags.keySet should not contain FlagKey("bootstrap-hidden")
         },
       onRequest()
