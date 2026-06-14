@@ -1,6 +1,7 @@
 package madrileno.auction.routers
 
 import cats.effect.IO
+import com.comcast.ip4s.{Cidr, IpAddress}
 import fs2.Stream
 import madrileno.auction.domain.*
 import madrileno.auction.routers.dto.*
@@ -26,7 +27,8 @@ class AuctionRouter(
     extends BaseRouter
     with RateLimitDirectives {
 
-  override protected val rateLimiter: RateLimiter = rateLimiterRuntime.rateLimiter
+  override protected val rateLimiter: RateLimiter              = rateLimiterRuntime.rateLimiter
+  override protected def trustedProxies: List[Cidr[IpAddress]] = rateLimiterRuntime.trustedProxies
 
   val routes: Route = {
     (get & path("auctions") & pathEndOrSingleSlash & parameters("status".as[AuctionStatus].?, "seller-id".as[UserId].?) & paginated(

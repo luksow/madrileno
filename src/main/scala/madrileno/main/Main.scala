@@ -44,9 +44,10 @@ object Main extends IOApp.Simple {
       _          <- Resource.eval(IO.whenA(appConfig.environment == Environment.Dev)(Migrations.warnIfPending(pgConfig)))
       clock = Clock[IO]
       schedulerConfig <- Resource.eval(IO.delay(config.at("scheduler").loadOrThrow[SchedulerConfig]))
-      scheduler          = Scheduler(transactor, schedulerConfig)
-      cacheRuntime       = CacheRuntime.scaffeine
-      rateLimiterRuntime = RateLimiterRuntime.scaffeine()
+      scheduler    = Scheduler(transactor, schedulerConfig)
+      cacheRuntime = CacheRuntime.scaffeine
+      trustedProxies <- Resource.eval(IO.delay(RateLimiterRuntime.parseTrustedProxies(config.at("rate-limit.trusted-proxies").loadOrThrow[String])))
+      rateLimiterRuntime = RateLimiterRuntime.scaffeine(trustedProxies = trustedProxies)
       storageConfig        <- Resource.eval(IO.delay(config.at("storage").loadOrThrow[StorageConfig]))
       objectStoreRuntime   <- ObjectStoreRuntime.s3(storageConfig)
       given Supervisor[IO] <- Supervisor[IO]

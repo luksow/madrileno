@@ -14,12 +14,13 @@ import scala.concurrent.duration.*
 class AuthRouter(authenticationService: AuthenticationService, rateLimiterRuntime: RateLimiterRuntime)(using TelemetryContext)
     extends BaseRouter
     with RateLimitDirectives {
-  override protected val rateLimiter: RateLimiter = rateLimiterRuntime.rateLimiter
+  override protected val rateLimiter: RateLimiter              = rateLimiterRuntime.rateLimiter
+  override protected def trustedProxies: List[Cidr[IpAddress]] = rateLimiterRuntime.trustedProxies
 
   private val unknownIpAddress: IpAddress = ipv4"0.0.0.0"
 
   val routes: Route = {
-    (post & path("auth" / "firebase") & rateLimited("auth.firebase", to = 10, within = 1.minute, by = byClientIpForwarded) & entity(
+    (post & path("auth" / "firebase") & rateLimited("auth.firebase", to = 10, within = 1.minute) & entity(
       as[AuthWithFirebaseRequest]
     ) & pathEndOrSingleSlash & optionalHeaderValueByName("User-Agent") & extractClientIP) {
       (
@@ -46,7 +47,7 @@ class AuthRouter(authenticationService: AuthenticationService, rateLimiterRuntim
             }
         }
     } ~
-      (post & path("auth" / "refresh-token") & rateLimited("auth.refresh", to = 30, within = 1.minute, by = byClientIpForwarded) & entity(
+      (post & path("auth" / "refresh-token") & rateLimited("auth.refresh", to = 30, within = 1.minute) & entity(
         as[AuthWithRefreshTokenRequest]
       ) & pathEndOrSingleSlash & optionalHeaderValueByName("User-Agent") & extractClientIP) {
         (
@@ -72,7 +73,7 @@ class AuthRouter(authenticationService: AuthenticationService, rateLimiterRuntim
               }
           }
       } ~
-      (post & path("auth" / "oidc" / Segment.as[Provider]) & rateLimited("auth.oidc", to = 10, within = 1.minute, by = byClientIpForwarded) & entity(
+      (post & path("auth" / "oidc" / Segment.as[Provider]) & rateLimited("auth.oidc", to = 10, within = 1.minute) & entity(
         as[AuthWithOidcRequest]
       ) & pathEndOrSingleSlash & optionalHeaderValueByName("User-Agent") & extractClientIP) {
         (
@@ -99,7 +100,7 @@ class AuthRouter(authenticationService: AuthenticationService, rateLimiterRuntim
               }
           }
       } ~
-      (post & path("auth" / "dev") & rateLimited("auth.dev", to = 10, within = 1.minute, by = byClientIpForwarded) & entity(
+      (post & path("auth" / "dev") & rateLimited("auth.dev", to = 10, within = 1.minute) & entity(
         as[AuthWithEmailRequest]
       ) & pathEndOrSingleSlash & optionalHeaderValueByName("User-Agent") & extractClientIP) {
         (
