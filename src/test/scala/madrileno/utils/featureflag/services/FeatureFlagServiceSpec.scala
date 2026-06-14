@@ -50,7 +50,7 @@ class FeatureFlagServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matcher
 
   private lazy val service = newService
 
-  private val ctx = EvaluationContext.of(TargetingKey("user-1"))
+  private val ctx = EvaluationContext(TargetingKey("user-1"))
 
   private def ruleData(
     position: RulePosition = RulePosition(0),

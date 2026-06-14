@@ -12,11 +12,12 @@ object InternalJwt extends Opaque[InternalJwt, String]
 final case class AuthContext(
   userId: UserId,
   fullName: Option[FullName],
-  avatarUrl: Option[URI]) {}
+  avatarUrl: Option[URI],
+  emailVerified: Boolean) {}
 
 object AuthContext {
   def apply(user: User): AuthContext = {
-    AuthContext(user.id, user.fullName, user.avatarUrl)
+    AuthContext(user.id, user.fullName, user.avatarUrl, user.emailVerified)
   }
 
   import pl.iterators.kebs.circe.*

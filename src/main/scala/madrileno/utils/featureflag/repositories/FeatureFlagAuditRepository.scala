@@ -5,11 +5,10 @@ import madrileno.utils.db.transactor.DB
 import madrileno.utils.featureflag.domain.*
 import madrileno.utils.pagination.PageRequest
 import skunk.*
+import skunk.circe.codec.all.*
 import skunk.codec.all.*
 
 import java.time.Instant
-
-import skunk.circe.codec.all.*
 
 private[repositories] final case class AuditRow(
   id: AuditEntryId,

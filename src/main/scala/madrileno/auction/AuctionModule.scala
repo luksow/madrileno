@@ -15,6 +15,7 @@ import madrileno.user.repositories.UserRepository
 import madrileno.utils.cache.CacheRuntime
 import madrileno.utils.db.transactor.Transactor
 import madrileno.utils.events.{EventBus, EventBusRuntime}
+import madrileno.utils.featureflag.services.FeatureFlagServiceLive
 import madrileno.utils.http.{AuthRouteProvider, RateLimiterRuntime, RouteProvider, WsRouteProvider}
 import madrileno.utils.mailer.{MailPreview, MailPreviewProvider, Mailer}
 import madrileno.utils.observability.TelemetryContext
@@ -46,6 +47,7 @@ trait AuctionModule
   lazy val userRepository: UserRepository
   lazy val mailer: Mailer
   lazy val appConfig: AppConfig
+  lazy val featureFlagService: FeatureFlagServiceLive
   val circuitBreakerRuntime: CircuitBreakerRuntime
 
   protected lazy val vivinoCircuitBreaker: IO[CircuitBreaker[IO]] =

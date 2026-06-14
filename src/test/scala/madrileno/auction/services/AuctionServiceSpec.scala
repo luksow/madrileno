@@ -1,16 +1,19 @@
 package madrileno.auction.services
 
-import cats.effect.std.UUIDGen
+import cats.effect.std.{Supervisor, UUIDGen}
 import cats.effect.testing.scalatest.AsyncIOSpec
 import cats.effect.{Clock, IO}
 import io.opentelemetry.api.OpenTelemetry
 import madrileno.auction.domain.*
 import madrileno.auction.gateways.VivinoGateway
 import madrileno.auction.repositories.{AuctionRepository, BidRepository}
-import madrileno.support.{TestData, TestGivens, TestMailpit, TestTransactor}
+import madrileno.support.{TestCacheRuntime, TestData, TestFeatureFlagService, TestGivens, TestMailpit, TestTransactor}
 import madrileno.user.domain.{User, UserId}
 import madrileno.user.repositories.UserRepository
 import madrileno.utils.events.{EventBus, EventBusRuntime}
+import madrileno.utils.featureflag.domain.*
+import madrileno.utils.featureflag.repositories.{FeatureFlagAuditRepository, FeatureFlagRepository, RuleRepository, SegmentRepository}
+import madrileno.utils.featureflag.services.{CreateFlagCommand, CreateSegmentCommand, FeatureFlagServiceLive, RuleData}
 import madrileno.utils.mailer.*
 import madrileno.utils.observability.TelemetryContext
 import madrileno.utils.pagination.{Limit, Offset, PageRequest, SortDirection}
@@ -43,7 +46,21 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
   private lazy val mailer     = new Mailer(smtpSender, client, MailContext(baseUrl = URI("https://example.com")))
   private val vivinoGateway: VivinoGateway     = (_, _) => IO.pure(None)
   private val eventBus: EventBus[AuctionEvent] = EventBusRuntime.local.topic[AuctionEvent]("auction_events_test", maxQueued = 64)
-  private lazy val service                     = new AuctionService(auctionRepo, bidRepo, userRepo, vivinoGateway, eventBus, transactor, mailer)
+  private val featureFlags                     = TestFeatureFlagService.empty
+  private lazy val service = new AuctionService(auctionRepo, bidRepo, userRepo, vivinoGateway, eventBus, transactor, mailer, featureFlags)
+
+  private given Supervisor[IO]                       = Supervisor[IO].allocated.unsafeRunSync()._1
+  private val ffEventBus: EventBus[FeatureFlagEvent] = EventBusRuntime.local.topic[FeatureFlagEvent]("ff_events_auction_test", maxQueued = 64)
+  private lazy val ffRuleRepo                        = new RuleRepository
+  private lazy val realFeatureFlags = new FeatureFlagServiceLive(
+    new FeatureFlagRepository(ffRuleRepo),
+    ffRuleRepo,
+    new SegmentRepository,
+    new FeatureFlagAuditRepository,
+    TestCacheRuntime.unbounded,
+    transactor,
+    ffEventBus
+  )
 
   private val eur = Currency.getInstance("EUR")
 
@@ -138,9 +155,9 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
       }
     }
 
-    "populate the auction with a rating when the gateway returns one" in {
+    "populate the auction with a rating when the gateway returns one (ratings on by default)" in {
       val ratedGateway: VivinoGateway = (_, _) => IO.pure(Some(VivinoRating(Rating(BigDecimal(4.7)), RatingsCount(12345))))
-      val ratedService                = new AuctionService(auctionRepo, bidRepo, userRepo, ratedGateway, eventBus, transactor, mailer)
+      val ratedService                = new AuctionService(auctionRepo, bidRepo, userRepo, ratedGateway, eventBus, transactor, mailer, featureFlags)
       for {
         seller  <- seedUser()
         created <- createAuctionOrFail(createCommand(seller.id))
@@ -149,6 +166,25 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
         found.flatMap(_.rating).map(_.rating.unwrap) shouldBe Some(BigDecimal(4.7))
         found.flatMap(_.rating).map(_.ratingsCount.unwrap) shouldBe Some(12345)
       }
+    }
+
+    "skip the ratings gateway when auction.show-wine-ratings is off" in {
+      val ratedGateway: VivinoGateway = (_, _) => IO.pure(Some(VivinoRating(Rating(BigDecimal(4.7)), RatingsCount(12345))))
+      val gatedService = new AuctionService(
+        auctionRepo,
+        bidRepo,
+        userRepo,
+        ratedGateway,
+        eventBus,
+        transactor,
+        mailer,
+        TestFeatureFlagService(FlagKey("auction.show-wine-ratings") -> FlagVariant.BoolVariant(false))
+      )
+      for {
+        seller  <- seedUser()
+        created <- createAuctionOrFail(createCommand(seller.id))
+        found   <- gatedService.getAuction(created.id)
+      } yield found.flatMap(_.rating) shouldBe None
     }
 
     "publish AuctionCreated when createAuction succeeds" in {
@@ -277,6 +313,71 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
         val bid = result.asInstanceOf[PlaceBidResult.BidPlaced].bid // scalafix:ok DisableSyntax.asInstanceOf
         bid.amount shouldBe Price(BigDecimal(150))
         bid.bidderId shouldBe bidder.id
+      }
+    }
+
+    "enforce a minimum increment driven by the auction.min-bid-increment-pct flag" in {
+      val flagged = new AuctionService(
+        auctionRepo,
+        bidRepo,
+        userRepo,
+        vivinoGateway,
+        eventBus,
+        transactor,
+        mailer,
+        TestFeatureFlagService(FlagKey("auction.min-bid-increment-pct") -> FlagVariant.IntVariant(5))
+      )
+      for {
+        seller  <- seedUser()
+        bidder  <- seedUser()
+        auction <- createAuctionOrFail(createCommand(seller.id))
+        tooLow  <- flagged.placeBid(PlaceBidCommand(auction.id, bidder.id, Price(BigDecimal(104))))
+        placed  <- flagged.placeBid(PlaceBidCommand(auction.id, bidder.id, Price(BigDecimal(106))))
+      } yield {
+        tooLow shouldBe a[PlaceBidResult.BidTooLow]
+        placed shouldBe a[PlaceBidResult.BidPlaced]
+      }
+    }
+
+    "apply the increment only to wines matched by a real wine-region segment (engine + DB)" in {
+      val flagged = new AuctionService(auctionRepo, bidRepo, userRepo, vivinoGateway, eventBus, transactor, mailer, realFeatureFlags)
+      for {
+        _ <- realFeatureFlags.createSegment(
+               CreateSegmentCommand(
+                 SegmentName("premium-wines"),
+                 FlagDescription(""),
+                 List(RuleCondition.StringEquals(AttributeName("wine-region"), "Bordeaux"))
+               )
+             )
+        _ <- realFeatureFlags.createFlag(
+               CreateFlagCommand(
+                 FlagKey("auction.min-bid-increment-pct"),
+                 FlagDescription(""),
+                 enabled = true,
+                 FlagVariant.IntVariant(0),
+                 clientExposed = false,
+                 List(
+                   RuleData(
+                     RulePosition(0),
+                     FlagDescription(""),
+                     List(RuleCondition.SegmentMatch(SegmentName("premium-wines"))),
+                     RuleOutcome.FixedValue(FlagVariant.IntVariant(5))
+                   )
+                 ),
+                 Actor("test")
+               )
+             )
+        seller   <- seedUser()
+        bidder   <- seedUser()
+        bordeaux <- createAuctionOrFail(createCommand(seller.id))
+        napa     <- createAuctionOrFail(createCommand(seller.id).copy(region = Region("Napa")))
+        tooLow   <- flagged.placeBid(PlaceBidCommand(bordeaux.id, bidder.id, Price(BigDecimal(104))))
+        atFloor  <- flagged.placeBid(PlaceBidCommand(bordeaux.id, bidder.id, Price(BigDecimal(105))))
+        napaBid  <- flagged.placeBid(PlaceBidCommand(napa.id, bidder.id, Price(BigDecimal(101))))
+      } yield {
+        tooLow shouldBe a[PlaceBidResult.BidTooLow]
+        atFloor shouldBe a[PlaceBidResult.BidPlaced]
+        napaBid shouldBe a[PlaceBidResult.BidPlaced]
       }
     }
 

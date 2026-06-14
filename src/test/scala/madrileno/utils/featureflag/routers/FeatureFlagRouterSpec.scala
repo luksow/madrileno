@@ -1,15 +1,18 @@
 package madrileno.utils.featureflag.routers
 
+import cats.effect.IO
 import io.circe.Json
 import madrileno.auth.domain.AuthContext
 import madrileno.support.{BaseRouteSpec, TestApplicationLoader, TestData}
 import madrileno.utils.featureflag.domain.*
 import madrileno.utils.featureflag.routers.dto.ClientFlagsDto
-import madrileno.utils.featureflag.services.{CreateFlagCommand, CreateFlagResult}
+import madrileno.utils.featureflag.services.{CreateFlagCommand, CreateFlagResult, CreateSegmentCommand, RuleData}
 import madrileno.utils.http.Error
 import org.http4s.Method.*
 import org.http4s.Status.*
 import org.http4s.circe.CirceEntityCodec.*
+import org.http4s.headers.Authorization
+import org.http4s.{AuthScheme, Credentials, Headers, Request, Uri}
 import pl.iterators.baklava.{FreeFormSchema, Schema}
 import pl.iterators.stir.server.Route
 
@@ -53,4 +56,44 @@ class FeatureFlagRouterSpec extends BaseRouteSpec with TestApplicationLoader {
         .assert(_.performRequest(allRoutes))
     )
   )
+
+  describe("attribute-based targeting in the bootstrap") {
+    it("returns a verified-users-targeted flag as true for verified users and false otherwise") {
+      val segment = SegmentName("verified-users")
+      val _ = application.featureFlagService
+        .createSegment(CreateSegmentCommand(segment, FlagDescription(""), List(RuleCondition.StringEquals(AttributeName("emailVerified"), "true"))))
+        .unsafeRunSync()
+      val rule = RuleData(
+        RulePosition(0),
+        FlagDescription(""),
+        List(RuleCondition.SegmentMatch(segment)),
+        RuleOutcome.FixedValue(FlagVariant.BoolVariant(true))
+      )
+      val _ = application.featureFlagService
+        .createFlag(
+          CreateFlagCommand(
+            FlagKey("bootstrap-verified-only"),
+            FlagDescription(""),
+            enabled = true,
+            FlagVariant.BoolVariant(false),
+            clientExposed = true,
+            List(rule),
+            Actor("router-spec")
+          )
+        )
+        .unsafeRunSync()
+
+      def flagFor(auth: AuthContext): Option[Json] = {
+        val request = Request[IO](
+          method = GET,
+          uri = Uri.unsafeFromString("/v1/feature-flags"),
+          headers = Headers(Authorization(Credentials.Token(AuthScheme.Bearer, validJwt(auth))))
+        )
+        allRoutes.orNotFound.run(request).flatMap(_.as[ClientFlagsDto]).unsafeRunSync().flags.get(FlagKey("bootstrap-verified-only"))
+      }
+
+      flagFor(AuthContext(TestData.user(emailVerified = true))) shouldBe Some(Json.True)
+      flagFor(AuthContext(TestData.user(emailVerified = false))) shouldBe Some(Json.False)
+    }
+  }
 }
