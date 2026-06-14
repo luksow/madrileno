@@ -21,7 +21,6 @@ import pl.iterators.baklava.{EmptyBody, FilePart, Multipart}
 import pl.iterators.stir.server.Route
 
 import java.time.Instant
-import java.util.UUID
 
 class AuctionImageRouterSpec extends BaseRouteSpec with TestApplicationLoader {
 
@@ -125,7 +124,7 @@ class AuctionImageRouterSpec extends BaseRouteSpec with TestApplicationLoader {
           response.body.auctionId shouldBe auction.id
           response.body.fileName shouldBe "wine.jpg"
         },
-      onRequest(body = sampleUploadBody, security = bearer.apply(validJwt(sellerAuth)), pathParameters = AuctionId(UUID.randomUUID()))
+      onRequest(body = sampleUploadBody, security = bearer.apply(validJwt(sellerAuth)), pathParameters = TestData.randomAuctionId())
         .respondsWith[Error[Unit]](NotFound, description = "Auction not found")
         .assert { ctx =>
           val response = ctx.performRequest(allRoutes)
@@ -156,7 +155,7 @@ class AuctionImageRouterSpec extends BaseRouteSpec with TestApplicationLoader {
         }
         .respondsWith[EmptyBody](NoContent, description = "Image detached")
         .assert { case (ctx, _) => ctx.performRequest(allRoutes) },
-      onRequest(security = bearer.apply(validJwt(sellerAuth)), pathParameters = (AuctionId(UUID.randomUUID()), AuctionImageId(UUID.randomUUID())))
+      onRequest(security = bearer.apply(validJwt(sellerAuth)), pathParameters = (TestData.randomAuctionId(), TestData.randomAuctionImageId()))
         .respondsWith[Error[Unit]](NotFound, description = "Image not found")
         .assert { ctx =>
           val response = ctx.performRequest(allRoutes)
