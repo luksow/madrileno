@@ -1,10 +1,13 @@
 package madrileno.support
 
+import cats.effect.IO
+import cats.effect.unsafe.implicits.global
 import com.comcast.ip4s.IpAddress
 import io.circe.Json
 import madrileno.auction.domain.*
 import madrileno.auth.domain.{AuthContext, *}
 import madrileno.user.domain.*
+import madrileno.utils.crypto.UuidV7
 import madrileno.utils.featureflag.domain.*
 import madrileno.utils.imaging.{Height, ImageFormat, Width}
 import madrileno.utils.storage.StorageKey
@@ -16,16 +19,20 @@ import java.time.Instant
 import java.util.{Currency, UUID}
 
 object TestData {
-  def randomUserId(): UserId                 = UserId(UUID.randomUUID())
-  def randomRefreshTokenId(): RefreshTokenId = RefreshTokenId(UUID.randomUUID())
-  def randomUserAuthId(): UserAuthId         = UserAuthId(UUID.randomUUID())
-  def randomFlagId(): FlagId                 = FlagId(UUID.randomUUID())
-  def randomRuleId(): RuleId                 = RuleId(UUID.randomUUID())
-  def randomSegmentId(): SegmentId           = SegmentId(UUID.randomUUID())
+  // Mint via the same time-ordered UUIDv7 path as production (IdGenerator), so fixtures mirror real ids — never raw v4.
+  def randomUuid(): UUID = UuidV7.generate.unsafeRunSync()
+
+  def randomUserId(): UserId                 = UserId(randomUuid())
+  def randomRefreshTokenId(): RefreshTokenId = RefreshTokenId(randomUuid())
+  def randomUserAuthId(): UserAuthId         = UserAuthId(randomUuid())
+  def randomFlagId(): FlagId                 = FlagId(randomUuid())
+  def randomRuleId(): RuleId                 = RuleId(randomUuid())
+  def randomSegmentId(): SegmentId           = SegmentId(randomUuid())
   // scripts:auction-block-start
-  def randomAuctionId(): AuctionId           = AuctionId(UUID.randomUUID())
-  def randomBidId(): BidId                   = BidId(UUID.randomUUID())
-  def randomAuctionImageId(): AuctionImageId = AuctionImageId(UUID.randomUUID())
+  def randomAuctionId(): AuctionId                         = AuctionId(randomUuid())
+  def randomBidId(): BidId                                 = BidId(randomUuid())
+  def randomAuctionImageId(): AuctionImageId               = AuctionImageId(randomUuid())
+  def randomAuctionImageVariantId(): AuctionImageVariantId = AuctionImageVariantId(randomUuid())
   // scripts:auction-block-end
 
   def authContext(): AuthContext = AuthContext(user = user())
@@ -33,7 +40,7 @@ object TestData {
   def user(
     id: UserId = randomUserId(),
     fullName: Option[FullName] = Some(FullName("Test User")),
-    emailAddress: Option[EmailAddress] = Some(EmailAddress(s"test-${UUID.randomUUID()}@example.com")),
+    emailAddress: Option[EmailAddress] = Some(EmailAddress(s"test-${randomUuid()}@example.com")),
     emailVerified: Boolean = true,
     avatarUrl: Option[URI] = None,
     blockedAt: Option[Instant] = None
@@ -52,10 +59,10 @@ object TestData {
 
   def verifiedExternalToken(
     provider: Provider = Provider.Firebase,
-    providerUserId: ProviderUserId = ProviderUserId(s"firebase-${UUID.randomUUID()}"),
+    providerUserId: ProviderUserId = ProviderUserId(s"firebase-${randomUuid()}"),
     credential: Credential = Credential("test-credential"),
     fullName: Option[FullName] = Some(FullName("Test User")),
-    emailAddress: Option[EmailAddress] = Some(EmailAddress(s"test-${UUID.randomUUID()}@example.com")),
+    emailAddress: Option[EmailAddress] = Some(EmailAddress(s"test-${randomUuid()}@example.com")),
     emailVerified: Boolean = true
   ): VerifiedExternalToken =
     VerifiedExternalToken(provider, providerUserId, credential, ExternalProfile(fullName, emailAddress, emailVerified, None), Metadata(Json.obj()))
@@ -146,7 +153,7 @@ object TestData {
   def auctionImage(
     id: AuctionImageId = randomAuctionImageId(),
     auctionId: AuctionId = randomAuctionId(),
-    storageKey: StorageKey = StorageKey(s"auctions/test/images/${UUID.randomUUID()}"),
+    storageKey: StorageKey = StorageKey(s"auctions/test/images/${randomUuid()}"),
     fileName: String = "wine.jpg",
     contentType: `Content-Type` = `Content-Type`(MediaType.image.jpeg),
     sizeBytes: SizeBytes = SizeBytes(1024L),

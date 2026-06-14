@@ -6,7 +6,7 @@ import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
 
 import java.time.Instant
-import java.util.{Currency, UUID}
+import java.util.Currency
 
 class AuctionDomainSpec extends AnyWordSpec with Matchers {
 
@@ -196,7 +196,7 @@ class AuctionDomainSpec extends AnyWordSpec with Matchers {
 
     def openAt(startsAt: Instant, endsAt: Instant): Either[AuctionCreationError, Auction] =
       Auction.open(
-        id = AuctionId(UUID.randomUUID()),
+        id = TestData.randomAuctionId(),
         sellerId = seller,
         wineName = WineName("Test"),
         vintage = Some(Vintage(2020)),

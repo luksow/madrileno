@@ -19,7 +19,7 @@ import pl.iterators.baklava.EmptyBody
 import pl.iterators.stir.server.Route
 
 import java.time.Instant
-import java.util.{Currency, UUID}
+import java.util.Currency
 
 class AuctionRouterSpec extends BaseRouteSpec with TestApplicationLoader {
 
@@ -232,7 +232,7 @@ class AuctionRouterSpec extends BaseRouteSpec with TestApplicationLoader {
       pathParameters = p[AuctionId]("auctionId"),
       tags = Seq("Auctions")
     )(
-      onRequest(pathParameters = AuctionId(UUID.randomUUID()))
+      onRequest(pathParameters = TestData.randomAuctionId())
         .respondsWith[String](UpgradeRequired, description = "Plain GET fallback — non-upgrade response")(
           using EntityDecoder.text[IO],
           summon,
@@ -261,7 +261,7 @@ class AuctionRouterSpec extends BaseRouteSpec with TestApplicationLoader {
           response.body.id shouldBe auction.id
           response.body.sellerId shouldBe seller.id
         },
-      onRequest(pathParameters = AuctionId(UUID.randomUUID()))
+      onRequest(pathParameters = TestData.randomAuctionId())
         .respondsWith[Error[Unit]](NotFound, description = "Auction not found")
         .assert { ctx =>
           val response = ctx.performRequest(allRoutes)
@@ -282,7 +282,7 @@ class AuctionRouterSpec extends BaseRouteSpec with TestApplicationLoader {
         .assert { case (ctx, _) =>
           ctx.performRequest(allRoutes)
         },
-      onRequest(security = bearer.apply(validJwt(sellerAuth)), pathParameters = AuctionId(UUID.randomUUID()))
+      onRequest(security = bearer.apply(validJwt(sellerAuth)), pathParameters = TestData.randomAuctionId())
         .respondsWith[Error[Unit]](NotFound, description = "Auction not found")
         .assert { ctx =>
           val response = ctx.performRequest(allRoutes)
@@ -322,7 +322,7 @@ class AuctionRouterSpec extends BaseRouteSpec with TestApplicationLoader {
           response.body.map(_.bidderRef.unwrap) shouldBe List(1)
           response.body.map(_.currency).toSet shouldBe Set(Currency.getInstance("EUR"))
         },
-      onRequest(pathParameters = AuctionId(UUID.randomUUID()))
+      onRequest(pathParameters = TestData.randomAuctionId())
         .respondsWith[Error[Unit]](NotFound, description = "Auction not found")
         .assert { ctx =>
           val response = ctx.performRequest(allRoutes)
@@ -349,7 +349,7 @@ class AuctionRouterSpec extends BaseRouteSpec with TestApplicationLoader {
       onRequest(
         body = PlaceBidRequest(Price(BigDecimal(150))),
         security = bearer.apply(validJwt(bidderAuth)),
-        pathParameters = AuctionId(UUID.randomUUID())
+        pathParameters = TestData.randomAuctionId()
       ).respondsWith[Error[Unit]](NotFound, description = "Auction not found")
         .assert { ctx =>
           val response = ctx.performRequest(allRoutes)

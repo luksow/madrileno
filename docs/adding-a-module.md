@@ -356,7 +356,7 @@ The shape to notice:
 - **Sealed-monad for branching writes.** Without it, `renameProduct` would be nested pattern matches. The `.valueOr` / `.left.map` / `.rethrow[IO]` combo keeps the happy path linear.
 - **Commands and results live at the bottom of the service file.** They're part of the service's API.
 
-`UUIDGen[IO]` and `Clock[IO]` come from the cats-effect standard library — `UUIDGen[IO]` is provided automatically by cats-effect's implicit `UUIDGen.fromSync[IO]`, and `Clock[IO]` is passed into `ApplicationLoader`'s constructor and is in scope wherever the module trait is mixed in. You don't need to construct either yourself.
+`UUIDGen[IO]` and `Clock[IO]` come from the cats-effect standard library — `UUIDGen[IO]` is provided automatically by cats-effect's implicit `UUIDGen.fromSync[IO]`, and `Clock[IO]` is passed into `ApplicationLoader`'s constructor and is in scope wherever the module trait is mixed in. You don't need to construct either yourself. `IdGenerator.generateId` needs both because it produces **time-ordered UUIDv7** (timestamp from the clock, random bits from `UUIDGen`); see [database.md](database.md#identifiers).
 
 Write **`ProductServiceSpec`** with `TestTransactor` (and `TestMailpit` if the service sends mail). You can't use `withRollback` here — the service opens its own sessions from the transactor pool (a fresh DB connection each time), so data written in your test's outer transaction isn't visible to the service's queries. Each test commits; rely on Testcontainers' fresh DB per suite. Cover every result-enum case.
 
