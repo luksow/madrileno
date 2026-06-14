@@ -1,11 +1,15 @@
 package madrileno.utils.featureflag.services
 
-import cats.effect.IO
+import cats.effect.std.Supervisor
+import cats.effect.{Clock, IO, Ref}
+import cats.syntax.all.*
 import io.circe.Json
+import madrileno.utils.async.Memoize
 import madrileno.utils.cache.{Cache, CacheRuntime}
 import madrileno.utils.db.transactor.Transactor
+import madrileno.utils.events.EventBus
 import madrileno.utils.featureflag.domain.*
-import madrileno.utils.featureflag.repositories.FeatureFlagRepository
+import madrileno.utils.featureflag.repositories.{FeatureFlagRepository, SegmentRepository}
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
 
 import scala.concurrent.duration.*
@@ -49,20 +53,98 @@ object FlagEvaluator {
 
 class FeatureFlagServiceLive(
   repository: FeatureFlagRepository,
+  segmentRepository: SegmentRepository,
   cacheRuntime: CacheRuntime,
-  transactor: Transactor
-)(using TelemetryContext)
+  transactor: Transactor,
+  eventBus: EventBus[FeatureFlagEvent]
+)(using
+  TelemetryContext,
+  Supervisor[IO])
     extends FeatureFlagService
     with LoggingSupport {
 
   private val flagCache: Cache[FlagKey, Option[FeatureFlag]] =
     cacheRuntime.expiring[FlagKey, Option[FeatureFlag]](expireAfterWrite = 60.seconds, maxSize = 10_000)
 
-  private def fetch(key: FlagKey): IO[Option[FeatureFlag]] =
-    flagCache.get(key).flatMap {
+  private val segmentCache: Cache[Unit, Map[SegmentName, Segment]] =
+    cacheRuntime.expiring[Unit, Map[SegmentName, Segment]](expireAfterWrite = 60.seconds, maxSize = 1)
+
+  def saveFlag(flag: FeatureFlag): IO[Unit] =
+    validate(flag) *>
+      Clock[IO].realTimeInstant.flatMap(now => transactor.inTransaction(repository.save(flag.updated(now)))) *>
+      invalidateFlag(flag.key) *>
+      publishBestEffort(FeatureFlagEvent.Invalidated(flag.key))
+
+  private def validate(flag: FeatureFlag): IO[Unit] = {
+    val expected   = flag.defaultValue.variantType
+    val mismatched = flag.rules.filter(_.outcome.variant.variantType != expected)
+    val duplicated = flag.rules.groupBy(_.position).collect { case (position, rules) if rules.sizeIs > 1 => position }
+    IO.raiseError(
+      new IllegalArgumentException(s"flag ${flag.key} is $expected but rules at ${mismatched.map(_.position)} carry a different variant type")
+    ).whenA(mismatched.nonEmpty) *>
+      IO.raiseError(new IllegalArgumentException(s"flag ${flag.key} has duplicate rule positions: ${duplicated.mkString(", ")}"))
+        .whenA(duplicated.nonEmpty)
+  }
+
+  def saveSegment(segment: Segment): IO[Unit] =
+    Clock[IO].realTimeInstant.flatMap(now => transactor.inSession(segmentRepository.save(segment.updated(now)))) *>
+      invalidateSegments *>
+      publishBestEffort(FeatureFlagEvent.SegmentsChanged)
+
+  private val invalidationEpoch: Ref[IO, Long] = Ref.unsafe(0L)
+
+  private def invalidateFlag(key: FlagKey): IO[Unit] =
+    invalidationEpoch.update(_ + 1) *> flagCache.invalidate(key)
+
+  private val invalidateSegments: IO[Unit] =
+    invalidationEpoch.update(_ + 1) *> segmentCache.invalidate(())
+
+  private def publishBestEffort(event: FeatureFlagEvent): IO[Unit] =
+    eventBus.publish(event).handleErrorWith(t => logger.warn(t)(s"feature-flag event publish failed, peers stay stale until TTL: $event"))
+
+  private val invalidationLoop: IO[Nothing] = {
+    eventBus.subscribeAwait
+      .use {
+        _.evalTap {
+          case FeatureFlagEvent.Invalidated(key) => invalidateFlag(key)
+          case FeatureFlagEvent.SegmentsChanged  => invalidateSegments
+        }.compile.drain
+      }
+      .handleErrorWith(t => logger.warn(t)("feature-flag invalidation stream failed, resubscribing")) *>
+      IO.sleep(1.second)
+  }.foreverM
+
+  private val invalidationStarted: IO[Unit] =
+    Memoize(summon[Supervisor[IO]].supervise(invalidationLoop).void)
+
+  private def cachedLoad[K, V](
+    cache: Cache[K, V],
+    key: K,
+    load: IO[V]
+  ): IO[V] =
+    cache.get(key).flatMap {
       case Some(cached) => IO.pure(cached)
-      case None         => transactor.inSession(repository.findByKey(key)).flatTap(flagCache.put(key, _))
+      case None =>
+        for {
+          before <- invalidationEpoch.get
+          loaded <- load
+          _      <- cache.put(key, loaded)
+          after  <- invalidationEpoch.get
+          _      <- cache.invalidate(key).whenA(before != after)
+        } yield loaded
     }
+
+  private def fetchFlag(key: FlagKey): IO[Option[FeatureFlag]] =
+    cachedLoad(flagCache, key, transactor.inSession(repository.findByKey(key)))
+
+  private def fetchSegments(flag: FeatureFlag): IO[Map[SegmentName, Segment]] = {
+    val referencesSegments = flag.rules.exists(_.conditions.exists {
+      case RuleCondition.SegmentMatch(_) => true
+      case _                             => false
+    })
+    if (!referencesSegments) IO.pure(Map.empty)
+    else cachedLoad(segmentCache, (), transactor.inSession(segmentRepository.findAll).map(_.map(s => s.name -> s).toMap))
+  }
 
   private def evalDetail[T](
     key: FlagKey,
@@ -70,26 +152,29 @@ class FeatureFlagServiceLive(
     extract: FlagVariant => Option[T],
     ctx: EvaluationContext
   ): IO[EvaluationDetail[T]] =
-    fetch(key)
-      .map {
-        case None => EvaluationDetail(default, EvaluationReason.FlagNotFound)
+    (invalidationStarted *> fetchFlag(key))
+      .flatMap {
+        case None => IO.pure(EvaluationDetail(default, EvaluationReason.Error, Some(EvaluationErrorCode.FlagNotFound)))
         case Some(flag) =>
-          val result = FlagEvaluationEngine.evaluate(flag, ctx)
-          extract(result.value) match {
-            case Some(v) => EvaluationDetail(v, result.reason)
-            case None =>
-              val actual = result.value.variantType
-              EvaluationDetail(
-                default,
-                EvaluationReason.VariantTypeMismatch,
-                Some(s"flag ${flag.key} returned $actual; caller expected a different type")
-              )
+          fetchSegments(flag).map { segments =>
+            val result = FlagEvaluationEngine.evaluate(flag, segments, ctx)
+            extract(result.value) match {
+              case Some(v) => EvaluationDetail(v, result.reason)
+              case None =>
+                val actual = result.value.variantType
+                EvaluationDetail(
+                  default,
+                  EvaluationReason.Error,
+                  Some(EvaluationErrorCode.TypeMismatch),
+                  Some(s"flag ${flag.key} returned $actual; caller expected a different type")
+                )
+            }
           }
       }
       .handleErrorWith(t =>
         logger
           .warn(t)(s"feature-flag eval failed for $key, using default")
-          .as(EvaluationDetail(default, EvaluationReason.Error, Option(t.getClass.getSimpleName)))
+          .as(EvaluationDetail(default, EvaluationReason.Error, Some(EvaluationErrorCode.General), Option(t.getClass.getSimpleName)))
       )
 
   override def evaluator(ctx: EvaluationContext): FlagEvaluator = new FlagEvaluator {

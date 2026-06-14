@@ -3,7 +3,7 @@ package madrileno.utils.featureflag.repositories
 import cats.effect.IO
 import io.circe.Json
 import madrileno.utils.db.dsl.*
-import madrileno.utils.db.transactor.DB
+import madrileno.utils.db.transactor.{DB, DBInTransaction}
 import madrileno.utils.featureflag.domain.*
 import skunk.*
 import skunk.circe.codec.all.*
@@ -21,10 +21,10 @@ private[repositories] final case class FeatureFlagRow(
   clientExposed: Boolean,
   createdAt: Instant,
   updatedAt: Instant) {
-  def toFeatureFlag: Either[String, FeatureFlag] = {
+  def toFeatureFlag(rules: List[Rule]): Either[String, FeatureFlag] = {
     import io.scalaland.chimney.dsl.*
     FlagVariant.fromJson(variantType, defaultValue).map { variant =>
-      this.into[FeatureFlag].withFieldConst(_.defaultValue, variant).transform
+      this.into[FeatureFlag].withFieldConst(_.defaultValue, variant).withFieldConst(_.rules, rules).transform
     }
   }
 }
@@ -60,19 +60,21 @@ private[repositories] final case class FeatureFlagRowFilter(id: SqlPredicate[Fla
     SqlFilterDerivation.filterFragment(this, (FeatureFlagRowTable.id, FeatureFlagRowTable.key))
 }
 
-class FeatureFlagRepository {
+class FeatureFlagRepository(ruleRepository: RuleRepository) {
   def findByKey(key: FlagKey): DB[Option[FeatureFlag]] =
     repository.findOneByFilter(FeatureFlagRowFilter(key = p.equal(key))).flatMap {
       case None => IO.pure(None)
       case Some(row) =>
-        row.toFeatureFlag match {
-          case Right(flag) => IO.pure(Some(flag))
-          case Left(err)   => IO.raiseError(new IllegalStateException(s"Invalid feature_flag row for key=$key: $err"))
+        ruleRepository.findByFlagId(row.id).flatMap { rules =>
+          row.toFeatureFlag(rules) match {
+            case Right(f)  => IO.pure(Option(f))
+            case Left(err) => IO.raiseError[Option[FeatureFlag]](new IllegalStateException(s"Invalid feature_flag row for key=$key: $err"))
+          }
         }
     }
 
-  def save(flag: FeatureFlag): DB[Unit] =
-    repository.create(FeatureFlagRow(flag)).void
+  def save(flag: FeatureFlag): DBInTransaction[Unit] =
+    repository.upsert(FeatureFlagRow(flag)) *> ruleRepository.replaceAll(flag.id, flag.rules)
 
   private val repository: IdRepository[FeatureFlagRow, FlagId] & FilteringRepository[FeatureFlagRow, FeatureFlagRowFilter] =
     new IdRepository[FeatureFlagRow, FlagId](_.id) with FilteringRepository[FeatureFlagRow, FeatureFlagRowFilter] {

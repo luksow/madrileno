@@ -23,6 +23,9 @@ trait JsonProtocol
 
   type Decoder[A] = io.circe.Decoder[A]
   val Decoder: io.circe.Decoder.type = io.circe.Decoder
+
+  type Codec[A] = io.circe.Codec[A]
+  val Codec: io.circe.Codec.type = io.circe.Codec
 }
 
 object JsonProtocol extends JsonProtocol
