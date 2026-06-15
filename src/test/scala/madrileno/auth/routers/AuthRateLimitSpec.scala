@@ -36,5 +36,17 @@ class AuthRateLimitSpec extends BaseRouteSpec with TestApplicationLoader {
       (1 to 10).foreach(_ => postFirebase().status should not be Status.TooManyRequests)
       postFirebase().status shouldBe Status.TooManyRequests
     }
+
+    it("returns 429 once the per-client limit for POST /auth/oidc/{provider} (10/min) is exceeded") {
+      def postOidc() = post("/v1/auth/oidc/test-oidc", "{}")
+      (1 to 10).foreach(_ => postOidc().status should not be Status.TooManyRequests)
+      postOidc().status shouldBe Status.TooManyRequests
+    }
+
+    it("returns 429 once the per-client limit for POST /auth/refresh-token (30/min) is exceeded") {
+      def postRefresh() = post("/v1/auth/refresh-token", "{}")
+      (1 to 30).foreach(_ => postRefresh().status should not be Status.TooManyRequests)
+      postRefresh().status shouldBe Status.TooManyRequests
+    }
   }
 }
