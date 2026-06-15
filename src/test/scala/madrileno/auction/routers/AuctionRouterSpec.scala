@@ -319,7 +319,7 @@ class AuctionRouterSpec extends BaseRouteSpec with TestApplicationLoader {
         .assert { case (ctx, _) =>
           val response = ctx.performRequest(allRoutes)
           response.body.items.map(_.amount) shouldBe List(Price(BigDecimal(200)))
-          response.body.items.map(_.bidderRef.unwrap) shouldBe List(1)
+          response.body.items.map(_.bidderRef.unwrap).foreach(_ should not be empty)
           response.body.items.map(_.currency).toSet shouldBe Set(Currency.getInstance("EUR"))
           response.body.hasMore shouldBe false
         },

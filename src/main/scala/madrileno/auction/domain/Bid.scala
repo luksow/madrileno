@@ -5,14 +5,15 @@ import pl.iterators.kebs.opaque.Opaque
 
 import java.time.Instant
 import java.util.{Currency, UUID}
+import scala.util.hashing.MurmurHash3
 
 opaque type BidId = UUID
 object BidId extends Opaque[BidId, UUID]
 
-opaque type BidderRef = Int
-object BidderRef extends Opaque[BidderRef, Int] {
-  override def validate(value: Int): Either[String, BidderRef] =
-    if (value >= 1) Right(value) else Left("Bidder ref must be at least 1")
+opaque type BidderRef = String
+object BidderRef extends Opaque[BidderRef, String] {
+  def forBidder(auctionId: AuctionId, bidderId: UserId): BidderRef =
+    BidderRef(f"${MurmurHash3.stringHash(s"${auctionId.unwrap}:${bidderId.unwrap}")}%08x")
 }
 
 final case class Bid(

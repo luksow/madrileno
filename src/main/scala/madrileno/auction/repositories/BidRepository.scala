@@ -53,6 +53,13 @@ private[repositories] final case class BidRowFilter(
     SqlFilterDerivation.filterFragment(this, (BidRowTable.id, BidRowTable.auctionId, BidRowTable.bidderId))
 }
 
+private[repositories] final case class BidKeysetFilter(auctionId: AuctionId, cursor: CursorRequest[(Instant, BidId)])
+    extends KeysetSqlFilter[Instant, BidId] {
+  override protected def keysetCursor: CursorRequest[(Instant, BidId)]   = cursor
+  override protected def keysetColumns: (Column[Instant], Column[BidId]) = (BidRowTable.createdAt, BidRowTable.id)
+  override protected def baseFilterFragment: AppliedFragment             = fromPredicates(Tuple1(p.equal(auctionId) -> BidRowTable.auctionId))
+}
+
 class BidRepository {
   def save(bid: Bid): DB[Bid] = {
     val row = BidRow(bid)
@@ -63,37 +70,9 @@ class BidRepository {
     repository.findByFilter(BidRowFilter(auctionId = p.equal(auctionId))).map(_.map(_.toBid))
   }
 
-  def pageByAuction(auctionId: AuctionId, cursor: CursorRequest[(Instant, BidId)]): DB[Cursor[(Bid, BidderRef)]] = {
-    val session = summon[Session[IO]]
-
-    val keyset: AppliedFragment = cursor.after match {
-      case Some((afterAt, afterId)) =>
-        sql" AND (${BidRowTable.createdAt.n}, ${BidRowTable.id.n}) < (${BidRowTable.createdAt.c}, ${BidRowTable.id.c})" (afterAt, afterId)
-      case None => sql"" (Void)
-    }
-
-    val head: AppliedFragment =
-      sql"""WITH bidder_first AS (
-              SELECT DISTINCT ON (${BidRowTable.bidderId.n}) ${BidRowTable.bidderId.n}, ${BidRowTable.createdAt.n} AS first_at, ${BidRowTable.id.n} AS first_id
-              FROM ${BidRowTable.n}
-              WHERE ${BidRowTable.auctionId.n} = ${BidRowTable.auctionId.c}
-              ORDER BY ${BidRowTable.bidderId.n}, ${BidRowTable.createdAt.n} ASC, ${BidRowTable.id.n} ASC
-            ), ranked AS (
-              SELECT ${BidRowTable.bidderId.n} AS rb_bidder_id, dense_rank() OVER (ORDER BY first_at ASC, first_id ASC) AS bidder_ref
-              FROM bidder_first
-            )
-            SELECT ${BidRowTable.*}, ranked.bidder_ref
-            FROM ${BidRowTable.n}
-            JOIN ranked ON ranked.rb_bidder_id = ${BidRowTable.bidderId.n}
-            WHERE ${BidRowTable.auctionId.n} = ${BidRowTable.auctionId.c}""" (auctionId, auctionId)
-
-    val tail: AppliedFragment =
-      sql" ORDER BY ${BidRowTable.createdAt.n} DESC, ${BidRowTable.id.n} DESC LIMIT $int8" ((cursor.limit.unwrap + 1).toLong)
-
-    val applied = head |+| keyset |+| tail
-    session.execute(applied.fragment.query(BidRowTable.c ~ int8))(applied.argument).map { rows =>
-      val limit = cursor.limit.unwrap
-      Cursor(rows.take(limit).map { case (row, ref) => (row.toBid, BidderRef(ref.toInt)) }, rows.sizeIs > limit)
+  def pageByAuction(auctionId: AuctionId, cursor: CursorRequest[(Instant, BidId)]): DB[Cursor[Bid]] = {
+    keysetRepository.findCursorPageByFilter(BidKeysetFilter(auctionId, cursor)).map { case (rows, hasMore) =>
+      Cursor(rows.map(_.toBid), hasMore)
     }
   }
 
@@ -115,4 +94,7 @@ class BidRepository {
     new IdRepository[BidRow, BidId](_.id) with ForeignIdRepository[BidRow, AuctionId] with FilteringRepository[BidRow, BidRowFilter] {
       override val table: BidRowTable.type = BidRowTable
     }
+
+  private val keysetRepository: FilteringRepository[BidRow, BidKeysetFilter] =
+    new FilteringRepository[BidRow, BidKeysetFilter] { override val table: BidRowTable.type = BidRowTable }
 }

@@ -293,7 +293,10 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
         bids shouldBe defined
         val page = bids.get
         page.items.map(_.amount.unwrap) shouldBe List(BigDecimal(130), BigDecimal(120), BigDecimal(110))
-        page.items.map(_.bidderRef.unwrap) shouldBe List(1, 2, 1)
+        val refs = page.items.map(_.bidderRef)
+        refs(0) shouldBe refs(2)
+        refs(0) should not be refs(1)
+        refs(0) shouldBe BidderRef.forBidder(auction.id, bidderA.id)
         page.items.map(_.currency).toSet shouldBe Set(eur)
         page.hasMore shouldBe false
       }
@@ -338,11 +341,11 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
         p2 = page2.get
       } yield {
         p1.items.map(_.amount.unwrap) shouldBe List(BigDecimal(130), BigDecimal(120))
-        p1.items.map(_.bidderRef.unwrap) shouldBe List(1, 2)
         p1.hasMore shouldBe true
         p2.items.map(_.amount.unwrap) shouldBe List(BigDecimal(110))
-        p2.items.map(_.bidderRef.unwrap) shouldBe List(1)
         p2.hasMore shouldBe false
+        p1.items.head.bidderRef shouldBe p2.items.head.bidderRef
+        p1.items.head.bidderRef should not be p1.items(1).bidderRef
       }
     }
 

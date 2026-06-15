@@ -123,7 +123,9 @@ class AuctionService(
       (for {
         auction <- auctionRepository.find(auctionId).valueOr[Option[Cursor[BidHistoryEntry]]](None)
         page    <- bidRepository.pageByAuction(auctionId, cursor).seal
-      } yield Some(page.map { case (bid, ref) => BidHistoryEntry(bid.id, bid.amount, auction.currency, ref, bid.createdAt) })).run
+      } yield Some(page.map { bid =>
+        BidHistoryEntry(bid.id, bid.amount, auction.currency, BidderRef.forBidder(bid.auctionId, bid.bidderId), bid.createdAt)
+      })).run
     }
   }
 
