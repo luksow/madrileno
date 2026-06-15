@@ -12,6 +12,7 @@ import madrileno.auth.services.{AuthVerifiers, JwtService}
 import madrileno.main.ApplicationLoader
 import madrileno.utils.db.transactor.{PgConfig, PgTransactor}
 import madrileno.utils.events.EventBusRuntime
+import madrileno.utils.http.RateLimiterRuntime
 import madrileno.utils.mailer.MailerConfig
 import madrileno.utils.observability.TelemetryContext
 import madrileno.utils.resilience.CircuitBreakerRuntime
@@ -45,6 +46,8 @@ trait TestApplicationLoader extends TestContainersForAll with TestMailpit { self
   val firebaseToken: VerifiedExternalToken = TestData.verifiedExternalToken()
   val oidcToken: VerifiedExternalToken     = TestData.verifiedExternalToken(provider = Provider("test-oidc"))
 
+  protected def rateLimiterRuntime: RateLimiterRuntime = TestRateLimiterRuntime.unbounded
+
   lazy val application: ApplicationLoader = withContainers { container =>
     val pgConfig = PgConfig(
       host = container.host,
@@ -68,7 +71,7 @@ trait TestApplicationLoader extends TestContainersForAll with TestMailpit { self
       Clock[IO],
       scheduler.client,
       TestCacheRuntime.unbounded,
-      TestRateLimiterRuntime.unbounded,
+      rateLimiterRuntime,
       TestObjectStoreRuntime.inMemory,
       EventBusRuntime.local,
       CircuitBreakerRuntime.default,

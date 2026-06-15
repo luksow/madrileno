@@ -10,7 +10,7 @@ import madrileno.auth.services.*
 import madrileno.user.repositories.UserRepository
 import madrileno.utils.cache.CacheRuntime
 import madrileno.utils.db.transactor.Transactor
-import madrileno.utils.http.{AuthRouteProvider, RouteProvider}
+import madrileno.utils.http.{AuthRouteProvider, RateLimiterRuntime, RouteProvider}
 import madrileno.utils.mailer.{MailPreview, MailPreviewProvider, Mailer}
 import madrileno.utils.observability.TelemetryContext
 import madrileno.utils.task.{RecurringTaskProvider, Task}
@@ -28,6 +28,7 @@ trait AuthModule extends RouteProvider with AuthRouteProvider with RecurringTask
   given telemetryContext: TelemetryContext
   val transactor: Transactor
   val cacheRuntime: CacheRuntime
+  val rateLimiterRuntime: RateLimiterRuntime
   lazy val httpClient: WebSocketStreamBackend[IO, Fs2Streams[IO]]
   lazy val userRepository: UserRepository
   lazy val mailer: Mailer
