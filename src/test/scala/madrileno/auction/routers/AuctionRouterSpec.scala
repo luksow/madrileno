@@ -10,7 +10,7 @@ import madrileno.user.domain.{User, UserId}
 import madrileno.utils.db.transactor.DB
 import madrileno.utils.http.Error
 import madrileno.utils.json.JsonProtocol.*
-import madrileno.utils.pagination.{Page, SortDirection}
+import madrileno.utils.pagination.{Cursor, Page, SortDirection}
 import org.http4s.EntityDecoder
 import org.http4s.Method.*
 import org.http4s.Status.*
@@ -315,12 +315,13 @@ class AuctionRouterSpec extends BaseRouteSpec with TestApplicationLoader {
     )(
       withSetup(setupAuctionWithExistingBid(Price(BigDecimal(200))))
         .request(auction => onRequest(pathParameters = auction.id))
-        .respondsWith[List[BidHistoryEntryDto]](Ok, description = "Bid history (newest first)")
+        .respondsWith[Cursor[BidHistoryEntryDto]](Ok, description = "Bid history (newest first)")
         .assert { case (ctx, _) =>
           val response = ctx.performRequest(allRoutes)
-          response.body.map(_.amount) shouldBe List(Price(BigDecimal(200)))
-          response.body.map(_.bidderRef.unwrap) shouldBe List(1)
-          response.body.map(_.currency).toSet shouldBe Set(Currency.getInstance("EUR"))
+          response.body.items.map(_.amount) shouldBe List(Price(BigDecimal(200)))
+          response.body.items.map(_.bidderRef.unwrap) shouldBe List(1)
+          response.body.items.map(_.currency).toSet shouldBe Set(Currency.getInstance("EUR"))
+          response.body.hasMore shouldBe false
         },
       onRequest(pathParameters = TestData.randomAuctionId())
         .respondsWith[Error[Unit]](NotFound, description = "Auction not found")

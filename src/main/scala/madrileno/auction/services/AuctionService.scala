@@ -16,7 +16,7 @@ import madrileno.utils.featureflag.domain.{AttributeName, AttributeValue, Evalua
 import madrileno.utils.featureflag.services.FeatureFlagService
 import madrileno.utils.mailer.{Language, Mailer}
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
-import madrileno.utils.pagination.{Page, PageRequest}
+import madrileno.utils.pagination.{Cursor, CursorRequest, Page, PageRequest}
 import madrileno.utils.task.{CronExpression, Schedule, Task}
 import pl.iterators.sealedmonad.syntax.*
 
@@ -118,12 +118,12 @@ class AuctionService(
     }
   }
 
-  def listBids(auctionId: AuctionId): IO[Option[List[BidHistoryEntry]]] = {
+  def listBids(auctionId: AuctionId, cursor: CursorRequest[(Instant, BidId)]): IO[Option[Cursor[BidHistoryEntry]]] = {
     transactor.inSession {
       (for {
-        auction <- auctionRepository.find(auctionId).valueOr[Option[List[BidHistoryEntry]]](None)
-        bids    <- bidRepository.listByAuction(auctionId).seal
-      } yield Some(BidHistoryEntry.fromBids(bids, auction.currency))).run
+        auction <- auctionRepository.find(auctionId).valueOr[Option[Cursor[BidHistoryEntry]]](None)
+        page    <- bidRepository.pageByAuction(auctionId, cursor).seal
+      } yield Some(page.map { case (bid, ref) => BidHistoryEntry(bid.id, bid.amount, auction.currency, ref, bid.createdAt) })).run
     }
   }
 

@@ -16,7 +16,7 @@ import madrileno.utils.featureflag.repositories.{FeatureFlagAuditRepository, Fea
 import madrileno.utils.featureflag.services.{CreateFlagCommand, CreateSegmentCommand, FeatureFlagServiceLive, RuleData}
 import madrileno.utils.mailer.*
 import madrileno.utils.observability.TelemetryContext
-import madrileno.utils.pagination.{Limit, Offset, PageRequest, SortDirection}
+import madrileno.utils.pagination.{CursorRequest, Limit, Offset, PageRequest, SortDirection}
 import madrileno.utils.task.*
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AsyncWordSpec
@@ -288,18 +288,66 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
                    )
                  )
              }
-        bids <- service.listBids(auction.id)
+        bids <- service.listBids(auction.id, CursorRequest.first())
       } yield {
         bids shouldBe defined
-        val entries = bids.get
-        entries.map(_.amount.unwrap) shouldBe List(BigDecimal(130), BigDecimal(120), BigDecimal(110))
-        entries.map(_.bidderRef.unwrap) shouldBe List(1, 2, 1)
-        entries.map(_.currency).toSet shouldBe Set(eur)
+        val page = bids.get
+        page.items.map(_.amount.unwrap) shouldBe List(BigDecimal(130), BigDecimal(120), BigDecimal(110))
+        page.items.map(_.bidderRef.unwrap) shouldBe List(1, 2, 1)
+        page.items.map(_.currency).toSet shouldBe Set(eur)
+        page.hasMore shouldBe false
+      }
+    }
+
+    "page bids by cursor, keeping bidder pseudonyms stable across pages" in {
+      for {
+        seller  <- seedUser()
+        bidderA <- seedUser()
+        bidderB <- seedUser()
+        auction <- createAuctionOrFail(createCommand(seller.id))
+        _ <- transactor.inSession {
+               bidRepo.save(
+                 TestData.bid(
+                   auctionId = auction.id,
+                   bidderId = bidderA.id,
+                   amount = Price(BigDecimal(110)),
+                   createdAt = Instant.parse("2026-01-01T00:00:01Z")
+                 )
+               ) *>
+                 bidRepo.save(
+                   TestData.bid(
+                     auctionId = auction.id,
+                     bidderId = bidderB.id,
+                     amount = Price(BigDecimal(120)),
+                     createdAt = Instant.parse("2026-01-01T00:00:02Z")
+                   )
+                 ) *>
+                 bidRepo.save(
+                   TestData.bid(
+                     auctionId = auction.id,
+                     bidderId = bidderA.id,
+                     amount = Price(BigDecimal(130)),
+                     createdAt = Instant.parse("2026-01-01T00:00:03Z")
+                   )
+                 )
+             }
+        page1 <- service.listBids(auction.id, CursorRequest(Limit(2), None))
+        p1   = page1.get
+        last = p1.items.last
+        page2 <- service.listBids(auction.id, CursorRequest(Limit(2), Some((last.createdAt, last.id))))
+        p2 = page2.get
+      } yield {
+        p1.items.map(_.amount.unwrap) shouldBe List(BigDecimal(130), BigDecimal(120))
+        p1.items.map(_.bidderRef.unwrap) shouldBe List(1, 2)
+        p1.hasMore shouldBe true
+        p2.items.map(_.amount.unwrap) shouldBe List(BigDecimal(110))
+        p2.items.map(_.bidderRef.unwrap) shouldBe List(1)
+        p2.hasMore shouldBe false
       }
     }
 
     "return None for listBids on a non-existent auction" in {
-      service.listBids(TestData.randomAuctionId()).map(_ shouldBe None)
+      service.listBids(TestData.randomAuctionId(), CursorRequest.first()).map(_ shouldBe None)
     }
 
     "place a bid on an open auction" in {
