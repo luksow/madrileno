@@ -10,14 +10,13 @@ import madrileno.user.domain.UserId
 import madrileno.utils.events.EventBus
 import madrileno.utils.http.{BaseRouter, RateLimitDirectives, RateLimiterRuntime}
 import madrileno.utils.observability.TelemetryContext
+import madrileno.utils.pagination.{CursorRequest, Limit}
 import org.http4s.Request
 import org.http4s.server.websocket.WebSocketBuilder2
 import org.http4s.websocket.WebSocketFrame
 import pl.iterators.stir.marshalling.ToResponseMarshallable
 import pl.iterators.stir.server.Route
-import pl.iterators.stir.unmarshalling.Unmarshaller
 
-import java.time.Instant
 import scala.concurrent.duration.*
 
 class AuctionRouter(
@@ -27,8 +26,6 @@ class AuctionRouter(
 )(using TelemetryContext)
     extends BaseRouter
     with RateLimitDirectives {
-
-  private given Unmarshaller[String, Instant] = Unmarshaller(s => IO.delay(Instant.parse(s)))
 
   val routes: Route = {
     (get & path("auctions") & pathEndOrSingleSlash & parameters("status".as[AuctionStatus].?, "seller-id".as[UserId].?) & paginated(
@@ -58,18 +55,23 @@ class AuctionRouter(
           }
         }
       } ~
-      (get & path("auctions" / JavaUUID.as[AuctionId] / "bids") & pathEndOrSingleSlash & cursorPaginated[Instant, BidId](
-        "after-created-at",
-        "after-id"
-      )) { (auctionId, cursor) =>
-        rateLimited("auctions.bids", to = 120, within = 1.minute) {
-          complete {
-            auctionService.listBids(auctionId, cursor).map[ToResponseMarshallable] {
-              case Some(page) => Ok -> page.map(BidHistoryEntryDto(_))
-              case None       => error(NotFound, "auction-not-found", "Auction not found")
+      (get & path("auctions" / JavaUUID.as[AuctionId] / "bids") & pathEndOrSingleSlash & parameters(
+        "limit".as[Int].withDefault(Limit.Default.unwrap),
+        "after-id".as[BidId].?
+      )) {
+        (
+          auctionId,
+          limit,
+          afterId
+        ) =>
+          rateLimited("auctions.bids", to = 120, within = 1.minute) {
+            complete {
+              auctionService.listBids(auctionId, CursorRequest(Limit.clamp(limit), afterId)).map[ToResponseMarshallable] {
+                case Some(page) => Ok -> page.map(BidHistoryEntryDto(_))
+                case None       => error(NotFound, "auction-not-found", "Auction not found")
+              }
             }
           }
-        }
       }
   }
 

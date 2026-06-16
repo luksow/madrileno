@@ -143,12 +143,12 @@ object TestData {
   )
 
   def bid(
-    id: BidId = randomBidId(),
     auctionId: AuctionId = randomAuctionId(),
     bidderId: UserId = randomUserId(),
     amount: Price = Price(BigDecimal(150)),
-    createdAt: Instant = Instant.now()
-  ): Bid = Bid(id, auctionId, bidderId, amount, createdAt)
+    createdAt: Instant = Instant.now(),
+    id: Option[BidId] = None
+  ): Bid = Bid(id.getOrElse(BidId(UuidV7.fromParts(createdAt.toEpochMilli, randomUuid()))), auctionId, bidderId, amount, createdAt)
 
   def auctionImage(
     id: AuctionImageId = randomAuctionImageId(),

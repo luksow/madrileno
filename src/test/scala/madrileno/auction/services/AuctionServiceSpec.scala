@@ -337,7 +337,7 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
         page1 <- service.listBids(auction.id, CursorRequest(Limit(2), None))
         p1   = page1.get
         last = p1.items.last
-        page2 <- service.listBids(auction.id, CursorRequest(Limit(2), Some((last.createdAt, last.id))))
+        page2 <- service.listBids(auction.id, CursorRequest(Limit(2), Some(last.id)))
         p2 = page2.get
       } yield {
         p1.items.map(_.amount.unwrap) shouldBe List(BigDecimal(130), BigDecimal(120))

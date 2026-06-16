@@ -118,7 +118,7 @@ class AuctionService(
     }
   }
 
-  def listBids(auctionId: AuctionId, cursor: CursorRequest[(Instant, BidId)]): IO[Option[Cursor[BidHistoryEntry]]] = {
+  def listBids(auctionId: AuctionId, cursor: CursorRequest[BidId]): IO[Option[Cursor[BidHistoryEntry]]] = {
     transactor.inSession {
       (for {
         auction <- auctionRepository.find(auctionId).valueOr[Option[Cursor[BidHistoryEntry]]](None)

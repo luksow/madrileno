@@ -29,6 +29,7 @@ CREATE TABLE bid(
 );
 
 CREATE INDEX bid_auction_id_amount_idx ON bid (auction_id, amount DESC);
+CREATE INDEX bid_auction_id_id_idx ON bid (auction_id, id DESC);
 CREATE INDEX bid_bidder_id_idx ON bid (bidder_id);
 CREATE INDEX auction_seller_id_idx ON auction (seller_id);
 CREATE INDEX auction_status_ends_at_active_idx ON auction (status, ends_at) WHERE deleted_at IS NULL;

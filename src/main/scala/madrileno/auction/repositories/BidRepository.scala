@@ -53,13 +53,6 @@ private[repositories] final case class BidRowFilter(
     SqlFilterDerivation.filterFragment(this, (BidRowTable.id, BidRowTable.auctionId, BidRowTable.bidderId))
 }
 
-private[repositories] final case class BidKeysetFilter(auctionId: AuctionId, cursor: CursorRequest[(Instant, BidId)])
-    extends KeysetSqlFilter[Instant, BidId] {
-  override protected def keysetCursor: CursorRequest[(Instant, BidId)]   = cursor
-  override protected def keysetColumns: (Column[Instant], Column[BidId]) = (BidRowTable.createdAt, BidRowTable.id)
-  override protected def baseFilterFragment: AppliedFragment             = fromPredicates(Tuple1(p.equal(auctionId) -> BidRowTable.auctionId))
-}
-
 class BidRepository {
   def save(bid: Bid): DB[Bid] = {
     val row = BidRow(bid)
@@ -70,9 +63,19 @@ class BidRepository {
     repository.findByFilter(BidRowFilter(auctionId = p.equal(auctionId))).map(_.map(_.toBid))
   }
 
-  def pageByAuction(auctionId: AuctionId, cursor: CursorRequest[(Instant, BidId)]): DB[Cursor[Bid]] = {
-    keysetRepository.findCursorPageByFilter(BidKeysetFilter(auctionId, cursor)).map { case (rows, hasMore) =>
-      Cursor(rows.map(_.toBid), hasMore)
+  def pageByAuction(auctionId: AuctionId, cursor: CursorRequest[BidId]): DB[Cursor[Bid]] = {
+    val session = summon[Session[IO]]
+    val keyset: AppliedFragment = cursor.after match {
+      case Some(afterId) => sql" AND ${BidRowTable.id.n} < ${BidRowTable.id.c}" (afterId)
+      case None          => sql"" (Void)
+    }
+    val query =
+      sql"SELECT ${BidRowTable.*} FROM ${BidRowTable.n} WHERE ${BidRowTable.auctionId.n} = ${BidRowTable.auctionId.c}" (auctionId) |+|
+        keyset |+|
+        sql" ORDER BY ${BidRowTable.id.n} DESC LIMIT $int8" ((cursor.limit.unwrap + 1).toLong)
+    session.execute(query.fragment.query(BidRowTable.c))(query.argument).map { rows =>
+      val limit = cursor.limit.unwrap
+      Cursor(rows.take(limit).map(_.toBid), rows.sizeIs > limit)
     }
   }
 
@@ -94,7 +97,4 @@ class BidRepository {
     new IdRepository[BidRow, BidId](_.id) with ForeignIdRepository[BidRow, AuctionId] with FilteringRepository[BidRow, BidRowFilter] {
       override val table: BidRowTable.type = BidRowTable
     }
-
-  private val keysetRepository: FilteringRepository[BidRow, BidKeysetFilter] =
-    new FilteringRepository[BidRow, BidKeysetFilter] { override val table: BidRowTable.type = BidRowTable }
 }
