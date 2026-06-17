@@ -56,7 +56,7 @@ class AuctionRouter(
         }
       } ~
       (get & path("auctions" / JavaUUID.as[AuctionId] / "bids") & pathEndOrSingleSlash & parameters(
-        "limit".as[Int].withDefault(Limit.Default.unwrap),
+        "limit".as[Limit].withDefault(Limit.Default),
         "after-id".as[BidId].?
       )) {
         (
@@ -66,7 +66,7 @@ class AuctionRouter(
         ) =>
           rateLimited("auctions.bids", to = 120, within = 1.minute) {
             complete {
-              auctionService.listBids(auctionId, CursorRequest(Limit.clamp(limit), afterId)).map[ToResponseMarshallable] {
+              auctionService.listBids(auctionId, CursorRequest(limit, afterId)).map[ToResponseMarshallable] {
                 case Some(page) => Ok -> page.map(BidHistoryEntryDto(_))
                 case None       => error(NotFound, "auction-not-found", "Auction not found")
               }

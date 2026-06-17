@@ -270,6 +270,29 @@ trait FilteringRepository[A, F <: SqlFilter] extends BaseRepository[A] {
       (rows.take(limit), rows.sizeIs > limit)
     }
 
+  def findCursorPageByKey[K](
+    base: F,
+    keyColumn: Column[K],
+    cursor: CursorRequest[K],
+    direction: SortDirection = SortDirection.Desc,
+    lock: Lock = Lock.NoLock
+  )(using session: Session[IO]
+  ): IO[(List[A], Boolean)] = {
+    val baseFragment = base.filterFragment
+    val ascending    = direction == SortDirection.Asc
+    val keyset: AppliedFragment = cursor.after match {
+      case None        => sql"" (Void)
+      case Some(after) => if (ascending) sql"AND ${keyColumn.n} > ${keyColumn.c}" (after) else sql"AND ${keyColumn.n} < ${keyColumn.c}" (after)
+    }
+    val orderBy: Fragment[Void] = if (ascending) sql"ORDER BY ${keyColumn.n} ASC" else sql"ORDER BY ${keyColumn.n} DESC"
+    val limit                   = cursor.limit.unwrap
+    session
+      .execute(
+        sql"SELECT ${table.*} FROM ${table.n} WHERE ${baseFragment.fragment} ${keyset.fragment} $orderBy LIMIT $int8 ${lock.fragment}".query(table.c)
+      )(baseFragment.argument, keyset.argument, (limit + 1).toLong)
+      .map(rows => (rows.take(limit), rows.sizeIs > limit))
+  }
+
   def findOneByFilter(filter: F, lock: Lock = Lock.NoLock)(using session: Session[IO]): IO[Option[A]] = {
     val appliedFragment = filter.filterFragment
     session.option(
