@@ -10,7 +10,6 @@ import madrileno.user.domain.UserId
 import madrileno.utils.events.EventBus
 import madrileno.utils.http.{BaseRouter, RateLimitDirectives, RateLimiterRuntime}
 import madrileno.utils.observability.TelemetryContext
-import madrileno.utils.pagination.{CursorRequest, Limit}
 import org.http4s.Request
 import org.http4s.server.websocket.WebSocketBuilder2
 import org.http4s.websocket.WebSocketFrame
@@ -55,18 +54,11 @@ class AuctionRouter(
           }
         }
       } ~
-      (get & path("auctions" / JavaUUID.as[AuctionId] / "bids") & pathEndOrSingleSlash & parameters(
-        "limit".as[Limit].withDefault(Limit.Default),
-        "after-id".as[BidId].?
-      )) {
-        (
-          auctionId,
-          limit,
-          afterId
-        ) =>
+      (get & path("auctions" / JavaUUID.as[AuctionId] / "bids") & pathEndOrSingleSlash & cursorPaginatedByKey[BidId]("after-id")) {
+        (auctionId, cursor) =>
           rateLimited("auctions.bids", to = 120, within = 1.minute) {
             complete {
-              auctionService.listBids(auctionId, CursorRequest(limit, afterId)).map[ToResponseMarshallable] {
+              auctionService.listBids(auctionId, cursor).map[ToResponseMarshallable] {
                 case Some(page) => Ok -> page.map(BidHistoryEntryDto(_))
                 case None       => error(NotFound, "auction-not-found", "Auction not found")
               }
