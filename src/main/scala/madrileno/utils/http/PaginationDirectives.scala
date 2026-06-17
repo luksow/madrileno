@@ -6,16 +6,13 @@ import pl.iterators.stir.unmarshalling.Unmarshaller
 
 trait PaginationDirectives { self: BaseRouter =>
   private def limit: Directive1[Limit] =
-    parameters("limit".as[Int].withDefault(Limit.Default.unwrap)).map(Limit.clamp)
+    parameters("limit".as[Int].?).map(Limit.orDefault)
 
   def paginated[F](defaultSort: F, defaultSortDir: SortDirection = SortDirection.Desc)(using Unmarshaller[String, F]): Directive1[PageRequest[F]] =
-    (limit & parameters(
-      "sort-by".as[F].withDefault(defaultSort),
-      "sort-dir".as[SortDirection].withDefault(defaultSortDir),
-      "offset".as[Int].withDefault(Offset.Zero.unwrap)
-    )).tmap { case (lim, sortBy, sortDir, offset) =>
-      Tuple1(PageRequest(lim, Offset.clamp(offset), sortBy, sortDir))
-    }
+    (limit & parameters("sort-by".as[F].withDefault(defaultSort), "sort-dir".as[SortDirection].withDefault(defaultSortDir), "offset".as[Int].?))
+      .tmap { case (lim, sortBy, sortDir, offset) =>
+        Tuple1(PageRequest(lim, Offset.orDefault(offset), sortBy, sortDir))
+      }
 
   def cursorPaginated[S, I](afterSortParam: String, afterIdParam: String)(using Unmarshaller[String, S], Unmarshaller[String, I])
     : Directive1[CursorRequest[(S, I)]] =
