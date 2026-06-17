@@ -295,4 +295,22 @@ class AuctionDomainSpec extends AnyWordSpec with Matchers {
       cancelled.close(now) shouldBe Left(CloseRejection.AuctionNotOpen)
     }
   }
+
+  "BidderRef.forBidder" should {
+    "be deterministic for the same auction and bidder" in {
+      val auctionId = TestData.randomAuctionId()
+      val bidderId  = TestData.randomUserId()
+      BidderRef.forBidder(auctionId, bidderId) shouldBe BidderRef.forBidder(auctionId, bidderId)
+    }
+
+    "differ between bidders in the same auction" in {
+      val auctionId = TestData.randomAuctionId()
+      BidderRef.forBidder(auctionId, TestData.randomUserId()) should not be BidderRef.forBidder(auctionId, TestData.randomUserId())
+    }
+
+    "differ for the same bidder across auctions" in {
+      val bidderId = TestData.randomUserId()
+      BidderRef.forBidder(TestData.randomAuctionId(), bidderId) should not be BidderRef.forBidder(TestData.randomAuctionId(), bidderId)
+    }
+  }
 }
