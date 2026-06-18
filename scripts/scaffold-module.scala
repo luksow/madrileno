@@ -158,12 +158,40 @@ object ScaffoldModule {
     require(updatedLoader != loaderText, "auto-wire substitution produced no change (unexpected)")
     os.write.over(loader, updatedLoader)
 
+    // Inject the id factory into the shared TestData object. The generated specs
+    // call `TestData.random<Aggregate>Id()` rather than minting raw UUIDs — the
+    // `noRandomUuid` scalafix rule bans `UUID.randomUUID` everywhere, tests
+    // included, and the factory mints time-ordered UUIDv7 ids like production.
+    // We add both the domain import and the factory line; scalafix (recommended
+    // in the Next step) sorts the import afterwards.
+    val testData = root / "src" / "test" / "scala" / packageName / "support" / "TestData.scala"
+    require(os.exists(testData),
+      s"missing $testData (expected the shared test-data factory at this path).\n" +
+        s"  Add `import $packageName.$singular.domain.*` and a `random${aggregate}Id()` factory manually.")
+    val testDataText    = os.read(testData)
+    val tdImportAnchor  = s"import $packageName.utils.crypto.UuidV7"
+    require(testDataText.contains(tdImportAnchor),
+      s"can't inject id factory: import anchor '$tdImportAnchor' not found in $testData.\n" +
+        s"  Add `import $packageName.$singular.domain.*` and a `random${aggregate}Id()` factory manually.")
+    val tdFactoryAnchor = "  // scripts:scaffold-id-factories"
+    require(testDataText.contains(tdFactoryAnchor),
+      s"can't inject id factory: factory anchor '$tdFactoryAnchor' not found in $testData.\n" +
+        s"  Add a `random${aggregate}Id(): ${aggregate}Id = ${aggregate}Id(randomUuid())` factory manually.")
+    val tdNewImport     = s"import $packageName.$singular.domain.*\n"
+    val tdNewFactory    = s"  def random${aggregate}Id(): ${aggregate}Id = ${aggregate}Id(randomUuid())\n"
+    val updatedTestData = testDataText
+      .replace(tdImportAnchor, tdNewImport + tdImportAnchor)
+      .replace(tdFactoryAnchor, tdNewFactory + tdFactoryAnchor)
+    require(updatedTestData != testDataText, "test-data injection produced no change (unexpected)")
+    os.write.over(testData, updatedTestData)
+
     println(s"Aggregate: $aggregate (singular '$singular', plural '$plural')")
     println(s"Package:   $packageName")
     println(s"Wrote ${writtenMain.size} main files under $mainDest")
     println(s"Wrote ${writtenTest.size} test files under $testDest")
     println(s"Wrote ${writtenMigration.size} migration(s) starting at V$nextVersion")
     println(s"Wired ${aggregate}Module into $loader")
+    println(s"Injected random${aggregate}Id() factory into $testData")
     println()
     println("Next:")
     println("  sbt 'compile; scalafmtAll; scalafixAll'   # verify, format, sort the auto-wired import")

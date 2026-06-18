@@ -1,15 +1,15 @@
 package __package__.__aggregate__.domain
 
+import __package__.support.TestData
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
 
 import java.time.Instant
-import java.util.UUID
 
 class __Aggregate__Spec extends AnyWordSpec with Matchers {
 
   private val now = Instant.parse("2026-01-01T10:00:00Z")
-  private val id  = __Aggregate__Id(UUID.randomUUID())
+  private val id  = TestData.random__Aggregate__Id()
 
   "__Aggregate__Name" should {
     "accept non-empty strings" in {

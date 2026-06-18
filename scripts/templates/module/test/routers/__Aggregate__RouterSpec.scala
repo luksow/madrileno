@@ -11,7 +11,6 @@ import org.http4s.Status.*
 import pl.iterators.stir.server.Route
 
 import java.time.Instant
-import java.util.UUID
 
 class __Aggregate__RouterSpec extends BaseRouteSpec with TestApplicationLoader {
 
@@ -20,7 +19,7 @@ class __Aggregate__RouterSpec extends BaseRouteSpec with TestApplicationLoader {
   private val authContext: AuthContext = AuthContext(TestData.user())
 
   private def seed__Aggregate__(): __Aggregate__ = {
-    val entity = __Aggregate__.create(__Aggregate__Id(UUID.randomUUID()), __Aggregate__Name("test-name"), Instant.now())
+    val entity = __Aggregate__.create(TestData.random__Aggregate__Id(), __Aggregate__Name("test-name"), Instant.now())
     application.transactor
       .inSession(application.__aggregate__Repository.save(entity))
       .unsafeRunSync()
@@ -44,7 +43,7 @@ class __Aggregate__RouterSpec extends BaseRouteSpec with TestApplicationLoader {
           response.body.id shouldBe entity.id
           response.body.name shouldBe entity.name
         },
-      onRequest(security = bearer.apply(validJwt(authContext)), pathParameters = __Aggregate__Id(UUID.randomUUID()))
+      onRequest(security = bearer.apply(validJwt(authContext)), pathParameters = TestData.random__Aggregate__Id())
         .respondsWith[Error[Unit]](NotFound, description = "__Aggregate__ not found")
         .assert { ctx =>
           val response = ctx.performRequest(allRoutes)

@@ -2,12 +2,11 @@ package __package__.__aggregate__.repositories
 
 import cats.effect.testing.scalatest.AsyncIOSpec
 import __package__.__aggregate__.domain.*
-import __package__.support.TestTransactor
+import __package__.support.{TestData, TestTransactor}
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AsyncWordSpec
 
 import java.time.Instant
-import java.util.UUID
 
 class __Aggregate__RepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matchers with TestTransactor {
 
@@ -15,7 +14,7 @@ class __Aggregate__RepositorySpec extends AsyncWordSpec with AsyncIOSpec with Ma
   private val now       = Instant.parse("2026-01-01T10:00:00Z")
 
   private def make__Aggregate__(name: __Aggregate__Name = __Aggregate__Name("test-name")): __Aggregate__ =
-    __Aggregate__.create(__Aggregate__Id(UUID.randomUUID()), name, now)
+    __Aggregate__.create(TestData.random__Aggregate__Id(), name, now)
 
   "__Aggregate__Repository" should {
     "save and find a __aggregate__" in withRollback {
@@ -27,7 +26,7 @@ class __Aggregate__RepositorySpec extends AsyncWordSpec with AsyncIOSpec with Ma
     }
 
     "find returns None for a non-existent __aggregate__" in withRollback {
-      repo.find(__Aggregate__Id(UUID.randomUUID())).map(_ shouldBe None)
+      repo.find(TestData.random__Aggregate__Id()).map(_ shouldBe None)
     }
 
     "update applies the transition and persists the new aggregate" in withRollback {
@@ -57,7 +56,7 @@ class __Aggregate__RepositorySpec extends AsyncWordSpec with AsyncIOSpec with Ma
     }
 
     "update returns None for a non-existent __aggregate__" in withRollback {
-      repo.update(__Aggregate__Id(UUID.randomUUID()), (a: __Aggregate__) => a.rename(__Aggregate__Name("x"), now))
+      repo.update(TestData.random__Aggregate__Id(), (a: __Aggregate__) => a.rename(__Aggregate__Name("x"), now))
         .map(_ shouldBe None)
     }
 

@@ -543,13 +543,16 @@ That's offset pagination — right for a catalogue ("page 4 of 12"). For a high-
 
 Spec files seed DB state through a central `TestData` object. Extend it now so repository/service/router specs can use `TestData.product(...)` and `TestData.randomProductId()`.
 
+> If you scaffolded, the `import madrileno.product.domain.*` and the `randomProductId()` factory are already in `TestData` — the scaffold injects them. You only add the `product(...)` row factory below.
+
 In `src/test/scala/madrileno/support/TestData.scala`, add to the imports and the object body:
 
 ```scala
 import madrileno.product.domain.*
 // …
 
-def randomProductId(): ProductId = ProductId(UUID.randomUUID())
+// randomUuid() mints time-ordered UUIDv7 ids like production — never raw UUID.randomUUID (the noRandomUuid lint bans it).
+def randomProductId(): ProductId = ProductId(randomUuid())
 
 def product(
   id: ProductId = randomProductId(),
@@ -881,8 +884,6 @@ import org.http4s.circe.CirceEntityCodec.*
 import pl.iterators.baklava.EmptyBody
 import pl.iterators.stir.server.Route
 
-import java.util.UUID
-
 class ProductRouterSpec extends BaseRouteSpec with TestApplicationLoader {
 
   override def route: Route = application.routes(wsb)
@@ -931,7 +932,7 @@ class ProductRouterSpec extends BaseRouteSpec with TestApplicationLoader {
           val response = ctx.performRequest(allRoutes)
           response.body.id shouldBe getFoundId
         },
-      onRequest(pathParameters = ProductId(UUID.randomUUID()))
+      onRequest(pathParameters = TestData.randomProductId())
         .respondsWith[Error[Unit]](NotFound, description = "Product not found")
         .assert { ctx =>
           val response = ctx.performRequest(allRoutes)
@@ -952,7 +953,7 @@ class ProductRouterSpec extends BaseRouteSpec with TestApplicationLoader {
           application.transactor.inSession(productRepository.save(product)).unsafeRunSync()
           ctx.performRequest(allRoutes)
         },
-      onRequest(security = bearer.apply(validJwt(authContext)), pathParameters = ProductId(UUID.randomUUID()))
+      onRequest(security = bearer.apply(validJwt(authContext)), pathParameters = TestData.randomProductId())
         .respondsWith[Error[Unit]](NotFound, description = "Product not found")
         .assert { ctx =>
           val response = ctx.performRequest(allRoutes)
@@ -982,7 +983,7 @@ class ProductRouterSpec extends BaseRouteSpec with TestApplicationLoader {
       onRequest(
         body = RenameProductRequest(ProductName("Whatever")),
         security = bearer.apply(validJwt(authContext)),
-        pathParameters = ProductId(UUID.randomUUID())
+        pathParameters = TestData.randomProductId()
       ).respondsWith[Error[Unit]](NotFound, description = "Product not found")
         .assert { ctx =>
           val response = ctx.performRequest(allRoutes)

@@ -175,6 +175,7 @@ The auction module's defaults illustrate the spread:
 ```
 auctions.list           60/min   (read, by IP)
 auctions.get           120/min   (read, by IP)
+auctions.bids          120/min   (read, by IP)
 auctions.create         10/min   (write, by user)
 auctions.cancel         30/min   (write, by user)
 auctions.bid            30/min   (write, by user)

@@ -28,6 +28,7 @@ object TestData {
   def randomFlagId(): FlagId                 = FlagId(randomUuid())
   def randomRuleId(): RuleId                 = RuleId(randomUuid())
   def randomSegmentId(): SegmentId           = SegmentId(randomUuid())
+  // scripts:scaffold-id-factories (scaffold-module.scala inserts random<Aggregate>Id() factories above this line)
   // scripts:auction-block-start
   def randomAuctionId(): AuctionId                         = AuctionId(randomUuid())
   def randomBidId(): BidId                                 = BidId(randomUuid())

@@ -56,7 +56,7 @@ Adding a new auction-coupled block elsewhere? Bracket it with the same markers a
 
 ## `scaffold-module.scala`
 
-Generate a new module (aggregate vertical slice) under the project's package — domain, repository, service, router, DTO, module trait, Flyway migration, and three specs (domain, repository, router). Wires the module into `ApplicationLoader`'s `extends` chain automatically.
+Generate a new module (aggregate vertical slice) under the project's package — domain, repository, service, router, DTO, module trait, Flyway migration, and three specs (domain, repository, router). Wires the module into `ApplicationLoader`'s `extends` chain and injects a `random<Aggregate>Id()` factory into the shared `TestData` object, both automatically.
 
 ```bash
 ./scripts/scaffold-module.scala Wine wines
@@ -74,6 +74,7 @@ What it does:
 1. **Sanity checks** — refuses to run if not in a project root (no `build.sbt` / no `src/main/scala/`), if the project package can't be uniquely identified (must be exactly one directory under `src/main/scala/`), if the templates dir (`scripts/templates/module/`) is missing, if the migration dir (`src/main/resources/db/migration/`) is missing, if `ApplicationLoader.scala` is missing or doesn't contain the expected `HealthCheckModule` anchors, if either target dir (`mainDest`, `testDest`) already exists, if a `<Aggregate>Module.scala` already exists anywhere under `src/main/scala/` (class-name collision with an existing module — e.g. `HealthCheck health_checks` would clash with the built-in `HealthCheckModule`), or if any existing migration already creates a table with the singular's name (e.g. `Auction auctions` when an earlier migration already creates `auction`). All checks run **before** any writes, so a failing precondition leaves the working tree untouched.
 2. **Copies the template tree** with placeholder substitution. Files under `scripts/templates/module/main/` go to `src/main/scala/<package>/<aggregate>/`; `test/` goes to `src/test/scala/<package>/<aggregate>/`; `migration/` files become `V<next>__<name>.sql` under `src/main/resources/db/migration/`, where `<next>` is the highest existing `V<N>` plus one.
 3. **Auto-wires** by inserting both `import <package>.<aggregate>.<Aggregate>Module` and `    with <Aggregate>Module` into `ApplicationLoader.scala`, anchored on the `HealthCheckModule` import and `with` clauses (always present in the framework's stock loader). Imports are not sorted alphabetically at insertion — `sbt scalafixAll` (recommended in the next-steps printout) reorders them.
+4. **Injects the test-data id factory** into `src/test/scala/<package>/support/TestData.scala` — both `import <package>.<aggregate>.domain.*` and a `random<Aggregate>Id(): <Aggregate>Id = <Aggregate>Id(randomUuid())` line, anchored on the `UuidV7` import and the `// scripts:scaffold-id-factories` marker. The generated specs call `TestData.random<Aggregate>Id()` instead of minting raw UUIDs, so the output passes the `noRandomUuid` scalafix lint (which bans `UUID.randomUUID` in tests too) out of the box. Like the loader import, the injected import is sorted by `scalafixAll` afterwards.
 
 After running:
 
