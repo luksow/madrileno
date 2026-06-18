@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "metals": {
+      "type": "http",
+      "url": "http://localhost:8911/mcp"
+    },
+    "madrileno": {
+      "type": "http",
+      "url": "http://localhost:8910/mcp"
+    }
+  }
+}

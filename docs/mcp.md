@@ -41,23 +41,24 @@ You need [scala-cli](https://scala-cli.virtuslab.org/) on `PATH`. JVM 21 is auto
 ./scripts/mcp-server.scala
 ```
 
-First launch downloads dependencies (~1 minute) and clones the upstream repo. Subsequent launches are seconds. The server listens on `http://localhost:8080/mcp`.
+First launch downloads dependencies (~1 minute) and clones the upstream repo. Subsequent launches are seconds. The server listens on `http://localhost:8910/mcp`.
 
 ## Wiring it into Claude
 
-For Claude Desktop / CLI clients that support MCP over HTTP, add an entry pointing at the server. The same JSON shape works both project-local (commit `.mcp.json` at the project root — picked up automatically by Claude Code) and user-global (`~/.config/claude/mcp.json` or your client's equivalent). Example:
+The template ships a project-scoped `.mcp.json` at the repo root that already points Claude Code at this server (alongside the Metals server — see [ai-assisted-dev.md](ai-assisted-dev.md)). [Project scope is designed to be checked into version control](https://code.claude.com/docs/en/mcp#project-scope), so it's committed and every clone gets the wiring for free. The relevant entry:
 
 ```json
 {
   "mcpServers": {
     "madrileno": {
-      "url": "http://localhost:8080/mcp"
+      "type": "http",
+      "url": "http://localhost:8910/mcp"
     }
   }
 }
 ```
 
-Restart your Claude client. Ask Claude something like *"call `madrileno_overview` and tell me what's available"* to verify the connection.
+Claude Code picks `.mcp.json` up automatically and prompts once to approve project-scoped servers. (For other clients, the same shape works user-global in `~/.config/claude/mcp.json` or your client's equivalent.) Ask Claude something like *"call `madrileno_overview` and tell me what's available"* to verify the connection.
 
 ## A worked scenario
 

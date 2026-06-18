@@ -376,7 +376,7 @@ object MCPServer {
       case Left(e)  => Console.err.println(s"[mcp] $e"); sys.exit(1)
     }
     Console.err.println(s"[mcp] anchored at ${ref.sha.take(10)} (${ref.repo})")
-    Console.err.println(s"[mcp] listening on http://localhost:8080/mcp")
+    Console.err.println(s"[mcp] listening on http://localhost:8910/mcp")
 
     val mcpServerEndpoint = mcpEndpoint(
       List(overviewTool, moduleTool, docTool, sourceTool, changesTool),
@@ -385,6 +385,6 @@ object MCPServer {
 
     // Bind to localhost explicitly — there's no auth, so binding to 0.0.0.0 would expose the
     // MCP endpoints on the LAN. Loopback only; users wanting LAN access can edit this.
-    NettySyncServer().host("127.0.0.1").port(8080).addEndpoint(mcpServerEndpoint).startAndWait()
+    NettySyncServer().host("127.0.0.1").port(8910).addEndpoint(mcpServerEndpoint).startAndWait()
   }
 }
