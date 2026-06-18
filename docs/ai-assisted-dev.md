@@ -49,11 +49,3 @@ The committed `.mcp.json` already points at both:
 ```
 
 Claude Code reads it automatically and prompts once to approve project-scoped servers (run `claude mcp reset-project-choices` to redo the prompt). Start the servers, then ask Claude *"compile the project"* (Metals) or *"call `madrileno_overview`"* (madrileno) to confirm both are live.
-
-## Ports
-
-`8910` (madrileno) and `8911` (Metals) are chosen to dodge the common dev-port defaults (`3000`, `5000`, `8000`, `8080`, `9000`, …) the same way the docker stack uses high host ports. The pinned `--port` keeps the committed `.mcp.json` URL valid across restarts — don't let Metals auto-assign, or the URL goes stale.
-
-If a port is already taken on your machine, change it in **both** places: the start command and the matching `url` in `.mcp.json`. madrileno's port lives in `scripts/mcp-server.scala`.
-
-> Don't generate `.mcp.json` with `metals-mcp --client claude-code`: it overwrites the file with only the Metals entry (and a random port), clobbering the madrileno wiring. The checked-in file already has both.
