@@ -102,6 +102,23 @@ object ScaffoldModule {
       s"can't auto-wire: extends-clause anchor '$withAnchor' not found in $loader.\n" +
         s"  Add `with ${aggregate}Module` to the extends chain manually.")
 
+    // Preflight the TestData injection anchors too — same reasoning as the loader
+    // anchors above: validate before any writes so a missing marker can't strand a
+    // half-written scaffold on disk. The actual injection happens after the writes.
+    val testData = root / "src" / "test" / "scala" / packageName / "support" / "TestData.scala"
+    require(os.exists(testData),
+      s"missing $testData (expected the shared test-data factory at this path).\n" +
+        s"  Add `import $packageName.$singular.domain.${aggregate}Id` and a `random${aggregate}Id()` factory manually.")
+    val testDataText    = os.read(testData)
+    val tdImportAnchor  = s"import $packageName.utils.crypto.UuidV7"
+    require(testDataText.contains(tdImportAnchor),
+      s"can't inject id factory: import anchor '$tdImportAnchor' not found in $testData.\n" +
+        s"  Add `import $packageName.$singular.domain.${aggregate}Id` and a `random${aggregate}Id()` factory manually.")
+    val tdFactoryAnchor = "  // scripts:scaffold-id-factories"
+    require(testDataText.contains(tdFactoryAnchor),
+      s"can't inject id factory: factory anchor '$tdFactoryAnchor' not found in $testData.\n" +
+        s"  Add a `random${aggregate}Id(): ${aggregate}Id = ${aggregate}Id(randomUuid())` factory manually.")
+
     // Next Flyway version — max V<N>__ + 1. Filter to files only so a subdirectory
     // (Flyway supports a `vendor` subfolder) can't accidentally satisfy the regex.
     val nextVersion = os.list(migrationDest).filter(os.isFile(_)).map(_.last).flatMap { f =>
@@ -158,12 +175,28 @@ object ScaffoldModule {
     require(updatedLoader != loaderText, "auto-wire substitution produced no change (unexpected)")
     os.write.over(loader, updatedLoader)
 
+    // Inject the id factory into the shared TestData object (anchors validated in
+    // preflight). The generated specs call `TestData.random<Aggregate>Id()` rather
+    // than minting raw UUIDs — the `noRandomUuid` scalafix rule bans `UUID.randomUUID`
+    // everywhere, tests included, and the factory mints time-ordered UUIDv7 ids like
+    // production. The import is targeted at `<Aggregate>Id` (not a domain wildcard) so a
+    // second scaffolded module can't introduce an ambiguous name into TestData; scalafix
+    // (recommended in the Next step) sorts it afterwards.
+    val tdNewImport     = s"import $packageName.$singular.domain.${aggregate}Id\n"
+    val tdNewFactory    = s"  def random${aggregate}Id(): ${aggregate}Id = ${aggregate}Id(randomUuid())\n"
+    val updatedTestData = testDataText
+      .replace(tdImportAnchor, tdNewImport + tdImportAnchor)
+      .replace(tdFactoryAnchor, tdNewFactory + tdFactoryAnchor)
+    require(updatedTestData != testDataText, "test-data injection produced no change (unexpected)")
+    os.write.over(testData, updatedTestData)
+
     println(s"Aggregate: $aggregate (singular '$singular', plural '$plural')")
     println(s"Package:   $packageName")
     println(s"Wrote ${writtenMain.size} main files under $mainDest")
     println(s"Wrote ${writtenTest.size} test files under $testDest")
     println(s"Wrote ${writtenMigration.size} migration(s) starting at V$nextVersion")
     println(s"Wired ${aggregate}Module into $loader")
+    println(s"Injected random${aggregate}Id() factory into $testData")
     println()
     println("Next:")
     println("  sbt 'compile; scalafmtAll; scalafixAll'   # verify, format, sort the auto-wired import")

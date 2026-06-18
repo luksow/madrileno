@@ -72,7 +72,8 @@ The data the rest of the app sees once a request is authenticated:
 final case class AuthContext(
   userId: UserId,
   fullName: Option[FullName],
-  avatarUrl: Option[URI]
+  avatarUrl: Option[URI],
+  emailVerified: Boolean
 )
 ```
 

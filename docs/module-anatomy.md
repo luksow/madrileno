@@ -55,7 +55,7 @@ A provider is a tiny trait with one or two abstract methods. Modules mix them in
 | `RouteProvider`           | Public routes (no auth gate)                                         | `def route: Route`                              |
 | `AuthRouteProvider`       | Routes that require an authenticated user (`AuthContext`)            | `def route(auth: AuthContext): Route`           |
 | `WsRouteProvider`         | Public WebSocket routes                                              | `def wsRoutes(wsb: WebSocketBuilder2[IO]): Route` |
-| `AuthWsRouteProvider`     | Authenticated WebSocket routes                                       | `def wsRoutes(auth, wsb): Route`                |
+| `AuthWsRouteProvider`     | Authenticated WebSocket routes                                       | `def wsRoutes(auth: AuthContext, wsb: WebSocketBuilder2[IO]): Route` |
 | `RecurringTaskProvider`   | Tasks the scheduler runs on a schedule (cron, fixed delay, …)        | `def recurringTasks: List[Task[?]]`             |
 | `OneTimeTaskProvider`     | Tasks scheduled in response to events (analyze, send mail, …)        | `def oneTimeTasks: List[OneTimeTask[?]]`        |
 | `CustomTaskProvider`      | Tasks that compute their next run dynamically                        | `def customTasks: List[CustomTask[?]]`          |
