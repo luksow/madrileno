@@ -102,7 +102,7 @@ class ApiVersionDirectivesSpec extends AnyFunSpec with Matchers with ScalatestRo
   }
 
   describe("deprecatedWithSunset") {
-    val sunset = Instant.parse("2026-11-11T23:59:59Z")
+    val sunset       = Instant.parse("2026-11-11T23:59:59Z")
     val route: Route =
       deprecatedWithSunset(sunset)(complete("ok"))
 

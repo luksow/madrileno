@@ -55,9 +55,9 @@ class S3ObjectStore(
     ttl: SignedUrlTtl,
     fileName: Option[String]
   ): IO[ObjectStore.GetResult] = {
-    val headIO = IO.fromCompletableFuture(IO(client.headObject(HeadObjectRequest.builder().bucket(bucket).key(key.render).build()))).void
+    val headIO  = IO.fromCompletableFuture(IO(client.headObject(HeadObjectRequest.builder().bucket(bucket).key(key.render).build()))).void
     val presign = IO.blocking {
-      val builder = GetObjectRequest.builder().bucket(bucket).key(key.render)
+      val builder  = GetObjectRequest.builder().bucket(bucket).key(key.render)
       val withDisp = fileName.fold(builder) { name =>
         val cd = `Content-Disposition`("attachment", Map(ci"filename" -> name))
         builder.responseContentDisposition(Header[`Content-Disposition`].value(cd))
@@ -84,7 +84,7 @@ class S3ObjectStore(
     val ctValue = Header[`Content-Type`].value(contentType)
     val request = PutObjectRequest.builder().bucket(bucket).key(key.render).contentType(ctValue).contentLength(contentLength).build()
     val signed = presigner.presignPutObject(PutObjectPresignRequest.builder().signatureDuration(ttl.asJavaDuration).putObjectRequest(request).build())
-    val raws = signed
+    val raws   = signed
       .signedHeaders()
       .asScala
       .iterator

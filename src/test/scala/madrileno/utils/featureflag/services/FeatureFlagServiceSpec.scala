@@ -159,7 +159,7 @@ class FeatureFlagServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matcher
       for {
         _     <- seedFlag(key.unwrap, enabled = true)
         first <- service.evaluator(ctx).booleanDetail(key, default = false)
-        _ <- service.updateFlag(
+        _     <- service.updateFlag(
                UpdateFlagCommand(key, FlagDescription(""), enabled = false, FlagVariant.BoolVariant(true), clientExposed = false, Nil, actor)
              )
         afterInv <- service.evaluator(ctx).booleanDetail(key, default = false)
@@ -247,7 +247,7 @@ class FeatureFlagServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matcher
              )
         _      <- seedFlag(key.unwrap, defaultValue = FlagVariant.BoolVariant(false), rules = List(rule))
         before <- service.evaluator(ctxBeta).booleanDetail(key, default = false)
-        _ <- service.updateSegment(
+        _      <- service.updateSegment(
                UpdateSegmentCommand(segmentName, FlagDescription(""), List(RuleCondition.StringEquals(AttributeName("plan"), "enterprise")))
              )
         after <- service.evaluator(ctxBeta).booleanDetail(key, default = false)
@@ -259,7 +259,7 @@ class FeatureFlagServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matcher
 
     "return KeyExists when creating a flag with an already-used key" in {
       for {
-        _ <- seedFlag("phase3-dup-key")
+        _      <- seedFlag("phase3-dup-key")
         result <- service.createFlag(
                     CreateFlagCommand(
                       FlagKey("phase3-dup-key"),
@@ -293,7 +293,7 @@ class FeatureFlagServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matcher
       val key = FlagKey("phase3-immutable-fields")
       for {
         created <- seedFlag(key.unwrap)
-        result <-
+        result  <-
           service.updateFlag(
             UpdateFlagCommand(key, FlagDescription("changed"), enabled = true, FlagVariant.BoolVariant(true), clientExposed = false, Nil, actor)
           )

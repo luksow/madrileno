@@ -56,14 +56,14 @@ class AuctionImageService(
               .valueOrF[Unit](logger.warn(s"analyze: $imageId at ${image.storageKey.render} is not a recognized image, skipping"))
     // has EXIF ⇒ re-encode: bakes in the orientation scrimage applied on decode, strips camera/GPS metadata
     canonical <- (if (info.hasExif) Imaging.convert(bytes, info.format) else IO.pure(bytes)).seal
-    _ <- (if (info.hasExif)
+    _         <- (if (info.hasExif)
             objectStore.put(image.storageKey, contentTypeFor(info.format), Stream.chunk(fs2.Chunk.byteVector(canonical))).void
           else IO.unit).seal
     canonicalInfo <- Imaging
                        .info(canonical)
                        .valueOrF[Unit](logger.warn(s"analyze: canonical bytes for $imageId no longer recognizable, skipping"))
     now <- Clock[IO].realTimeInstant.seal
-    _ <- transactor.inTransaction {
+    _   <- transactor.inTransaction {
            for {
              _ <- auctionImageRepository
                     .markAnalyzed(
@@ -87,7 +87,7 @@ class AuctionImageService(
                .fetchBytes(image.storageKey)
                .valueOrF[Unit](logger.warn(s"generateVariant: bytes missing for $imageId at ${image.storageKey.render}, skipping"))
     rendered <- renderVariant(spec, bytes).seal
-    info <- Imaging
+    info     <- Imaging
               .info(rendered)
               .valueOrF[Unit](logger.warn(s"generateVariant: rendered output for ($imageId, $spec) is not recognizable"))
     variantId <- IdGenerator.generateId(AuctionImageVariantId).seal
@@ -167,13 +167,13 @@ class AuctionImageService(
     transactor.inSession(auctionRepository.find(auctionId)).flatMap {
       case None                                          => IO.pure(AttachImageResult.AuctionNotFound)
       case Some(auction) if auction.sellerId != sellerId => IO.pure(AttachImageResult.NotOwner)
-      case Some(_) =>
+      case Some(_)                                       =>
         for {
           id  <- IdGenerator.generateId(AuctionImageId)
           now <- Clock[IO].realTimeInstant
           key = StorageKey(s"auctions/$auctionId/images/$id")
           actualSize <- objectStore.put(key, contentType, content)
-          result <- persistAttached(auctionId, sellerId, id, key, fileName, contentType, actualSize, now).attempt.flatMap {
+          result     <- persistAttached(auctionId, sellerId, id, key, fileName, contentType, actualSize, now).attempt.flatMap {
                       case Right(AttachImageResult.Attached(image)) => IO.pure(AttachImageResult.Attached(image))
                       case Right(other)                             => cleanupAfterFailedPersist(key) *> IO.pure(other)
                       case Left(t) => cleanupAfterFailedPersist(key) *> logger.error(t)(s"Persist failed for ${key.render}") *> IO.raiseError(t)
@@ -268,7 +268,7 @@ class AuctionImageService(
                .valueOr[ReorderImagesResult](ReorderImagesResult.AuctionNotFound)
                .ensure(_.sellerId == sellerId, ReorderImagesResult.NotOwner)
         current <- auctionImageRepository.listByAuctionForUpdate(auctionId).seal
-        _ <- IO
+        _       <- IO
                .pure(orderedIds)
                .seal
                .ensure(ids => ids.toSet == current.map(_.id).toSet && ids.length == current.length, ReorderImagesResult.MismatchedIds)
@@ -301,14 +301,14 @@ class AuctionImageService(
     imageId: AuctionImageId,
     fileName: String
   ): IO[CommitUploadResult] = {
-    val key = StorageKey(s"auctions/$auctionId/images/$imageId")
+    val key                                            = StorageKey(s"auctions/$auctionId/images/$imageId")
     val precheck: IO[Either[CommitUploadResult, Unit]] = transactor.inSession {
       for {
         auctionOpt <- auctionRepository.find(auctionId)
         imageOpt   <- auctionImageRepository.findIncludingDeleted(imageId)
       } yield (auctionOpt, imageOpt) match {
-        case (None, _)                                          => Left(CommitUploadResult.AuctionNotFound)
-        case (Some(auction), _) if auction.sellerId != sellerId => Left(CommitUploadResult.NotOwner)
+        case (None, _)                                                                            => Left(CommitUploadResult.AuctionNotFound)
+        case (Some(auction), _) if auction.sellerId != sellerId                                   => Left(CommitUploadResult.NotOwner)
         case (_, Some(existing)) if existing.auctionId == auctionId && existing.deletedAt.isEmpty =>
           Left(CommitUploadResult.Committed(existing))
         case (_, Some(_)) => Left(CommitUploadResult.Conflict)
@@ -317,7 +317,7 @@ class AuctionImageService(
     }
     precheck.flatMap {
       case Left(result) => IO.pure(result)
-      case Right(_) =>
+      case Right(_)     =>
         (for {
           stat   <- objectStore.head(key).valueOr[CommitUploadResult](CommitUploadResult.ObjectNotFound)
           now    <- Clock[IO].realTimeInstant.seal

@@ -32,7 +32,7 @@ abstract class Table[T](tableName: String) extends MappingHelpers[T] with CodecH
 
   def columnsToFragment(columns: List[Column[?]]): Fragment[Void] = {
     columns match {
-      case Nil => sql""
+      case Nil          => sql""
       case head :: tail =>
         tail.foldLeft(head.n) { (acc, c) =>
           sql"$acc, ${c.n}"
@@ -41,7 +41,7 @@ abstract class Table[T](tableName: String) extends MappingHelpers[T] with CodecH
   }
   def columnsToFragment(columns: List[Column[?]], as: String): Fragment[Void] = {
     columns match {
-      case Nil => sql""
+      case Nil          => sql""
       case head :: tail =>
         tail.foldLeft(head.n(as)) { (acc, c) =>
           sql"$acc, ${c.n(as)}"

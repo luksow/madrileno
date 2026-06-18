@@ -20,7 +20,7 @@ class UserSpec extends AnyWordSpec with Matchers {
     }
 
     "update profile from external provider — fills in missing fields" in {
-      val user = TestData.user(fullName = None, emailAddress = None, avatarUrl = None, emailVerified = false)
+      val user    = TestData.user(fullName = None, emailAddress = None, avatarUrl = None, emailVerified = false)
       val profile = ExternalProfile(
         fullName = Some(FullName("New Name")),
         emailAddress = Some(EmailAddress("new@example.com")),

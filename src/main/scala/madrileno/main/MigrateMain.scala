@@ -16,13 +16,13 @@ object MigrateMain extends IOApp {
       case List("info")          => Right(Command.Info)
       case List("validate")      => Right(Command.Validate)
       case List("clean")         => Right(Command.Clean)
-      case other =>
+      case other                 =>
         Left(s"unknown command '${other.mkString(" ")}'. Expected: migrate (default), info, validate, or clean")
     }
 
   override def run(args: List[String]): IO[ExitCode] =
     parse(args) match {
-      case Left(error) => IO.println(s"flyway: $error").as(ExitCode.Error)
+      case Left(error)    => IO.println(s"flyway: $error").as(ExitCode.Error)
       case Right(command) =>
         for {
           pg   <- IO.delay(ConfigSource.default.at("pg").loadOrThrow[PgConfig])

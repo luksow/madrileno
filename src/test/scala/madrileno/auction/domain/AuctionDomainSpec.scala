@@ -100,10 +100,10 @@ class AuctionDomainSpec extends AnyWordSpec with Matchers {
   }
 
   "Auction.placeBid" should {
-    val seller = TestData.randomUserId()
-    val bidder = TestData.randomUserId()
-    val other  = TestData.randomUserId()
-    val now    = Instant.now()
+    val seller  = TestData.randomUserId()
+    val bidder  = TestData.randomUserId()
+    val other   = TestData.randomUserId()
+    val now     = Instant.now()
     val auction =
       TestData.auction(sellerId = seller, startingPrice = Price(BigDecimal(100)), startsAt = now.minusSeconds(60), endsAt = now.plusSeconds(3600))
     val bidId = TestData.randomBidId()
@@ -236,9 +236,9 @@ class AuctionDomainSpec extends AnyWordSpec with Matchers {
   }
 
   "Auction.cancel" should {
-    val seller = TestData.randomUserId()
-    val other  = TestData.randomUserId()
-    val now    = Instant.now()
+    val seller  = TestData.randomUserId()
+    val other   = TestData.randomUserId()
+    val now     = Instant.now()
     val auction =
       TestData.auction(sellerId = seller, startsAt = now.minusSeconds(60), endsAt = now.plusSeconds(3600), updatedAt = now.minusSeconds(60))
 

@@ -42,7 +42,7 @@ class MailPreviewRouter(previews: List[MailPreview], context: MailContext) exten
   ): String = {
     import scalatags.Text.all.{head as stHead, *}
     import scalatags.Text.tags2.title
-    val emailHtml = renderBody(rendered)
+    val emailHtml   = renderBody(rendered)
     val langOptions = Language.values.map { l =>
       option(value := l.toString, if (l == language) selected := "selected" else ())(l.toString)
     }

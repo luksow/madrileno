@@ -123,8 +123,8 @@ class AuctionImageServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matche
     "soft-delete the image and remove it from listImages" in {
       val (service, _) = freshService
       for {
-        seller  <- seedUser()
-        auction <- seedAuction(seller.id)
+        seller   <- seedUser()
+        auction  <- seedAuction(seller.id)
         attached <- attach(service, auction.id, seller.id).flatMap {
                       case AttachImageResult.Attached(image) => IO.pure(image)
                       case other                             => IO.raiseError(new AssertionError(s"setup: $other"))
@@ -140,9 +140,9 @@ class AuctionImageServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matche
     "return NotOwner when caller is not the seller" in {
       val (service, _) = freshService
       for {
-        seller  <- seedUser()
-        other   <- seedUser()
-        auction <- seedAuction(seller.id)
+        seller   <- seedUser()
+        other    <- seedUser()
+        auction  <- seedAuction(seller.id)
         attached <- attach(service, auction.id, seller.id).flatMap {
                       case AttachImageResult.Attached(image) => IO.pure(image)
                       case other                             => IO.raiseError(new AssertionError(s"setup: $other"))
@@ -172,7 +172,7 @@ class AuctionImageServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matche
       for {
         seller  <- seedUser()
         auction <- seedAuction(seller.id)
-        first <- attach(service, auction.id, seller.id).flatMap {
+        first   <- attach(service, auction.id, seller.id).flatMap {
                    case AttachImageResult.Attached(image) => IO.pure(image)
                    case other                             => IO.raiseError(new AssertionError(s"setup: $other"))
                  }
@@ -249,7 +249,7 @@ class AuctionImageServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matche
       for {
         seller  <- seedUser()
         auction <- seedAuction(seller.id)
-        result <- service.presignUpload(auction.id, seller.id, jpeg, 1024L).flatMap {
+        result  <- service.presignUpload(auction.id, seller.id, jpeg, 1024L).flatMap {
                     case PresignUploadResult.Presigned(imageId, _) => service.commitUpload(auction.id, seller.id, imageId, "wine.jpg")
                     case other                                     => IO.raiseError(new AssertionError(s"setup: $other"))
                   }
@@ -309,8 +309,8 @@ class AuctionImageServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matche
                      case other                                => IO.raiseError(new AssertionError(s"setup: $other"))
                    }
         key = StorageKey(s"auctions/${auction.id}/images/$imageId")
-        _     <- runtime.objectStore.put(key, jpeg, Stream.emits(bytes))
-        first <- service.commitUpload(auction.id, seller.id, imageId, "wine.jpg")
+        _           <- runtime.objectStore.put(key, jpeg, Stream.emits(bytes))
+        first       <- service.commitUpload(auction.id, seller.id, imageId, "wine.jpg")
         committedId <- first match {
                          case CommitUploadResult.Committed(image) => IO.pure(image.id)
                          case other                               => IO.raiseError(new AssertionError(s"setup: $other"))
@@ -349,8 +349,8 @@ class AuctionImageServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matche
       val (service, runtime) = freshService
       val jpegBytes          = ImmutableImage.filled(120, 80, Color.RED).bytes(JpegWriter.Default)
       for {
-        seller  <- seedUser()
-        auction <- seedAuction(seller.id)
+        seller   <- seedUser()
+        auction  <- seedAuction(seller.id)
         attached <- service.attachImage(auction.id, seller.id, "wine.jpg", jpeg, Stream.emits(jpegBytes)).flatMap {
                       case AttachImageResult.Attached(img) => IO.pure(img)
                       case other                           => IO.raiseError(new AssertionError(s"setup: $other"))
@@ -372,15 +372,15 @@ class AuctionImageServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matche
       // 1200x600 sensor pixels, EXIF Orientation 6 ⇒ displays 600x1200
       val rotated = resourceBytes("/exif-orientation-6.jpg")
       for {
-        seller  <- seedUser()
-        auction <- seedAuction(seller.id)
+        seller   <- seedUser()
+        auction  <- seedAuction(seller.id)
         attached <- service.attachImage(auction.id, seller.id, "wine.jpg", jpeg, Stream.emits(rotated)).flatMap {
                       case AttachImageResult.Attached(img) => IO.pure(img)
                       case other                           => IO.raiseError(new AssertionError(s"setup: $other"))
                     }
         _        <- service.analyzeImageTask.execution(service.analyzeImageTask.instance(s"analyze-${attached.id}", attached.id))
         analyzed <- service.listImages(auction.id).map(_.find(_.id == attached.id))
-        _ <- service.generateVariantTask
+        _        <- service.generateVariantTask
                .execution(service.generateVariantTask.instance(s"v-${attached.id}-medium", GenerateVariantPayload(attached.id, VariantSpec.Medium)))
         variants <- service.listImagesWithVariants(auction.id).map(_.find(_._1.id == attached.id).map(_._2).getOrElse(Nil))
       } yield {
@@ -399,8 +399,8 @@ class AuctionImageServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matche
       val (service, _) = freshService
       val jpegBytes    = ImmutableImage.filled(50, 50, Color.GREEN).bytes(JpegWriter.Default)
       for {
-        seller  <- seedUser()
-        auction <- seedAuction(seller.id)
+        seller   <- seedUser()
+        auction  <- seedAuction(seller.id)
         attached <- service.attachImage(auction.id, seller.id, "wine.jpg", jpeg, Stream.emits(jpegBytes)).flatMap {
                       case AttachImageResult.Attached(img) => IO.pure(img)
                       case other                           => IO.raiseError(new AssertionError(s"setup: $other"))
@@ -428,8 +428,8 @@ class AuctionImageServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matche
       val (service, _) = freshService
       val landscape    = ImmutableImage.filled(400, 200, Color.RED).bytes(JpegWriter.Default)
       for {
-        seller  <- seedUser()
-        auction <- seedAuction(seller.id)
+        seller   <- seedUser()
+        auction  <- seedAuction(seller.id)
         attached <- service.attachImage(auction.id, seller.id, "wine.jpg", jpeg, Stream.emits(landscape)).flatMap {
                       case AttachImageResult.Attached(img) => IO.pure(img)
                       case other                           => IO.raiseError(new AssertionError(s"setup: $other"))
@@ -454,8 +454,8 @@ class AuctionImageServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matche
       val (service, _) = freshService
       val landscape    = ImmutableImage.filled(2000, 1000, Color.GREEN).bytes(JpegWriter.Default)
       for {
-        seller  <- seedUser()
-        auction <- seedAuction(seller.id)
+        seller   <- seedUser()
+        auction  <- seedAuction(seller.id)
         attached <- service.attachImage(auction.id, seller.id, "wine.jpg", jpeg, Stream.emits(landscape)).flatMap {
                       case AttachImageResult.Attached(img) => IO.pure(img)
                       case other                           => IO.raiseError(new AssertionError(s"setup: $other"))
@@ -478,8 +478,8 @@ class AuctionImageServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matche
       val (service, _) = freshService
       val bytes        = ImmutableImage.filled(400, 200, Color.BLUE).bytes(JpegWriter.Default)
       for {
-        seller  <- seedUser()
-        auction <- seedAuction(seller.id)
+        seller   <- seedUser()
+        auction  <- seedAuction(seller.id)
         attached <- service.attachImage(auction.id, seller.id, "wine.jpg", jpeg, Stream.emits(bytes)).flatMap {
                       case AttachImageResult.Attached(img) => IO.pure(img)
                       case other                           => IO.raiseError(new AssertionError(s"setup: $other"))
@@ -525,8 +525,8 @@ class AuctionImageServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matche
     "return Streamed result when the image exists in the given auction" in {
       val (service, _) = freshService
       for {
-        seller  <- seedUser()
-        auction <- seedAuction(seller.id)
+        seller   <- seedUser()
+        auction  <- seedAuction(seller.id)
         attached <- attach(service, auction.id, seller.id).flatMap {
                       case AttachImageResult.Attached(image) => IO.pure(image)
                       case other                             => IO.raiseError(new AssertionError(s"setup: $other"))

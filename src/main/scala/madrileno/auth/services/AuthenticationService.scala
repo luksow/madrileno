@@ -86,7 +86,7 @@ class AuthenticationService(
       _        <- userRepository.create(user, now)
       _        <- userAuthRepository.save(userAuth, now)
       _        <- logger.info(s"Created new user: $user via ${verifiedToken.provider} (${verifiedToken.providerUserId})")
-      _ <- user.emailAddress.fold(IO.unit) { email =>
+      _        <- user.emailAddress.fold(IO.unit) { email =>
              mailer.sendTransactionally(to = List(email.toString), template = WelcomeEmailTemplate(user.fullName), lang = Language.En).void
            }
       tokens <- generateTokens(user.id, command.userAgent, command.ipAddress, now, AuthenticationResult.UserCreated.apply)

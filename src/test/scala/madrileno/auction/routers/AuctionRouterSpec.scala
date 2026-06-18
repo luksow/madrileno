@@ -172,7 +172,7 @@ class AuctionRouterSpec extends BaseRouteSpec with TestApplicationLoader {
     )(
       withSetup {
         val seller = TestData.user()
-        val _ = application.transactor
+        val _      = application.transactor
           .inSession(
             seedUser(seller) *> seedAuction(TestData.randomAuctionId(), seller.id) *> seedAuction(TestData.randomAuctionId(), seller.id) *>
               seedAuction(TestData.randomAuctionId(), seller.id)
@@ -341,7 +341,7 @@ class AuctionRouterSpec extends BaseRouteSpec with TestApplicationLoader {
           page1.body.hasMore shouldBe true
 
           val afterId = page1.body.items.last.id
-          val page2 = allRoutes.orNotFound
+          val page2   = allRoutes.orNotFound
             .run(Request[IO](GET, Uri.unsafeFromString(s"/v1/auctions/${auction.id}/bids?limit=1&after-id=$afterId")))
             .unsafeRunSync()
             .as[Cursor[BidHistoryEntryDto]]

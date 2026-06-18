@@ -17,7 +17,7 @@ class UserAuthenticator(jwtService: JwtService)(using TelemetryContext)
       case Some(credentials: Credentials.Token) if credentials.authScheme == AuthScheme.Bearer =>
         jwtService.decode[AuthContext](credentials.token) match {
           case DecodingResult.Decoded(authContext) => IO.pure(Right(authContext))
-          case DecodingResult.InvalidToken(t) =>
+          case DecodingResult.InvalidToken(t)      =>
             logger.warn(t)(s"Invalid token: $credentials").as(AppChallenge)
           case DecodingResult.ParsingFailure(t) =>
             logger.warn(t)(s"Token parsing failure: $credentials").as(AppChallenge)

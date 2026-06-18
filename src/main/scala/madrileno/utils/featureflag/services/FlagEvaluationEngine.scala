@@ -46,12 +46,12 @@ object FlagEvaluationEngine {
     case IntGreaterThan(attr, v)   => attr.lookup(context).flatMap(_.toIntOption).exists(_ > v)
     case IntLessThan(attr, v)      => attr.lookup(context).flatMap(_.toIntOption).exists(_ < v)
     case BoolEquals(attr, v)       => attr.lookup(context).flatMap(_.toBooleanOption).exists(_ == v)
-    case SegmentMatch(name) =>
+    case SegmentMatch(name)        =>
       !visitedSegments(name) && segments.get(name).exists(_.conditions.forall(matches(_, segments, context, visitedSegments + name)))
   }
 
   private def applyOutcome(outcome: RuleOutcome, context: EvaluationContext): Option[Result] = outcome match {
-    case FixedValue(value) => Some(Result(value, EvaluationReason.TargetingMatch))
+    case FixedValue(value)                            => Some(Result(value, EvaluationReason.TargetingMatch))
     case PercentageRollout(percentage, seed, onMatch) =>
       if (inBucket(seed, context.targetingKey, percentage)) Some(Result(onMatch, EvaluationReason.Split))
       else None

@@ -40,7 +40,7 @@ class AuthRouter(authenticationService: AuthenticationService, override protecte
               case AuthenticationResult.UserCreated(jwt, rt)   => Ok -> AuthenticatedResponse(jwt, rt.id, userCreated = true)
               case AuthenticationResult.UserBlocked            => error(Locked, "user-blocked", "User is blocked")
               case AuthenticationResult.InvalidToken           => error(Unauthorized, "invalid-token", "Invalid Firebase token")
-              case AuthenticationResult.ProviderUnavailable =>
+              case AuthenticationResult.ProviderUnavailable    =>
                 error(ServiceUnavailable, "provider-unavailable", "Firebase authentication is not configured")
             }
         }

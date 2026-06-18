@@ -24,7 +24,7 @@ class ConfigAdminRouter(merged: Config, redactedPaths: Set[String]) extends Base
 }
 
 object ConfigAdminRouter {
-  private val Redacted = Json.fromString("[REDACTED]")
+  private val Redacted                     = Json.fromString("[REDACTED]")
   private val DefaultKeywords: Set[String] =
     Set("password", "secret", "credential", "access-key", "api-key", "private-key", "token", "passphrase")
 
@@ -56,7 +56,7 @@ object ConfigAdminRouter {
       .map { case (k, v) =>
         val childPath  = if (path.isEmpty) k else s"$path.$k"
         val keyRedacts = shouldRedact(k, childPath, redactedPaths)
-        val rendered = v.valueType match {
+        val rendered   = v.valueType match {
           case ConfigValueType.OBJECT => walk(v, childPath, redactedPaths, parentRedactsPrimitives = false)
           case ConfigValueType.LIST   => walk(v, childPath, redactedPaths, parentRedactsPrimitives = keyRedacts)
           case _                      => if (keyRedacts) Redacted else walk(v, childPath, redactedPaths, parentRedactsPrimitives = false)
@@ -87,7 +87,7 @@ object ConfigAdminRouter {
       })
     case _ if parentRedactsPrimitives => Redacted
     case ConfigValueType.STRING       => Json.fromString(String.valueOf(value.unwrapped()))
-    case ConfigValueType.BOOLEAN =>
+    case ConfigValueType.BOOLEAN      =>
       value.unwrapped() match {
         case b: java.lang.Boolean => Json.fromBoolean(b)
         case other                => Json.fromString(String.valueOf(other))

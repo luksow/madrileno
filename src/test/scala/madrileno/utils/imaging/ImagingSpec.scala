@@ -18,7 +18,7 @@ class ImagingSpec extends AsyncWordSpec with AsyncIOSpec with Matchers {
     color: Color,
     format: ImageFormat
   ): ByteVector = {
-    val image = ImmutableImage.filled(width, height, color)
+    val image  = ImmutableImage.filled(width, height, color)
     val writer = format match {
       case ImageFormat.Jpeg => JpegWriter.Default
       case ImageFormat.Png  => PngWriter.MaxCompression

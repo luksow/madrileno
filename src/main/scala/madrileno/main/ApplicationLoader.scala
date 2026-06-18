@@ -107,7 +107,7 @@ class ApplicationLoader(
   private lazy val baklavaHttpRoutes: HttpRoutes[IO] = BaklavaRoutes.routes()
   private val baklavaPathSegments: Set[String]       = Set("openapi", "swagger", "swagger-ui", "docs")
   private val openApiSpecFile: File                  = new File("target/baklava/openapi/openapi.yml")
-  private val specNotGeneratedHtml: String =
+  private val specNotGeneratedHtml: String           =
     """<!doctype html><meta charset="utf-8"><title>Swagger UI — not generated yet</title>
       |<body style="font-family:system-ui,sans-serif;max-width:40rem;margin:4rem auto;line-height:1.6">
       |<h1>OpenAPI spec not generated yet</h1>
@@ -118,7 +118,7 @@ class ApplicationLoader(
   lazy val baklavaDocs: Route = httpRoutesOf {
     case req if req.uri.path.segments.headOption.exists(_.encoded == "swagger") =>
       IO.blocking(openApiSpecFile.exists()).flatMap {
-        case true => baklavaHttpRoutes.run(req).getOrElseF(IO.pure(Response[IO](Status.NotFound)))
+        case true  => baklavaHttpRoutes.run(req).getOrElseF(IO.pure(Response[IO](Status.NotFound)))
         case false =>
           IO.pure(
             Response[IO](Status.Ok)

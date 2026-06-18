@@ -17,7 +17,7 @@ class UserRouterSpec extends BaseRouteSpec with TestApplicationLoader {
 
   private def seedUser(): User = {
     val user = TestData.user()
-    val _ = application.transactor
+    val _    = application.transactor
       .inTransaction(application.userRepository.create(user, Instant.now()))
       .unsafeRunSync()
     user

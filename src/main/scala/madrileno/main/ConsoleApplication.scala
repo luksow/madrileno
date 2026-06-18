@@ -64,7 +64,7 @@ object ConsoleApplication {
     // Single allocation, single release. Shutdown hook runs the release on JVM exit
     // so connections / supervisors close cleanly.
     val (app, release) = program.allocated.unsafeRunSync()
-    val _ = sys.addShutdownHook {
+    val _              = sys.addShutdownHook {
       try release.unsafeRunSync()
       catch { case _: Throwable => () }
     }

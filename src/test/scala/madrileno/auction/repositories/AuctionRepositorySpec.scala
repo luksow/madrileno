@@ -30,7 +30,7 @@ class AuctionRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matchers
     override protected def keysetCursor: CursorRequest[(Instant, AuctionId)]   = cursor
     override protected def keysetColumns: (Column[Instant], Column[AuctionId]) = (AuctionRowTable.createdAt, AuctionRowTable.id)
     override protected def keysetDirection: SortDirection                      = direction
-    override protected def baseFilterFragment: AppliedFragment =
+    override protected def baseFilterFragment: AppliedFragment                 =
       fromPredicates((p.equal(sellerId) -> AuctionRowTable.sellerId, p.isNull[Instant] -> AuctionRowTable.deletedAt))
   }
 
@@ -126,10 +126,10 @@ class AuctionRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matchers
     }
 
     "findPageByFilter breaks sort-key ties with the primary key, following the sort direction" in withRollback {
-      val seller = TestData.user()
-      val at     = Instant.parse("2026-02-01T00:00:00Z")
-      val a      = TestData.auction(sellerId = seller.id, createdAt = at)
-      val b      = TestData.auction(sellerId = seller.id, createdAt = at)
+      val seller                       = TestData.user()
+      val at                           = Instant.parse("2026-02-01T00:00:00Z")
+      val a                            = TestData.auction(sellerId = seller.id, createdAt = at)
+      val b                            = TestData.auction(sellerId = seller.id, createdAt = at)
       def filterBy(dir: SortDirection) =
         AuctionRowFilter(sellerId = p.equal(seller.id), page = Some(PageRequest(Limit(10), Offset(0), AuctionSortField.CreatedAt, dir)))
       for {
@@ -274,7 +274,7 @@ class AuctionRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matchers
     }
 
     "store and retrieve all wine properties correctly" in withRollback {
-      val seller = TestData.user()
+      val seller  = TestData.user()
       val auction = TestData.auction(
         sellerId = seller.id,
         wineName = WineName("Romanée-Conti"),

@@ -36,7 +36,7 @@ class EventBusSpec extends AsyncWordSpec with AsyncIOSpec with Matchers {
     "not replay events to subscribers that connect later" in {
       val bus = EventBusRuntime.local.topic[Event]("test", maxQueued = 64)
       (for {
-        _ <- bus.publish(Event(1)) // published before anyone subscribes
+        _     <- bus.publish(Event(1)) // published before anyone subscribes
         after <- bus.subscribeAwait.use { stream =>
                    bus.publish(Event(2)) *> stream.take(1).compile.toList
                  }

@@ -143,12 +143,12 @@ class AuctionRepository {
     page: PageRequest[AuctionSortField]
   ): DB[(List[(Auction, Price)], Long)] = {
     val session = summon[Session[IO]]
-    val filter =
+    val filter  =
       AuctionRowFilter(status = status.fold(p.any[AuctionStatus])(p.equal), sellerId = sellerId.fold(p.any[UserId])(p.equal), page = Some(page))
-    val applied  = filter.filterFragment
-    val orderBy  = filter.orderByFragment
-    val offLim   = filter.offsetLimitFragment
-    val rowCodec = AuctionRowTable.c ~ BidRowTable.amount.c
+    val applied   = filter.filterFragment
+    val orderBy   = filter.orderByFragment
+    val offLim    = filter.offsetLimitFragment
+    val rowCodec  = AuctionRowTable.c ~ BidRowTable.amount.c
     val rowsQuery = sql"""
       SELECT ${AuctionRowTable.*("a")}, COALESCE(b.amount, a.${AuctionRowTable.startingPrice.n})
       FROM ${AuctionRowTable.n} a
@@ -176,7 +176,7 @@ class AuctionRepository {
 
   def update[E](id: AuctionId, f: Auction => Either[E, Auction]): DBInTransaction[Option[Either[E, Auction]]] =
     findForUpdate(id).flatMap {
-      case None => IO.pure(None)
+      case None          => IO.pure(None)
       case Some(auction) =>
         f(auction) match {
           case Left(e)        => IO.pure(Some(Left(e)))

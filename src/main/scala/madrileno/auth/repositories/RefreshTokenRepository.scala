@@ -44,7 +44,7 @@ private[repositories] object RefreshTokenRowTable
   override val id: Column[RefreshTokenId] = column("id", uuid.as[RefreshTokenId])
   val userId: Column[UserId]              = column("user_id", uuid.as[UserId])
   val userAgent: Column[UserAgent]        = column("user_agent", text.as[UserAgent])
-  val ipAddress: Column[IpAddress] = column(
+  val ipAddress: Column[IpAddress]        = column(
     "ip_address",
     text.imap(IpAddress.fromString.andThen(_.getOrElse(throw new IllegalStateException("Invalid IP address format"))))(_.toString)
   )

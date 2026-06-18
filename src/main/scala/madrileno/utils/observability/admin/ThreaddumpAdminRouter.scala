@@ -24,7 +24,7 @@ class ThreaddumpAdminRouter(runtime: IORuntime, override protected val rateLimit
     val infos      = mx.dumpAllThreads(mx.isObjectMonitorUsageSupported, mx.isSynchronizerUsageSupported)
     val snapshot   = runtime.liveFiberSnapshot()
     val jvmThreads = infos.toList.map(JvmThreadDto.apply).sortBy(_.threadName)
-    val workers = snapshot.workers.toList
+    val workers    = snapshot.workers.toList
       .map { case (worker, fibers) =>
         WorkerFibersDto(worker.thread.getName, worker.index, fibers.map(FiberInfoDto.apply))
       }

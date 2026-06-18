@@ -60,7 +60,7 @@ class FeatureFlagRouterSpec extends BaseRouteSpec with TestApplicationLoader {
   describe("attribute-based targeting in the bootstrap") {
     it("returns a verified-users-targeted flag as true for verified users and false otherwise") {
       val segment = SegmentName("verified-users")
-      val _ = application.featureFlagService
+      val _       = application.featureFlagService
         .createSegment(CreateSegmentCommand(segment, FlagDescription(""), List(RuleCondition.StringEquals(AttributeName("emailVerified"), "true"))))
         .unsafeRunSync()
       val rule = RuleData(

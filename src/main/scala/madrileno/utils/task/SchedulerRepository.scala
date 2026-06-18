@@ -34,7 +34,7 @@ object TaskRow {
       case Schedule.OnceAt(at)                               => at
       case Schedule.RecurringWithFixedRate(_, initialDelay)  => now.plusMillis(initialDelay.toMillis)
       case Schedule.RecurringWithFixedDelay(_, initialDelay) => now.plusMillis(initialDelay.toMillis)
-      case Schedule.Cron(expression) =>
+      case Schedule.Cron(expression)                         =>
         expression
           .nextFrom(now)
           .getOrElse(throw new IllegalStateException(s"Failed to calculate next execution time for cron expression: ${expression} at $now"))
@@ -163,7 +163,7 @@ private[task] class SchedulerRepository(
 
     clock.realTimeInstant.flatMap { now =>
       val taskData = newPayload.fold(task.descriptor.encoder(task.payload))(task.descriptor.encoder(_))
-      val command =
+      val command  =
         sql"""UPDATE ${table.n} SET
           ${table.picked.n} = false,
           ${table.pickedBy.n} = NULL,

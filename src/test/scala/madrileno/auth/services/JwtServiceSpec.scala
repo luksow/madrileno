@@ -36,7 +36,7 @@ class JwtServiceSpec extends AnyWordSpec with Matchers {
 
       val parts       = jwt.toString.split('.')
       val payloadJson = new String(Base64.getUrlDecoder.decode(parts(1)), StandardCharsets.UTF_8)
-      val exp = parser.parse(payloadJson).flatMap(_.hcursor.get[Long]("exp")) match {
+      val exp         = parser.parse(payloadJson).flatMap(_.hcursor.get[Long]("exp")) match {
         case Right(value) => value
         case Left(error)  => fail(s"Failed to parse exp claim: $error")
       }

@@ -48,8 +48,8 @@ class AuctionService(
     transactor
       .inSession {
         for {
-          id  <- IdGenerator.generateId(AuctionId)
-          now <- Clock[IO].realTimeInstant
+          id     <- IdGenerator.generateId(AuctionId)
+          now    <- Clock[IO].realTimeInstant
           result <- Auction.open(
                       id = id,
                       sellerId = command.sellerId,
@@ -136,7 +136,7 @@ class AuctionService(
     transactor
       .inSession(auctionRepository.find(command.auctionId))
       .flatMap {
-        case None => IO.pure(PlaceBidResult.AuctionNotFound)
+        case None          => IO.pure(PlaceBidResult.AuctionNotFound)
         case Some(auction) =>
           featureFlagService
             .evaluateInt(FlagKey("auction.min-bid-increment-pct"), bidContext(command.bidderId, auction), default = 0)
@@ -149,7 +149,7 @@ class AuctionService(
                   previousHighest <- bidRepository.highestBid(command.auctionId).seal
                   now             <- Clock[IO].realTimeInstant.seal
                   bidId           <- IdGenerator.generateId(BidId).seal
-                  bid <- locked
+                  bid             <- locked
                            .placeBid(command.bidderId, command.amount, bidId, now, previousHighest, minIncrementPct)
                            .left
                            .map {
@@ -219,7 +219,7 @@ class AuctionService(
         now     <- Clock[IO].realTimeInstant
         _       <- logger.info(s"Checking for expired auctions at $now")
         expired <- transactor.inSession(auctionRepository.listExpired(now))
-        _ <- expired.traverse_ { auctionId =>
+        _       <- expired.traverse_ { auctionId =>
                closeOne(auctionId, now).attempt.flatMap {
                  case Left(err) => logger.warn(err)(s"Failed to close auction $auctionId — skipping")
                  case Right(_)  => IO.unit
@@ -238,7 +238,7 @@ class AuctionService(
       prev  <- IO.pure(previousHighest).valueOr(())
       user  <- userRepository.find(prev.bidderId).valueOr(())
       email <- IO.pure(user.emailAddress).valueOr(())
-      _ <- mailer
+      _     <- mailer
              .sendTransactionally(
                to = List(email.toString),
                template = OutbidEmailTemplate(auction.wineName, newBidAmount, auction.currency),
@@ -256,7 +256,7 @@ class AuctionService(
   ): DBInTransaction[Unit] = {
     val sellerNotification: DBInTransaction[Unit] = (for {
       email <- IO.pure(seller.flatMap(_.emailAddress)).valueOr(())
-      _ <- mailer
+      _     <- mailer
              .sendTransactionally(
                to = List(email.toString),
                template = AuctionClosedEmailTemplate.forSeller(auction.wineName, winningBid.map(_.amount), auction.currency),
@@ -270,7 +270,7 @@ class AuctionService(
       bid    <- IO.pure(winningBid).valueOr(())
       winner <- userRepository.find(bid.bidderId).valueOr(())
       email  <- IO.pure(winner.emailAddress).valueOr(())
-      _ <- mailer
+      _      <- mailer
              .sendTransactionally(
                to = List(email.toString),
                template = AuctionClosedEmailTemplate.forWinner(auction.wineName, bid.amount, auction.currency),

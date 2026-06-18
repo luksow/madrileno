@@ -173,7 +173,7 @@ class AuctionImageRepository {
     )
 
   def saveVariant(variant: AuctionImageVariant): DB[Unit] = {
-    val table = AuctionImageVariantRowTable
+    val table   = AuctionImageVariantRowTable
     val command = sql"""INSERT INTO ${table.n} (${table.*}) VALUES (${table.c})
                         ON CONFLICT (${table.auctionImageId.n}, ${table.spec.n}) DO NOTHING""".command
     summon[Session[IO]].execute(command)(AuctionImageVariantRow(variant)).void
@@ -191,7 +191,7 @@ class AuctionImageRepository {
       .map(_.map(_.toAuctionImageVariant))
 
   def bulkSetPositions(auctionId: AuctionId, updates: List[(AuctionImageId, ImagePosition)]): DBInTransaction[Unit] = {
-    val table = AuctionImageRowTable
+    val table   = AuctionImageRowTable
     val command = sql"""UPDATE ${table.n} SET ${table.position.n} = $int4
                         WHERE ${table.id.n} = ${table.id.c}
                           AND ${table.auctionId.n} = ${table.auctionId.c}
@@ -213,11 +213,10 @@ class AuctionImageRepository {
       override val table: AuctionImageRowTable.type = AuctionImageRowTable
     }
 
-  private val variantRepository
-    : IdRepository[AuctionImageVariantRow, AuctionImageVariantId] & ForeignIdRepository[AuctionImageVariantRow, AuctionImageId] & FilteringRepository[
-      AuctionImageVariantRow,
-      AuctionImageVariantRowFilter
-    ] =
+  private val variantRepository: IdRepository[AuctionImageVariantRow, AuctionImageVariantId] & ForeignIdRepository[
+    AuctionImageVariantRow,
+    AuctionImageId
+  ] & FilteringRepository[AuctionImageVariantRow, AuctionImageVariantRowFilter] =
     new IdRepository[AuctionImageVariantRow, AuctionImageVariantId](_.id)
       with ForeignIdRepository[AuctionImageVariantRow, AuctionImageId]
       with FilteringRepository[AuctionImageVariantRow, AuctionImageVariantRowFilter] {
