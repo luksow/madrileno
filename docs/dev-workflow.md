@@ -98,17 +98,15 @@ Apply pending migrations:
 > runMain madrileno.main.MigrateMain
 ```
 
-That's the app's own `IOApp` — the same one the Docker image ships as `bin/migrate-main` for production deploys ([deployment.md](deployment.md)) — so it reads `application.conf` with `.env` already injected (`PG_HOST` / `PG_PORT` / `PG_DATABASE` / `PG_USER` / `PG_PASSWORD`).
-
-The `flyway-sbt` tasks are also there for inspection / cleanup:
+That's the app's own `IOApp` — the same one the Docker image ships as `bin/migrate-main` for production deploys ([deployment.md](deployment.md)) — so it reads `application.conf` with `.env` already injected (`PG_HOST` / `PG_PORT` / `PG_DATABASE` / `PG_USER` / `PG_PASSWORD`). It takes a subcommand; `migrate` is the default:
 
 ```
-> flywayInfo                               // list applied / pending / out-of-order
-> flywayValidate                           // verify checksums match the files
-> flywayClean                              // DROP every table; only on a dev DB
+> runMain madrileno.main.MigrateMain info       // list applied / pending migrations
+> runMain madrileno.main.MigrateMain validate   // verify checksums match the files
+> runMain madrileno.main.MigrateMain clean      // DROP every table; only on a dev DB
 ```
 
-There's a `flywayMigrate` too, but it evaluates `sys.env` at build-load time — *before* sbt-dotenv injects `.env` — so it only sees `PG_*` if your shell already has them. Use `runMain madrileno.main.MigrateMain` unless you have a reason not to.
+A single env-correct entry point — there's no `flyway-sbt` plugin to fall back to (its tasks read `sys.env` at build-load time, before sbt-dotenv injects `.env`, so they couldn't see your `PG_*` anyway).
 
 Seed dev data:
 
@@ -149,7 +147,7 @@ The sbt JVM's heap lives in `.jvmopts` (committed) — bump `-Xmx` there and res
 You've opted into `SBT_TPOLECAT_DEV=true` and the local build is in relaxed mode. Reproduce CI strictness with `SBT_TPOLECAT_DEV= sbt --client compile`, or comment out `SBT_TPOLECAT_DEV` in your `.env` to revert to the strict default.
 
 **A migration fails with a checksum mismatch.**
-You edited a migration that's already been applied. Either roll back the file change or `flywayClean` your dev DB and re-migrate (only on dev — never on shared environments).
+You edited a migration that's already been applied. Either roll back the file change or `runMain madrileno.main.MigrateMain clean` your dev DB and re-migrate (only on dev — never on shared environments).
 
 **OpenObserve traces tab is empty.**
 Streams are created on first ingest; hit the app a few times, refresh, give it a moment. If it's still empty, check `OTEL_EXPORTER_OTLP_*` in `.env`.

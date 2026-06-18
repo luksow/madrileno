@@ -51,18 +51,19 @@ The sample is wired against the docker-compose ports above — including a worki
 
 ### 3. Apply database migrations
 
-Two ways:
-
 ```bash
-sbt "runMain madrileno.main.MigrateMain"   # recommended
-sbt flywayMigrate
+sbt "runMain madrileno.main.MigrateMain"
 ```
 
-`runMain madrileno.main.MigrateMain` is the app's own `IOApp` — same as `bin/migrate-main` in the Docker image — so it reads `application.conf` with `.env` injected by sbt-dotenv. Works out of the box on the default `.env`.
+`MigrateMain` is the app's own `IOApp` — same as `bin/migrate-main` in the Docker image — so it reads `application.conf` with `.env` injected by sbt-dotenv. Works out of the box on the default `.env`. It takes a subcommand (`migrate` is the default):
 
-`sbt flywayMigrate` is the sbt-flyway plugin task. It evaluates `sys.env` at build-load time — *before* sbt-dotenv injects `.env` — so it only works if your shell already has `PG_HOST` / `PG_PORT` / `PG_DATABASE` / `PG_USER` / `PG_PASSWORD` exported. The other plugin tasks (`flywayInfo` / `flywayValidate` / `flywayClean`) have the same constraint but are handy for inspection regardless.
+```bash
+sbt "runMain madrileno.main.MigrateMain info"       # list applied / pending migrations
+sbt "runMain madrileno.main.MigrateMain validate"   # verify checksums match the files
+sbt "runMain madrileno.main.MigrateMain clean"      # DROP every table — dev DB only
+```
 
-Run a migration every time you add one under `src/main/resources/db/migration/`.
+Run `migrate` every time you add one under `src/main/resources/db/migration/`.
 
 ### 4. Run the app
 
@@ -98,7 +99,7 @@ curl http://localhost:9000/v1/health-check
 - **sbt caches `.env` at JVM startup.** If you change `.env`, exit sbt and start it again. Same goes for the long-lived sbt server (`~/.sbt/1.0/server/...`).
 - **`docker compose down` keeps volumes; `docker compose down -v` wipes them.** Wipe when you want a clean PG, change OpenObserve credentials, or cycle a corrupted state.
 - **Tests don't use the docker-compose stack.** Testcontainers spins up its own. Don't worry about polluting your dev DB during a test run.
-- **Migrations don't run automatically when the app starts.** Run `sbt flywayMigrate` after adding one or after wiping volumes.
+- **Migrations don't run automatically when the app starts.** Run `sbt "runMain madrileno.main.MigrateMain"` after adding one or after wiping volumes.
 - **OpenObserve creates OTLP streams on first ingest.** If the Traces tab is empty right after boot, hit the app a few times, refresh, give it a moment.
 
 ## Documentation

@@ -161,12 +161,6 @@ inConfig(Test)(
   )
 )
 
-// flyway
-enablePlugins(FlywayPlugin)
-flywayUrl := s"jdbc:postgresql://${sys.env.getOrElse("PG_HOST", "localhost")}:${sys.env.getOrElse("PG_PORT", "5432")}/${sys.env.getOrElse("PG_DATABASE", "madrileno")}"
-flywayUser := sys.env.getOrElse("PG_USER", "postgres")
-flywayPassword := sys.env.getOrElse("PG_PASSWORD", "postgres")
-
 // Cache runtime classpath for `./scripts/dev-console.scala`.
 Compile / compile := {
   val r = (Compile / compile).value

@@ -11,7 +11,7 @@ You wrote SQL when you need it — for joins, aggregations, custom updates — b
 | Driver       | skunk                           | Pure-Scala async Postgres client. No JDBC, no blocking.       |
 | Pool         | `PgTransactor.resource`         | Built on skunk's session pool. `Main` constructs it as a `Resource`. |
 | Sessions     | `Transactor.{inSession, inTransaction}` | Acquires a session from the pool and runs `DB[A]` / `DBInTransaction[A]` blocks. |
-| Migrations   | Flyway                          | One-shot via `runMain madrileno.main.MigrateMain` (or the `flyway*` sbt tasks). Migrations live under `src/main/resources/db/migration/`. |
+| Migrations   | Flyway                          | One-shot via `runMain madrileno.main.MigrateMain` (`migrate` / `info` / `validate` / `clean`). Migrations live under `src/main/resources/db/migration/`. |
 | DSL          | `madrileno.utils.db.dsl`        | `Table`, `Column`, the four `*Repository` traits, codec helpers. |
 
 ## Sessions vs transactions
