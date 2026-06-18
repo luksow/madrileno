@@ -288,7 +288,8 @@ trait FilteringRepository[A, F <: SqlFilter] extends BaseRepository[A] {
     val limit                   = cursor.limit.unwrap
     session
       .execute(
-        sql"SELECT ${table.*} FROM ${table.n} WHERE ${baseFragment.fragment} ${keyset.fragment} $orderBy LIMIT $int8 ${lock.fragment}".query(table.c)
+        sql"SELECT ${table.*} FROM ${table.n} WHERE (${baseFragment.fragment}) ${keyset.fragment} $orderBy LIMIT $int8 ${lock.fragment}"
+          .query(table.c)
       )(baseFragment.argument, keyset.argument, (limit + 1).toLong)
       .map(rows => (rows.take(limit), rows.sizeIs > limit))
   }
