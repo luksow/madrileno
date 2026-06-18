@@ -126,4 +126,6 @@ Reference material lives in [`docs/`](docs/README.md). For day one, read in this
 - [`docs/principles.md`](docs/principles.md) — the five principles the codebase is built around.
 - [`docs/adding-a-module.md`](docs/adding-a-module.md) — vertical-slice walkthrough from migration to OpenAPI.
 
+Driving development with an AI assistant? [`docs/ai-assisted-dev.md`](docs/ai-assisted-dev.md) covers the Metals + madrileno MCP server setup (the build tools `CLAUDE.md` assumes).
+
 The [`docs/README.md`](docs/README.md) lists everything else by topic — stack (auth, scheduler, observability…), conventions (domain modeling, sealed monad, error handling), operations (configuration, deployment).

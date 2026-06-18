@@ -4,6 +4,7 @@
 !.scalafix.conf
 !.env.sample
 !.jvmopts
+!.mcp.json
 !.github
 !.github/**
 
