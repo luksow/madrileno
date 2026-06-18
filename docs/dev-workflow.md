@@ -142,6 +142,9 @@ Stale incremental compile state. Run `clean` then `compile`. If it still fails, 
 **`.env` change not picked up.**
 The dotenv plugin reads `.env` once at JVM startup. Restart sbt.
 
+**sbt or compilation dies with `OutOfMemoryError: Java heap space`.**
+The sbt JVM's heap lives in `.jvmopts` (committed) — bump `-Xmx` there and restart sbt. Setting `-Xmx` / `SBT_OPTS` in `.env` does nothing: `sbt-dotenv` injects `.env` into the *already-running* JVM, long after `-Xmx` is fixed at launch.
+
 **A test that passes locally fails in CI on a warning.**
 You've opted into `SBT_TPOLECAT_DEV=true` and the local build is in relaxed mode. Reproduce CI strictness with `SBT_TPOLECAT_DEV= sbt --client compile`, or comment out `SBT_TPOLECAT_DEV` in your `.env` to revert to the strict default.
 

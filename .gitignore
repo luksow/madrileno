@@ -3,6 +3,7 @@
 !.scalafmt.conf
 !.scalafix.conf
 !.env.sample
+!.jvmopts
 !.github
 !.github/**
 
