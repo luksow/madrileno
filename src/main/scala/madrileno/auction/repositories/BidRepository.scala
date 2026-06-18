@@ -5,6 +5,7 @@ import madrileno.auction.domain.*
 import madrileno.user.domain.UserId
 import madrileno.utils.db.dsl.*
 import madrileno.utils.db.transactor.DB
+import madrileno.utils.pagination.{Cursor, CursorRequest}
 import skunk.*
 import skunk.codec.all.*
 import skunk.implicits.*
@@ -60,6 +61,12 @@ class BidRepository {
 
   def listByAuction(auctionId: AuctionId): DB[List[Bid]] = {
     repository.findByFilter(BidRowFilter(auctionId = p.equal(auctionId))).map(_.map(_.toBid))
+  }
+
+  def pageByAuction(auctionId: AuctionId, cursor: CursorRequest[BidId]): DB[Cursor[Bid]] = {
+    repository.findCursorPageByKey(BidRowFilter(auctionId = p.equal(auctionId)), BidRowTable.id, cursor).map { case (rows, hasMore) =>
+      Cursor(rows.map(_.toBid), hasMore)
+    }
   }
 
   def highestBid(auctionId: AuctionId): DB[Option[Bid]] = {

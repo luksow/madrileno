@@ -7,6 +7,7 @@ import java.time.Instant
 import java.util.Currency
 
 final case class BidHistoryEntryDto(
+  id: BidId,
   amount: Price,
   currency: Currency,
   bidderRef: BidderRef,

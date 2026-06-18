@@ -16,7 +16,7 @@ import madrileno.utils.featureflag.domain.{AttributeName, AttributeValue, Evalua
 import madrileno.utils.featureflag.services.FeatureFlagService
 import madrileno.utils.mailer.{Language, Mailer}
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
-import madrileno.utils.pagination.{Page, PageRequest}
+import madrileno.utils.pagination.{Cursor, CursorRequest, Page, PageRequest}
 import madrileno.utils.task.{CronExpression, Schedule, Task}
 import pl.iterators.sealedmonad.syntax.*
 
@@ -37,6 +37,9 @@ class AuctionService(
   UUIDGen[IO],
   Clock[IO])
     extends LoggingSupport {
+
+  // Demo key: a real deployment would inject a server secret (env/config) — hardcoding it here makes the bidder pseudonym forgeable from public ids, which is fine for this showcase.
+  private val bidderRefSecret: String = "madrileno-demo-bidder-ref-key"
 
   private def publish(event: AuctionEvent): IO[Unit] =
     eventBus.publish(event).handleErrorWith(t => logger.warn(t)(s"Failed to publish $event"))
@@ -118,12 +121,14 @@ class AuctionService(
     }
   }
 
-  def listBids(auctionId: AuctionId): IO[Option[List[BidHistoryEntry]]] = {
+  def listBids(auctionId: AuctionId, cursor: CursorRequest[BidId]): IO[Option[Cursor[BidHistoryEntry]]] = {
     transactor.inSession {
       (for {
-        auction <- auctionRepository.find(auctionId).valueOr[Option[List[BidHistoryEntry]]](None)
-        bids    <- bidRepository.listByAuction(auctionId).seal
-      } yield Some(BidHistoryEntry.fromBids(bids, auction.currency))).run
+        auction <- auctionRepository.find(auctionId).valueOr[Option[Cursor[BidHistoryEntry]]](None)
+        page    <- bidRepository.pageByAuction(auctionId, cursor).seal
+      } yield Some(page.map { bid =>
+        BidHistoryEntry(bid.id, bid.amount, auction.currency, BidderRef.forBidder(bidderRefSecret, bid.auctionId, bid.bidderId), bid.createdAt)
+      })).run
     }
   }
 

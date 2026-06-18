@@ -3,16 +3,27 @@ package madrileno.auction.domain
 import madrileno.user.domain.UserId
 import pl.iterators.kebs.opaque.Opaque
 
+import java.nio.charset.StandardCharsets.UTF_8
 import java.time.Instant
 import java.util.{Currency, UUID}
+import javax.crypto.Mac
+import javax.crypto.spec.SecretKeySpec
 
 opaque type BidId = UUID
 object BidId extends Opaque[BidId, UUID]
 
-opaque type BidderRef = Int
-object BidderRef extends Opaque[BidderRef, Int] {
-  override def validate(value: Int): Either[String, BidderRef] =
-    if (value >= 1) Right(value) else Left("Bidder ref must be at least 1")
+opaque type BidderRef = String
+object BidderRef extends Opaque[BidderRef, String] {
+  def forBidder(
+    secret: String,
+    auctionId: AuctionId,
+    bidderId: UserId
+  ): BidderRef = {
+    val mac = Mac.getInstance("HmacSHA256")
+    mac.init(new SecretKeySpec(secret.getBytes(UTF_8), "HmacSHA256"))
+    val tag = mac.doFinal(s"${auctionId.unwrap}:${bidderId.unwrap}".getBytes(UTF_8))
+    BidderRef(tag.take(8).map(b => f"$b%02x").mkString)
+  }
 }
 
 final case class Bid(
@@ -23,15 +34,8 @@ final case class Bid(
   createdAt: Instant)
 
 final case class BidHistoryEntry(
+  id: BidId,
   amount: Price,
   currency: Currency,
   bidderRef: BidderRef,
   createdAt: Instant)
-
-object BidHistoryEntry {
-  def fromBids(bids: List[Bid], currency: Currency): List[BidHistoryEntry] = {
-    val byTime      = bids.sortBy(bid => (bid.createdAt.getEpochSecond, bid.createdAt.getNano, bid.id.toString))
-    val refByBidder = byTime.map(_.bidderId).distinct.zipWithIndex.map { case (bidderId, i) => bidderId -> BidderRef(i + 1) }.toMap
-    byTime.reverse.map(bid => BidHistoryEntry(bid.amount, currency, refByBidder(bid.bidderId), bid.createdAt))
-  }
-}

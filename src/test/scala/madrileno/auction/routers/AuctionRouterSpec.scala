@@ -10,11 +10,12 @@ import madrileno.user.domain.{User, UserId}
 import madrileno.utils.db.transactor.DB
 import madrileno.utils.http.Error
 import madrileno.utils.json.JsonProtocol.*
-import madrileno.utils.pagination.{Page, SortDirection}
-import org.http4s.EntityDecoder
+import madrileno.utils.pagination.{Cursor, Page, SortDirection}
 import org.http4s.Method.*
 import org.http4s.Status.*
 import org.http4s.circe.CirceEntityCodec.*
+import org.http4s.implicits.*
+import org.http4s.{EntityDecoder, Request, Uri}
 import pl.iterators.baklava.EmptyBody
 import pl.iterators.stir.server.Route
 
@@ -88,6 +89,18 @@ class AuctionRouterSpec extends BaseRouteSpec with TestApplicationLoader {
       .inSession {
         seedUser(seller) *> seedUser(bidder) *>
           seedAuction(id, seller.id).flatTap(_ => seedBid(id, bidder.id, amount))
+      }
+      .unsafeRunSync()
+  }
+
+  private def setupAuctionWithTwoBids(): Auction = {
+    val id    = TestData.randomAuctionId()
+    val older = TestData.bid(auctionId = id, bidderId = bidder.id, amount = Price(BigDecimal(200)), createdAt = Instant.parse("2026-01-01T00:00:01Z"))
+    val newer = TestData.bid(auctionId = id, bidderId = other.id, amount = Price(BigDecimal(210)), createdAt = Instant.parse("2026-01-01T00:00:02Z"))
+    application.transactor
+      .inSession {
+        seedUser(seller) *> seedUser(bidder) *> seedUser(other) *>
+          seedAuction(id, seller.id).flatTap(_ => bidRepository.save(older) *> bidRepository.save(newer))
       }
       .unsafeRunSync()
   }
@@ -308,21 +321,35 @@ class AuctionRouterSpec extends BaseRouteSpec with TestApplicationLoader {
   path("/v1/auctions/{auctionId}/bids")(
     supports(
       GET,
-      description = "List the bid history for an auction",
+      description = "List the bid history for an auction, newest-first, cursor-paginated by bid id.",
       summary = "Unauthenticated: bids newest-first; bidder identity is a per-auction pseudonym (bidderRef)",
       pathParameters = p[AuctionId]("auctionId"),
+      queryParameters = (
+        q[Option[Int]]("limit", "Page size, 1–100 (default 20; out-of-range values are clamped)"),
+        q[Option[BidId]]("after-id", "Cursor: return bids older than this bid id (omit for the first page)")
+      ),
       tags = Seq("Auctions")
     )(
-      withSetup(setupAuctionWithExistingBid(Price(BigDecimal(200))))
-        .request(auction => onRequest(pathParameters = auction.id))
-        .respondsWith[List[BidHistoryEntryDto]](Ok, description = "Bid history (newest first)")
-        .assert { case (ctx, _) =>
-          val response = ctx.performRequest(allRoutes)
-          response.body.map(_.amount) shouldBe List(Price(BigDecimal(200)))
-          response.body.map(_.bidderRef.unwrap) shouldBe List(1)
-          response.body.map(_.currency).toSet shouldBe Set(Currency.getInstance("EUR"))
+      withSetup(setupAuctionWithTwoBids())
+        .request(auction => onRequest(pathParameters = auction.id, queryParameters = (Some(1), None)))
+        .respondsWith[Cursor[BidHistoryEntryDto]](Ok, description = "A page of bid history (newest first)")
+        .assert { case (ctx, auction) =>
+          val page1 = ctx.performRequest(allRoutes)
+          page1.body.items.map(_.amount) shouldBe List(Price(BigDecimal(210)))
+          page1.body.items.map(_.bidderRef.unwrap).foreach(_ should not be empty)
+          page1.body.items.map(_.currency).toSet shouldBe Set(Currency.getInstance("EUR"))
+          page1.body.hasMore shouldBe true
+
+          val afterId = page1.body.items.last.id
+          val page2 = allRoutes.orNotFound
+            .run(Request[IO](GET, Uri.unsafeFromString(s"/v1/auctions/${auction.id}/bids?limit=1&after-id=$afterId")))
+            .unsafeRunSync()
+            .as[Cursor[BidHistoryEntryDto]]
+            .unsafeRunSync()
+          page2.items.map(_.amount) shouldBe List(Price(BigDecimal(200)))
+          page2.hasMore shouldBe false
         },
-      onRequest(pathParameters = TestData.randomAuctionId())
+      onRequest(pathParameters = TestData.randomAuctionId(), queryParameters = (None, None))
         .respondsWith[Error[Unit]](NotFound, description = "Auction not found")
         .assert { ctx =>
           val response = ctx.performRequest(allRoutes)

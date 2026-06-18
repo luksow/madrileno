@@ -18,7 +18,10 @@ class PaginationDirectivesSpec extends AnyFunSpec with Matchers {
     handleRejections(RejectionHandler.newBuilder().result().seal) {
       (get & path("cursor") & cursorPaginated[Int, Int]("after-seq", "after-id")) { req =>
         complete((req.limitValue, req.after))
-      }
+      } ~
+        (get & path("by-key") & cursorPaginatedByKey[Int]("after-id")) { req =>
+          complete((req.limitValue, req.after))
+        }
     }
 
   private def run(uri: String): Response[IO] =
@@ -26,6 +29,9 @@ class PaginationDirectivesSpec extends AnyFunSpec with Matchers {
 
   private def cursorOf(uri: String): (Int, Option[(Int, Int)]) =
     run(uri).as[(Int, Option[(Int, Int)])].unsafeRunSync()
+
+  private def keyCursorOf(uri: String): (Int, Option[Int]) =
+    run(uri).as[(Int, Option[Int])].unsafeRunSync()
 
   describe("cursorPaginated") {
     it("clamps an out-of-range limit and defaults the cursor to None") {
@@ -41,6 +47,15 @@ class PaginationDirectivesSpec extends AnyFunSpec with Matchers {
     it("rejects a half cursor with 400") {
       run("/cursor?after-id=20").status shouldBe Status.BadRequest
       run("/cursor?after-seq=10").status shouldBe Status.BadRequest
+    }
+  }
+
+  describe("cursorPaginatedByKey") {
+    it("clamps the limit and parses the single after key") {
+      keyCursorOf("/by-key?limit=5&after-id=42") shouldBe ((5, Some(42)))
+      keyCursorOf("/by-key?limit=999") shouldBe ((100, None))
+      keyCursorOf("/by-key?limit=0") shouldBe ((1, None))
+      keyCursorOf("/by-key") shouldBe ((20, None))
     }
   }
 }
