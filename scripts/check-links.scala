@@ -1,6 +1,6 @@
 #!/usr/bin/env -S scala-cli shebang
 
-//> using scala 3.8.2
+//> using scala 3.8.4
 //> using jvm 21
 //> using toolkit default
 

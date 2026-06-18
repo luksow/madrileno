@@ -1,10 +1,10 @@
 #!/usr/bin/env -S scala-cli shebang
 
-//> using scala 3.8.2
+//> using scala 3.8.4
 //> using jvm 21
 //> using toolkit default
 //> using dep com.softwaremill.chimp::core:0.1.8
-//> using dep com.softwaremill.sttp.tapir::tapir-netty-server-sync:1.13.18
+//> using dep com.softwaremill.sttp.tapir::tapir-netty-server-sync:1.13.22
 
 import chimp.*
 import sttp.tapir.*

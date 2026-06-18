@@ -185,6 +185,7 @@ class ApplicationLoader(
     case 3 => logger.info(ctx)(_)
     case 2 => logger.warn(ctx)(_)
     case 1 => logger.error(ctx)(_)
+    case _ => _ => IO.unit
   }
 
   def routes(wsb: WebSocketBuilder2[IO]): Route = {
