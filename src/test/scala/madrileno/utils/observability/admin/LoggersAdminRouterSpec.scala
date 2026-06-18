@@ -12,7 +12,7 @@ import org.http4s.{BasicCredentials, Headers, Method, Request, Status, Uri}
 import org.scalatest.BeforeAndAfterEach
 import org.scalatest.OptionValues.*
 import org.slf4j.LoggerFactory
-import pl.iterators.baklava.{EmptyBody, HttpBasic, SecurityScheme}
+import pl.iterators.baklava.{HttpBasic, SecurityScheme}
 import pl.iterators.stir.server.Route
 
 class LoggersAdminRouterSpec extends BaseRouteSpec with TestApplicationLoader with BeforeAndAfterEach {

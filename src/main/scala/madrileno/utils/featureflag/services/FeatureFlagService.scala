@@ -116,7 +116,7 @@ class FeatureFlagServiceLive(
       .inTransaction {
         (for {
           flag <- buildFlag(command).seal[CreateFlagResult].attempt(f => validate(f).left.map(CreateFlagResult.Invalid.apply).map(_ => f))
-          _ <- repository.insert(flag).seal[CreateFlagResult].attempt {
+          _    <- repository.insert(flag).seal[CreateFlagResult].attempt {
                  case true  => Right(())
                  case false => Left(CreateFlagResult.KeyExists)
                }
@@ -202,7 +202,7 @@ class FeatureFlagServiceLive(
       .inTransaction {
         (for {
           segment <- buildSegment(command).seal[CreateSegmentResult]
-          _ <- segmentRepository.insert(segment).seal[CreateSegmentResult].attempt {
+          _       <- segmentRepository.insert(segment).seal[CreateSegmentResult].attempt {
                  case true  => Right(())
                  case false => Left(CreateSegmentResult.NameExists)
                }
@@ -246,7 +246,7 @@ class FeatureFlagServiceLive(
       .flatMap { context =>
         transactor.inSession {
           repository.findByKey(command.key).flatMap {
-            case None => IO.pure(None)
+            case None       => IO.pure(None)
             case Some(flag) =>
               segmentRepository.findAll.map(segments => Some(FlagEvaluationEngine.evaluate(flag, segments.map(s => s.name -> s).toMap, context)))
           }
@@ -323,7 +323,7 @@ class FeatureFlagServiceLive(
   ): IO[V] =
     cache.get(key).flatMap {
       case Some(cached) => IO.pure(cached)
-      case None =>
+      case None         =>
         for {
           before <- invalidationEpoch.get
           loaded <- load
@@ -353,13 +353,13 @@ class FeatureFlagServiceLive(
   ): IO[EvaluationDetail[T]] =
     (invalidationStarted *> fetchFlag(key))
       .flatMap {
-        case None => IO.pure(EvaluationDetail(default, EvaluationReason.Error, Some(EvaluationErrorCode.FlagNotFound)))
+        case None       => IO.pure(EvaluationDetail(default, EvaluationReason.Error, Some(EvaluationErrorCode.FlagNotFound)))
         case Some(flag) =>
           fetchSegments(flag).map { segments =>
             val result = FlagEvaluationEngine.evaluate(flag, segments, ctx)
             extract(result.value) match {
               case Some(v) => EvaluationDetail(v, result.reason)
-              case None =>
+              case None    =>
                 val actual = result.value.variantType
                 EvaluationDetail(
                   default,

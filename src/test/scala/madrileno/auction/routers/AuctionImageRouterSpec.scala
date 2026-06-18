@@ -230,7 +230,7 @@ class AuctionImageRouterSpec extends BaseRouteSpec with TestApplicationLoader {
       withSetup {
         val (_, image)     = setupAuctionWithImage()
         val otherAuctionId = TestData.randomAuctionId()
-        val _ = application.transactor
+        val _              = application.transactor
           .inSession(seedUser(seller) *> seedAuction(otherAuctionId, seller.id))
           .unsafeRunSync()
         (otherAuctionId, image)

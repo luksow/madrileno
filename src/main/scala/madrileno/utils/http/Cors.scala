@@ -28,7 +28,7 @@ object Cors extends LoggingSupport {
     else {
       val base       = CORS.policy.withAllowMethodsAll.withAllowHeadersAll.withMaxAge(config.maxAge)
       val configured = config.allowedOrigins.split(',').iterator.map(_.trim).filter(_.nonEmpty).toList
-      val built =
+      val built      =
         if (configured.contains("*")) IO.pure(base.withAllowOriginAll)
         else if (configured.nonEmpty) parseHosts(configured).map(base.withAllowOriginHost)
         else if (environment == Environment.Dev) IO.pure(base.withAllowOriginAll)
@@ -42,7 +42,7 @@ object Cors extends LoggingSupport {
       .flatTraverse { value =>
         originHost(value) match {
           case Some(host) => IO.pure(List(host))
-          case None =>
+          case None       =>
             loggerWithoutTracing
               .warn(s"CORS: ignoring origin '$value' — expected a scheme and host like https://app.example.com")
               .as(List.empty[Origin.Host])

@@ -51,9 +51,9 @@ trait BaseRouteSpec
 
   // RFC 9457 error schema
   given Schema[Error[Unit]] = new Schema[Error[Unit]] {
-    val className = "Error"
-    val `type`    = SchemaType.ObjectType
-    val format    = None
+    val className                          = "Error"
+    val `type`                             = SchemaType.ObjectType
+    val format                             = None
     val properties: Map[String, Schema[?]] = Map(
       "type"     -> Schema.stringSchema.withDescription("A URI reference identifying the problem type"),
       "status"   -> Schema.intSchema.withDescription("HTTP status code"),

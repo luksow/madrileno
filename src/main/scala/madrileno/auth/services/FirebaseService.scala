@@ -8,7 +8,7 @@ import java.time.Instant
 
 class FirebaseService(projectId: String, keyProvider: FirebaseKeyProvider) extends ExternalAuthVerifier {
   private val leewaySeconds: Long = 30L
-  private val verifier =
+  private val verifier            =
     new Rs256TokenVerifier(
       provider = Provider.Firebase,
       issuer = s"https://securetoken.google.com/$projectId",
@@ -18,7 +18,7 @@ class FirebaseService(projectId: String, keyProvider: FirebaseKeyProvider) exten
 
   override def verifyToken(token: ExternalAuthToken): IO[Either[Throwable, VerifiedExternalToken]] =
     verifier.verifyToken(token).flatMap {
-      case Left(t) => IO.pure(Left(t))
+      case Left(t)  => IO.pure(Left(t))
       case Right(v) =>
         Clock[IO].realTimeInstant.map(now => validateAuthTime(v, now).map(_ => v))
     }

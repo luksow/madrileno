@@ -27,7 +27,7 @@ final class Rs256TokenVerifier(
       keyId      <- IO.fromOption(Option(unverified.getKeyId).filter(_.nonEmpty))(badToken("missing 'kid' header"))
       _          <- IO.raiseUnless(unverified.getAlgorithm == "RS256")(badToken(s"unexpected signature algorithm '${unverified.getAlgorithm}'"))
       publicKey  <- keyResolver(keyId)
-      verified <- IO.delay(
+      verified   <- IO.delay(
                     JWT
                       .require(rsa256(publicKey))
                       .withIssuer(issuer)

@@ -56,8 +56,8 @@ class AuctionImageRouter(auctionImageService: AuctionImageService)(using Telemet
     notFoundMessage: String
   ): IO[ToResponseMarshallable] =
     io.map[ToResponseMarshallable] {
-      case None | Some(ObjectStore.GetResult.NotFound) => error(NotFound, notFoundCode, notFoundMessage)
-      case Some(ObjectStore.GetResult.Redirected(url)) => Response[IO](Status.SeeOther, headers = Headers(Location(url)))
+      case None | Some(ObjectStore.GetResult.NotFound)              => error(NotFound, notFoundCode, notFoundMessage)
+      case Some(ObjectStore.GetResult.Redirected(url))              => Response[IO](Status.SeeOther, headers = Headers(Location(url)))
       case Some(ObjectStore.GetResult.Streamed(ct, fileName, body)) =>
         val baseHeaders = Headers(ct)
         val headers     = fileName.fold(baseHeaders)(name => baseHeaders.put(`Content-Disposition`("attachment", Map(ci"filename" -> name))))
@@ -69,7 +69,7 @@ class AuctionImageRouter(auctionImageService: AuctionImageService)(using Telemet
       currentApiVersion { v =>
         complete {
           firstFilePart(multipart) match {
-            case None => error(BadRequest, "missing-file", "No file part found in multipart body")
+            case None       => error(BadRequest, "missing-file", "No file part found in multipart body")
             case Some(part) =>
               val contentType = part.headers.get[`Content-Type`].getOrElse(`Content-Type`(MediaType.application.`octet-stream`))
               val fileName    = part.filename.getOrElse("file")
@@ -100,7 +100,7 @@ class AuctionImageRouter(auctionImageService: AuctionImageService)(using Telemet
               case ReorderImagesResult.Reordered       => NoContent
               case ReorderImagesResult.AuctionNotFound => error(NotFound, "auction-not-found", "Auction not found")
               case ReorderImagesResult.NotOwner        => error(Forbidden, "not-owner", "Only the seller can reorder images for this auction")
-              case ReorderImagesResult.MismatchedIds =>
+              case ReorderImagesResult.MismatchedIds   =>
                 error(BadRequest, "mismatched-ids", "Reorder list must contain exactly the existing image ids")
             }
           }
@@ -138,7 +138,7 @@ class AuctionImageRouter(auctionImageService: AuctionImageService)(using Telemet
                   case CommitUploadResult.Committed(image) => Created -> AuctionImageDto(image, v.urlSegment)
                   case CommitUploadResult.AuctionNotFound  => error(NotFound, "auction-not-found", "Auction not found")
                   case CommitUploadResult.NotOwner         => error(Forbidden, "not-owner", "Only the seller can commit uploads for this auction")
-                  case CommitUploadResult.ObjectNotFound =>
+                  case CommitUploadResult.ObjectNotFound   =>
                     error(NotFound, "object-not-found", "No object found at the expected key — did the direct upload complete?")
                   case CommitUploadResult.Conflict =>
                     error(Conflict, "image-id-conflict", "This image id is already in use; presign a fresh one")

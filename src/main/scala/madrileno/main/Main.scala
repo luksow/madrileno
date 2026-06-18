@@ -53,7 +53,7 @@ object Main extends IOApp.Simple {
       given Supervisor[IO] <- Supervisor[IO]
       eventBusRuntime       = EventBusRuntime.postgres(transactor)
       circuitBreakerRuntime = CircuitBreakerRuntime.default
-      application =
+      application           =
         ApplicationLoader(
           config,
           httpClient,
@@ -69,7 +69,7 @@ object Main extends IOApp.Simple {
         )
       _ <- scheduler.run(recurringTasks = application.recurringTasks, oneTimeTasks = application.oneTimeTasks, customTasks = application.customTasks)
       metricsOps <- OtelMetrics.serverMetricsOps[IO]().toResource
-      redactor = new QueryRedactor.NeverRedact with PathRedactor.NeverRedact
+      redactor        = new QueryRedactor.NeverRedact with PathRedactor.NeverRedact
       routeClassifier = new RouteClassifier {
                           override def classify(request: RequestPrelude): Option[String] = {
                             val classified = request.uri.path.segments.foldLeft("") { (acc, seg) =>
@@ -94,7 +94,7 @@ object Main extends IOApp.Simple {
                             .toResource
       corsConfig <- Resource.eval(IO.delay(config.at("cors").loadOrThrow[CorsConfig]))
       corsPolicy <- Resource.eval(Cors.policy(corsConfig, appConfig.environment, application.httpConfig.baseUrl))
-      _ <- EmberServerBuilder
+      _          <- EmberServerBuilder
              .default[IO]
              .withHost(application.httpConfig.host)
              .withPort(application.httpConfig.port)

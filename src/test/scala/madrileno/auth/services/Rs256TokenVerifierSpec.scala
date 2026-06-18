@@ -23,7 +23,7 @@ class Rs256TokenVerifierSpec extends AsyncWordSpec with AsyncIOSpec with Matcher
     val generator = KeyPairGenerator.getInstance("RSA")
     generator.initialize(2048)
     val pair = generator.generateKeyPair()
-    val pub = pair.getPublic match {
+    val pub  = pair.getPublic match {
       case rsa: RSAPublicKey => rsa
       case other             => throw new IllegalStateException(s"expected RSAPublicKey, got ${other.getAlgorithm}")
     }

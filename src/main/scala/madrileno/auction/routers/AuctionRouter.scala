@@ -115,13 +115,13 @@ class AuctionRouter(
           complete {
             val command = PlaceBidCommand(auctionId, authContext.userId, request.amount)
             auctionService.placeBid(command).map[ToResponseMarshallable] {
-              case PlaceBidResult.BidPlaced(bid, _)     => Created -> BidDto(bid)
-              case PlaceBidResult.AuctionNotFound       => error(NotFound, "auction-not-found", "Auction not found")
-              case PlaceBidResult.AuctionNotOpen        => error(Conflict, "auction-not-open", "Auction is not open")
-              case PlaceBidResult.AuctionNotStarted     => error(Conflict, "auction-not-started", "Auction has not started yet")
-              case PlaceBidResult.AuctionEnded          => error(Conflict, "auction-ended", "Auction has already ended")
-              case PlaceBidResult.CannotBidOnOwnAuction => error(Forbidden, "cannot-bid-on-own-auction", "Cannot bid on your own auction")
-              case PlaceBidResult.AlreadyHighestBidder  => error(Conflict, "already-highest-bidder", "You already have the highest bid")
+              case PlaceBidResult.BidPlaced(bid, _)         => Created -> BidDto(bid)
+              case PlaceBidResult.AuctionNotFound           => error(NotFound, "auction-not-found", "Auction not found")
+              case PlaceBidResult.AuctionNotOpen            => error(Conflict, "auction-not-open", "Auction is not open")
+              case PlaceBidResult.AuctionNotStarted         => error(Conflict, "auction-not-started", "Auction has not started yet")
+              case PlaceBidResult.AuctionEnded              => error(Conflict, "auction-ended", "Auction has already ended")
+              case PlaceBidResult.CannotBidOnOwnAuction     => error(Forbidden, "cannot-bid-on-own-auction", "Cannot bid on your own auction")
+              case PlaceBidResult.AlreadyHighestBidder      => error(Conflict, "already-highest-bidder", "You already have the highest bid")
               case PlaceBidResult.BidTooLow(currentHighest) =>
                 error(Conflict, "bid-too-low", "Bid is below the current minimum", extension = Map("minAmount" -> currentHighest))
             }

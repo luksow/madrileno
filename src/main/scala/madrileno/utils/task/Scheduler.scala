@@ -26,7 +26,7 @@ class Scheduler(transactor: Transactor, config: SchedulerConfig = SchedulerConfi
 
   private val schedulerNameToUse: IO[String] = config.schedulerName match {
     case Some(name) => IO.pure(name)
-    case None =>
+    case None       =>
       IO.blocking {
         InetAddress.getLocalHost.getHostName
       }.recover { case _ =>
@@ -184,9 +184,9 @@ class Scheduler(transactor: Transactor, config: SchedulerConfig = SchedulerConfi
     task: Task[A],
     meters: SchedulerMeters
   ): IO[Unit] = {
-    val taskId   = task.taskId
-    val nameAttr = Attribute("task.name", task.descriptor.taskName)
-    val payload  = task.descriptor.encoder(task.payload).noSpaces
+    val taskId     = task.taskId
+    val nameAttr   = Attribute("task.name", task.descriptor.taskName)
+    val payload    = task.descriptor.encoder(task.payload).noSpaces
     val attributes = Seq(
       nameAttr,
       Attribute("task.instance", task.taskInstance),
@@ -281,7 +281,7 @@ class Scheduler(transactor: Transactor, config: SchedulerConfig = SchedulerConfi
   ) = {
     (for {
       reserved <- reservePermits(sem, concurrency)
-      _ <- if (reserved == 0) {
+      _        <- if (reserved == 0) {
              IO.sleep(pollingInterval)
            } else {
              transactor

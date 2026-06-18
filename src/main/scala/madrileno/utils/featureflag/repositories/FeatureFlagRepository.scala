@@ -68,7 +68,7 @@ private[repositories] final case class FeatureFlagRowFilter(
 class FeatureFlagRepository(ruleRepository: RuleRepository) {
   def findByKey(key: FlagKey, lock: Lock = Lock.NoLock): DB[Option[FeatureFlag]] =
     repository.findOneByFilter(FeatureFlagRowFilter(key = p.equal(key)), lock).flatMap {
-      case None => IO.pure(None)
+      case None      => IO.pure(None)
       case Some(row) =>
         ruleRepository.findByFlagId(row.id).flatMap { rules =>
           row.toFeatureFlag(rules) match {
@@ -88,7 +88,7 @@ class FeatureFlagRepository(ruleRepository: RuleRepository) {
     for {
       rows        <- repository.findByFilter(filter)
       rulesByFlag <- ruleRepository.findByFlagIds(rows.map(_.id))
-      flags <- rows.traverse { row =>
+      flags       <- rows.traverse { row =>
                  row.toFeatureFlag(rulesByFlag.getOrElse(row.id, Nil)) match {
                    case Right(f)  => IO.pure(f)
                    case Left(err) => IO.raiseError[FeatureFlag](new IllegalStateException(s"Invalid feature_flag row for key=${row.key}: $err"))

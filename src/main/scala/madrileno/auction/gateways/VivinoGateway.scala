@@ -49,7 +49,7 @@ object VivinoGateway {
     val candidates = for {
       hit     <- hits
       hitName <- hit.name.toList
-      stats <- vintage match {
+      stats   <- vintage match {
                  case Some(v) =>
                    for {
                      vintages <- hit.vintages.toList
@@ -70,7 +70,7 @@ object VivinoGateway {
       // both name-only and winery+name; keep whichever is higher, so wines that already
       // include the producer in the name (Romanée-Conti, Sassicaia) aren't penalised by
       // concatenation.
-      nameSim = Similarity.jaroWinkler(normalizedTarget, Similarity.normalize(hitName))
+      nameSim       = Similarity.jaroWinkler(normalizedTarget, Similarity.normalize(hitName))
       wineryNameSim = hit.winery
                         .flatMap(_.name)
                         .map(w => Similarity.jaroWinkler(normalizedTarget, Similarity.normalize(s"$w $hitName")))
@@ -123,7 +123,7 @@ class VivinoGatewayLive(
   override def findRating(wineName: WineName, vintage: Option[Vintage]): IO[Option[VivinoRating]] =
     cache.get((wineName, vintage)).flatMap {
       case Some(cached) => IO.pure(cached)
-      case None =>
+      case None         =>
         val singleAttempt = fetch(wineName, vintage).timeout(requestTimeout)
         circuitBreaker
           .flatMap(cb =>
@@ -154,7 +154,7 @@ class VivinoGatewayLive(
   private def fetch(wineName: WineName, vintage: Option[Vintage]): IO[Option[VivinoRating]] = {
     val queryText = vintage.map(v => s"${wineName.unwrap} ${v.unwrap}").getOrElse(wineName.unwrap)
     val payload   = AlgoliaQuery(query = queryText, hitsPerPage = 6).asJson.noSpaces
-    val request = basicRequest
+    val request   = basicRequest
       .post(endpoint)
       .header("x-algolia-api-key", apiKey)
       .header("x-algolia-application-id", applicationId)

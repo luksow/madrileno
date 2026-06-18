@@ -110,7 +110,7 @@ class AuctionImageRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Mat
     "saveVariant + listVariants round-trip; findVariant by spec" in withRollback {
       val (seller, auction) = setup()
       val image             = TestData.auctionImage(auctionId = auction.id)
-      val thumb = AuctionImageVariant(
+      val thumb             = AuctionImageVariant(
         id = TestData.randomAuctionImageVariantId(),
         auctionImageId = image.id,
         spec = VariantSpec.Thumb,

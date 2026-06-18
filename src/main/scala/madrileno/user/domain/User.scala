@@ -33,7 +33,7 @@ final case class User(
   emailVerified: Boolean,
   avatarUrl: Option[URI],
   blockedAt: Option[Instant]) {
-  def isActive: Boolean = blockedAt.isEmpty
+  def isActive: Boolean                                          = blockedAt.isEmpty
   def withUpdatedProfile(externalProfile: ExternalProfile): User = {
     copy(
       fullName = externalProfile.fullName.orElse(this.fullName),

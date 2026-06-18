@@ -60,7 +60,7 @@ class SchedulerIntegrationSpec extends AsyncWordSpec with AsyncIOSpec with Match
                    }
 
         retryDescriptor = TaskDescriptor[Unit]("test-retry")
-        retryTask = Task.oneTime(retryDescriptor) { _ =>
+        retryTask       = Task.oneTime(retryDescriptor) { _ =>
                       retryCounter.update(_ + 1) *> IO.raiseError(new RuntimeException("Intentional failure"))
                     }
 
@@ -70,7 +70,7 @@ class SchedulerIntegrationSpec extends AsyncWordSpec with AsyncIOSpec with Match
                       }
 
         customDescriptor = TaskDescriptor[String]("test-custom")
-        customTask = Task.custom(customDescriptor) { payload =>
+        customTask       = Task.custom(customDescriptor) { payload =>
                        customPayloadRef.set(payload) *>
                          customCounter.updateAndGet(_ + 1).flatMap { count =>
                            if (count < 3)

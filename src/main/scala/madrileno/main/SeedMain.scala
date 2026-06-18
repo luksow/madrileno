@@ -25,7 +25,7 @@ object SeedMain extends IOApp.Simple {
       config    <- IO.delay(ConfigSource.default)
       appConfig <- IO.delay(config.at("app").loadOrThrow[AppConfig])
       pgConfig  <- IO.delay(config.at("pg").loadOrThrow[PgConfig])
-      _ <- IO.raiseUnless(appConfig.environment == Environment.Dev)(
+      _         <- IO.raiseUnless(appConfig.environment == Environment.Dev)(
              new IllegalStateException(s"SeedMain refuses to run with app.environment=${appConfig.environment}. Dev only.")
            )
       _ <- PgTransactor.resource(pgConfig).use { transactor =>
@@ -64,7 +64,7 @@ object SeedMain extends IOApp.Simple {
     val userAuthId     = UserAuthId(deriveUuid(d.id, "user-auth"))
     val email          = EmailAddress(d.email)
     val providerUserId = ProviderUserId(email.unwrap)
-    val user =
+    val user           =
       User(id = userId, fullName = Some(FullName(d.fullName)), emailAddress = Some(email), emailVerified = true, avatarUrl = None, blockedAt = None)
     val userAuth = UserAuth(
       id = userAuthId,
@@ -76,9 +76,9 @@ object SeedMain extends IOApp.Simple {
     )
     for {
       userCreated <- findOrCreate(userRepository.find(userId))(userRepository.create(user, now))
-      _ <- userAuthRepository.findForUpdate(Provider.Dev, providerUserId).flatMap {
+      _           <- userAuthRepository.findForUpdate(Provider.Dev, providerUserId).flatMap {
              case Some(existing) if existing.userId == userId => IO.unit
-             case Some(existing) =>
+             case Some(existing)                              =>
                userAuthRepository.softDelete(existing.id, now) *> userAuthRepository.save(userAuth, now).void
              case None => userAuthRepository.save(userAuth, now).void
            }

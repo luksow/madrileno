@@ -91,10 +91,10 @@ trait KeysetSqlFilter[S, I] extends SqlFilter {
 
   final def filterFragment: AppliedFragment =
     keysetCursor.after match {
-      case None => baseFilterFragment
+      case None                       => baseFilterFragment
       case Some((sortAfter, idAfter)) =>
         val (sortCol, idCol) = keysetColumns
-        val keyset =
+        val keyset           =
           if (keysetAscending) sql"(${sortCol.n}, ${idCol.n}) > (${sortCol.c}, ${idCol.c})" (sortAfter, idAfter)
           else sql"(${sortCol.n}, ${idCol.n}) < (${sortCol.c}, ${idCol.c})" (sortAfter, idAfter)
         sql"(" (Void) |+| baseFilterFragment |+| sql")" (Void) |+| AndFragment |+| keyset
@@ -120,7 +120,7 @@ object SqlFilterDerivation {
   inline def buildFragments[Preds <: Tuple, Cols <: Tuple](preds: Preds, cols: Cols): List[AppliedFragment] =
     inline erasedValue[(Preds, Cols)] match {
       case _: (EmptyTuple, EmptyTuple) => Nil
-      case _: (ph *: pt, ch *: ct) =>
+      case _: (ph *: pt, ch *: ct)     =>
         val pairing = summonInline[ColumnPairing[ph, ch]]
         val p       = preds.asInstanceOf[ph *: pt] // scalafix:ok DisableSyntax.asInstanceOf
         val c       = cols.asInstanceOf[ch *: ct] // scalafix:ok DisableSyntax.asInstanceOf
@@ -278,8 +278,8 @@ trait FilteringRepository[A, F <: SqlFilter] extends BaseRepository[A] {
     lock: Lock = Lock.NoLock
   )(using session: Session[IO]
   ): IO[(List[A], Boolean)] = {
-    val baseFragment = base.filterFragment
-    val ascending    = direction == SortDirection.Asc
+    val baseFragment            = base.filterFragment
+    val ascending               = direction == SortDirection.Asc
     val keyset: AppliedFragment = cursor.after match {
       case None        => sql"" (Void)
       case Some(after) => if (ascending) sql"AND ${keyColumn.n} > ${keyColumn.c}" (after) else sql"AND ${keyColumn.n} < ${keyColumn.c}" (after)

@@ -44,7 +44,7 @@ class RateLimitDirectivesSpec extends AnyFunSpec with Matchers {
   ) = {
     val base       = Request[IO](Method.GET, Uri.unsafeFromString("/hello"))
     val withHeader = header.fold(base) { case (n, v) => base.putHeaders(Header.Raw(CIString(n), v)) }
-    val request = remote.fold(withHeader) { ip =>
+    val request    = remote.fold(withHeader) { ip =>
       withHeader.withAttribute(
         Request.Keys.ConnectionInfo,
         Request.Connection(
@@ -69,7 +69,7 @@ class RateLimitDirectivesSpec extends AnyFunSpec with Matchers {
     }
 
     it("isolates buckets by discriminator key") {
-      val runtime = RateLimiterRuntime.scaffeine()
+      val runtime                  = RateLimiterRuntime.scaffeine()
       val withKey: String => Route = clientId => {
         val router = routerWith(runtime)
         import router.*

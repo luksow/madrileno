@@ -42,7 +42,7 @@ class MailSerializationSpec extends AsyncWordSpec with AsyncIOSpec with Matchers
 
       def waitForCapture(remaining: FiniteDuration = 5.seconds): IO[SerializedMail] =
         IO(Option(capturedMail.get())).flatMap {
-          case Some(mail) => IO.pure(mail)
+          case Some(mail)                         => IO.pure(mail)
           case None if remaining <= Duration.Zero =>
             IO.raiseError(new RuntimeException("Timed out waiting for mail capture"))
           case None => IO.sleep(100.millis) *> waitForCapture(remaining - 100.millis)

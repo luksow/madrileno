@@ -24,7 +24,7 @@ object Migrations extends LoggingSupport {
 
   def info(pg: PgConfig): IO[String] =
     IO.blocking(flyway(pg).info().all().toList).map {
-      case Nil => "no migrations found"
+      case Nil   => "no migrations found"
       case infos =>
         val rows = infos.map { i =>
           val version = Option(i.getVersion).map(_.getVersion).getOrElse("(repeatable)")
@@ -35,7 +35,7 @@ object Migrations extends LoggingSupport {
 
   def warnIfPending(pg: PgConfig): IO[Unit] =
     IO.blocking(flyway(pg).info().pending().toList).attempt.flatMap {
-      case Right(Nil) => IO.unit
+      case Right(Nil)     => IO.unit
       case Right(pending) =>
         val versions = pending.map(m => s"${m.getVersion} - ${m.getDescription}").mkString(", ")
         loggerWithoutTracing.warn(

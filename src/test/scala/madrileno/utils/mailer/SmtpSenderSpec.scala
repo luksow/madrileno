@@ -80,7 +80,7 @@ class SmtpSenderSpec extends AsyncWordSpec with AsyncIOSpec with Matchers with T
 
     "send email with inline attachment" in {
       val imageData = Array.fill(100)(0x42.toByte)
-      val mail = SerializedMail(
+      val mail      = SerializedMail(
         to = List("user@example.com"),
         subject = "Inline test",
         body = SerializedMailBody.Html("<html><body><img src='cid:test-img'/></body></html>"),

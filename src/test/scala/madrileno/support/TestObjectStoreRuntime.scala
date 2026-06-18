@@ -44,8 +44,8 @@ object TestObjectStoreRuntime {
           contentType: `Content-Type`,
           contentLength: Long
         ): IO[PresignedPut] = {
-          val _   = ttl
-          val url = Uri.unsafeFromString(s"https://example.test/${key.render}")
+          val _       = ttl
+          val url     = Uri.unsafeFromString(s"https://example.test/${key.render}")
           val headers = Headers(
             Header.Raw(CIString("content-type"), Header[`Content-Type`].value(contentType)),
             Header.Raw(CIString("content-length"), contentLength.toString)
@@ -58,7 +58,7 @@ object TestObjectStoreRuntime {
 
         override def fetchBytes(key: StorageKey): IO[Option[ByteVector]] =
           state.get.flatMap(_.get(key) match {
-            case None => IO.pure(None)
+            case None                                           => IO.pure(None)
             case Some((_, bytes)) if bytes.size > maxFetchBytes =>
               IO.raiseError(ObjectTooLarge(key, bytes.size, maxFetchBytes))
             case Some((_, bytes)) => IO.pure(Some(bytes))

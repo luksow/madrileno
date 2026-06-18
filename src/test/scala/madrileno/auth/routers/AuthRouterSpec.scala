@@ -44,7 +44,7 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
   private def seedRefreshToken(): RefreshTokenId = {
     val user         = TestData.user()
     val refreshToken = TestData.refreshToken(userId = user.id)
-    val _ = application.transactor
+    val _            = application.transactor
       .inTransaction {
         application.userRepository.create(user, Instant.now()) *>
           new RefreshTokenRepository().save(refreshToken)
@@ -171,7 +171,7 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
       withSetup {
         val user  = TestData.user()
         val token = TestData.refreshToken(userId = user.id, userAgent = UserAgent("Firefox/142"), createdAt = Instant.parse("2026-05-01T10:00:00Z"))
-        val _ = application.transactor
+        val _     = application.transactor
           .inTransaction(application.userRepository.create(user, Instant.now()) *> new RefreshTokenRepository().save(token))
           .unsafeRunSync()
         (user, token)

@@ -11,13 +11,13 @@ object Memoize {
     IO.uncancelable { poll =>
       ref.get.flatMap {
         case Some(d) => poll(d.get).rethrow
-        case None =>
+        case None    =>
           Deferred[IO, Either[Throwable, A]].flatMap { fresh =>
             ref.modify {
               case Some(d) => (Some(d), poll(d.get).rethrow)
-              case None =>
+              case None    =>
                 val cancellation = new CancellationException("memoize: init cancelled")
-                val attempt =
+                val attempt      =
                   poll(init).attempt
                     .flatTap(fresh.complete(_).void)
                     .flatTap {

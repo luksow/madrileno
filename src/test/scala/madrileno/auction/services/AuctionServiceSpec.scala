@@ -52,7 +52,7 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
   private given Supervisor[IO]                       = Supervisor[IO].allocated.unsafeRunSync()._1
   private val ffEventBus: EventBus[FeatureFlagEvent] = EventBusRuntime.local.topic[FeatureFlagEvent]("ff_events_auction_test", maxQueued = 64)
   private lazy val ffRuleRepo                        = new RuleRepository
-  private lazy val realFeatureFlags = new FeatureFlagServiceLive(
+  private lazy val realFeatureFlags                  = new FeatureFlagServiceLive(
     new FeatureFlagRepository(ffRuleRepo),
     ffRuleRepo,
     new SegmentRepository,
@@ -170,7 +170,7 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
 
     "skip the ratings gateway when auction.show-wine-ratings is off" in {
       val ratedGateway: VivinoGateway = (_, _) => IO.pure(Some(VivinoRating(Rating(BigDecimal(4.7)), RatingsCount(12345))))
-      val gatedService = new AuctionService(
+      val gatedService                = new AuctionService(
         auctionRepo,
         bidRepo,
         userRepo,
@@ -262,7 +262,7 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
         bidderA <- seedUser()
         bidderB <- seedUser()
         auction <- createAuctionOrFail(createCommand(seller.id))
-        _ <- transactor.inSession {
+        _       <- transactor.inSession {
                bidRepo.save(
                  TestData.bid(
                    auctionId = auction.id,
@@ -307,7 +307,7 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
         bidderA <- seedUser()
         bidderB <- seedUser()
         auction <- createAuctionOrFail(createCommand(seller.id))
-        _ <- transactor.inSession {
+        _       <- transactor.inSession {
                bidRepo.save(
                  TestData.bid(
                    auctionId = auction.id,

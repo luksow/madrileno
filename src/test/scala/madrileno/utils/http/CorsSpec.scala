@@ -22,7 +22,7 @@ class CorsSpec extends AnyWordSpec with Matchers {
     baseUrl: URI,
     origin: String
   ): Option[String] = {
-    val app = Cors.policy(config, environment, baseUrl).unsafeRunSync().fold(ok)(_(ok))
+    val app     = Cors.policy(config, environment, baseUrl).unsafeRunSync().fold(ok)(_(ok))
     val request = Request[IO](Method.OPTIONS, uri"/v1/auctions")
       .putHeaders(Header.Raw(ci"Origin", origin), Header.Raw(ci"Access-Control-Request-Method", "GET"))
     val response = app.run(request).unsafeRunSync()

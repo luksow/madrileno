@@ -45,7 +45,7 @@ class S3ObjectStoreSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wit
   )
 
   private def createBucket(config: StorageConfig): IO[Unit] = {
-    val s3Config = config.objectStorage
+    val s3Config       = config.objectStorage
     val clientResource = Resource.fromAutoCloseable(IO {
       S3AsyncClient
         .builder()

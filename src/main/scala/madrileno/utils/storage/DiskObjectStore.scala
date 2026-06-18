@@ -69,7 +69,7 @@ class DiskObjectStore(root: FsPath, maxFetchBytes: Long) extends ObjectStore {
 
   override def fetchBytes(key: StorageKey): IO[Option[ByteVector]] =
     head(key).flatMap {
-      case None => IO.pure(None)
+      case None       => IO.pure(None)
       case Some(stat) =>
         val takeLimit = if (maxFetchBytes == Long.MaxValue) Long.MaxValue else maxFetchBytes + 1
         Files[IO]
@@ -91,7 +91,7 @@ class DiskObjectStore(root: FsPath, maxFetchBytes: Long) extends ObjectStore {
     val path = metaPathFor(key)
     Files[IO].exists(path).flatMap {
       case false => IO.pure(None)
-      case true =>
+      case true  =>
         Files[IO].readAll(path).through(fs2.text.utf8.decode).compile.string.map(s => `Content-Type`.parse(s.trim).toOption)
     }
   }

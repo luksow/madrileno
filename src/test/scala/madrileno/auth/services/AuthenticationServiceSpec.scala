@@ -45,7 +45,7 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
   private def serviceWithFreshAuth(validFor: Option[java.time.Duration] = None) = {
     val token     = freshVerifiedToken()
     val verifiers = AuthVerifiers(Map(Provider.Firebase -> new FakeAuthVerifier(token)))
-    val svc = new AuthenticationService(
+    val svc       = new AuthenticationService(
       userAuthRepo,
       refreshTokenRepo,
       userRepo,

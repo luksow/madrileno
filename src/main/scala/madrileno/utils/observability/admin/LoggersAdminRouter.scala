@@ -49,7 +49,7 @@ class LoggersAdminRouter(using TelemetryContext) extends BaseRouter {
 
   private def setLoggerLevel(name: String, levelStr: Option[String]): Either[String, Option[LoggerLevelDto]] = {
     Option(loggerContext.exists(name)) match {
-      case None => Right(None)
+      case None         => Right(None)
       case Some(logger) =>
         levelStr match {
           case None =>
@@ -67,7 +67,7 @@ class LoggersAdminRouter(using TelemetryContext) extends BaseRouter {
     }
   }
 
-  private val ValidLevelNames: Set[String] = Set("TRACE", "DEBUG", "INFO", "WARN", "ERROR", "OFF")
+  private val ValidLevelNames: Set[String]         = Set("TRACE", "DEBUG", "INFO", "WARN", "ERROR", "OFF")
   private def parseLevel(s: String): Option[Level] =
     Option(s).map(_.toUpperCase(Locale.ROOT)).filter(ValidLevelNames.contains).map(Level.toLevel)
 }
