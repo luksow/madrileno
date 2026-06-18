@@ -12,11 +12,20 @@ See [`docs/scripts.md`](docs/scripts.md) for what it does and what else lives un
 
 ## Quick start
 
-You'll need:
+You'll need four tools. Install each from its package manager or official installer:
 
-- **JDK 21** (Temurin recommended)
-- **sbt 1.12+** (`sbt --version` to check)
-- **Docker** with `docker compose`
+- **JDK 21 (Temurin)** — [adoptium.net/installation](https://adoptium.net/installation/) (apt repo on Linux, `brew install --cask temurin@21` on macOS, winget on Windows)
+- **sbt 1.12+** — [scala-sbt.org/download](https://www.scala-sbt.org/download/) (`sbt --version` to check; the launcher reads `project/build.properties` and pulls the pinned sbt itself)
+- **scala-cli** — [scala-cli.virtuslab.org/install](https://scala-cli.virtuslab.org/install) — needed for the tools under `scripts/` (`scaffold-module`, `doctor`, `dev-console`, …)
+- **Docker** with `docker compose` — [docs.docker.com/engine/install](https://docs.docker.com/engine/install/)
+
+The three JVM tools also install together via [SDKMAN](https://sdkman.io/):
+
+```bash
+sdk install java 21-tem
+sdk install sbt
+sdk install scalacli
+```
 
 ### 1. Boot the dev stack
 
@@ -24,13 +33,14 @@ You'll need:
 docker compose up -d
 ```
 
-That brings up three services on non-standard host ports so they don't clash with anything you already have running:
+That brings up four services on non-standard host ports so they don't clash with anything you already have running:
 
 | Service       | Image                                          | Host port(s)                              | Login                                |
 |---------------|------------------------------------------------|-------------------------------------------|--------------------------------------|
 | Postgres      | `postgres:latest`                              | `55432` → 5432                            | `postgres` / `postgres`              |
 | Mailpit       | `axllent/mailpit:latest`                       | `51025` (SMTP), `58025` (UI)              | —                                    |
 | OpenObserve   | `public.ecr.aws/zinclabs/openobserve:latest`   | `55080` (UI + OTLP HTTP)                  | `root@example.com` / `Complexpass#123` |
+| MinIO         | `minio/minio:RELEASE.2024-11-07T00-52-20Z`     | `59000` (S3 API), `59001` (Console UI)    | `minioadmin` / `minioadmin`          |
 
 State persists across restarts in named volumes. To wipe and start clean:
 
@@ -85,6 +95,12 @@ Quick smoke test from another terminal:
 
 ```bash
 curl http://localhost:9000/v1/health-check
+```
+
+To check the whole setup at once — Docker, the compose services, Postgres, and the app — run the doctor (needs scala-cli):
+
+```bash
+./scripts/doctor.scala
 ```
 
 ### 5. Look around
