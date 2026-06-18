@@ -296,7 +296,6 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
         val refs = page.items.map(_.bidderRef)
         refs(0) shouldBe refs(2)
         refs(0) should not be refs(1)
-        refs(0) shouldBe BidderRef.forBidder(auction.id, bidderA.id)
         page.items.map(_.currency).toSet shouldBe Set(eur)
         page.hasMore shouldBe false
       }

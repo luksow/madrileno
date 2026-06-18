@@ -3,17 +3,27 @@ package madrileno.auction.domain
 import madrileno.user.domain.UserId
 import pl.iterators.kebs.opaque.Opaque
 
+import java.nio.charset.StandardCharsets.UTF_8
 import java.time.Instant
 import java.util.{Currency, UUID}
-import scala.util.hashing.MurmurHash3
+import javax.crypto.Mac
+import javax.crypto.spec.SecretKeySpec
 
 opaque type BidId = UUID
 object BidId extends Opaque[BidId, UUID]
 
 opaque type BidderRef = String
 object BidderRef extends Opaque[BidderRef, String] {
-  def forBidder(auctionId: AuctionId, bidderId: UserId): BidderRef =
-    BidderRef(f"${MurmurHash3.stringHash(s"${auctionId.unwrap}:${bidderId.unwrap}")}%08x")
+  def forBidder(
+    secret: String,
+    auctionId: AuctionId,
+    bidderId: UserId
+  ): BidderRef = {
+    val mac = Mac.getInstance("HmacSHA256")
+    mac.init(new SecretKeySpec(secret.getBytes(UTF_8), "HmacSHA256"))
+    val tag = mac.doFinal(s"${auctionId.unwrap}:${bidderId.unwrap}".getBytes(UTF_8))
+    BidderRef(tag.take(8).map(b => f"$b%02x").mkString)
+  }
 }
 
 final case class Bid(

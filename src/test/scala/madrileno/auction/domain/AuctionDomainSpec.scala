@@ -297,20 +297,32 @@ class AuctionDomainSpec extends AnyWordSpec with Matchers {
   }
 
   "BidderRef.forBidder" should {
+    val secret = "test-bidder-ref-key"
+
     "be deterministic for the same auction and bidder" in {
       val auctionId = TestData.randomAuctionId()
       val bidderId  = TestData.randomUserId()
-      BidderRef.forBidder(auctionId, bidderId) shouldBe BidderRef.forBidder(auctionId, bidderId)
+      BidderRef.forBidder(secret, auctionId, bidderId) shouldBe BidderRef.forBidder(secret, auctionId, bidderId)
     }
 
     "differ between bidders in the same auction" in {
       val auctionId = TestData.randomAuctionId()
-      BidderRef.forBidder(auctionId, TestData.randomUserId()) should not be BidderRef.forBidder(auctionId, TestData.randomUserId())
+      BidderRef.forBidder(secret, auctionId, TestData.randomUserId()) should not be BidderRef.forBidder(secret, auctionId, TestData.randomUserId())
     }
 
     "differ for the same bidder across auctions" in {
       val bidderId = TestData.randomUserId()
-      BidderRef.forBidder(TestData.randomAuctionId(), bidderId) should not be BidderRef.forBidder(TestData.randomAuctionId(), bidderId)
+      BidderRef.forBidder(secret, TestData.randomAuctionId(), bidderId) should not be BidderRef.forBidder(
+        secret,
+        TestData.randomAuctionId(),
+        bidderId
+      )
+    }
+
+    "not be derivable without the secret" in {
+      val auctionId = TestData.randomAuctionId()
+      val bidderId  = TestData.randomUserId()
+      BidderRef.forBidder(secret, auctionId, bidderId) should not be BidderRef.forBidder("other-secret", auctionId, bidderId)
     }
   }
 }

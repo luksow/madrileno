@@ -38,6 +38,9 @@ class AuctionService(
   Clock[IO])
     extends LoggingSupport {
 
+  // Demo key: a real deployment would inject a server secret (env/config) — hardcoding it here makes the bidder pseudonym forgeable from public ids, which is fine for this showcase.
+  private val bidderRefSecret: String = "madrileno-demo-bidder-ref-key"
+
   private def publish(event: AuctionEvent): IO[Unit] =
     eventBus.publish(event).handleErrorWith(t => logger.warn(t)(s"Failed to publish $event"))
 
@@ -124,7 +127,7 @@ class AuctionService(
         auction <- auctionRepository.find(auctionId).valueOr[Option[Cursor[BidHistoryEntry]]](None)
         page    <- bidRepository.pageByAuction(auctionId, cursor).seal
       } yield Some(page.map { bid =>
-        BidHistoryEntry(bid.id, bid.amount, auction.currency, BidderRef.forBidder(bid.auctionId, bid.bidderId), bid.createdAt)
+        BidHistoryEntry(bid.id, bid.amount, auction.currency, BidderRef.forBidder(bidderRefSecret, bid.auctionId, bid.bidderId), bid.createdAt)
       })).run
     }
   }
