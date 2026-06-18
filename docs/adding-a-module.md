@@ -543,7 +543,7 @@ That's offset pagination — right for a catalogue ("page 4 of 12"). For a high-
 
 Spec files seed DB state through a central `TestData` object. Extend it now so repository/service/router specs can use `TestData.product(...)` and `TestData.randomProductId()`.
 
-> If you scaffolded, the `import madrileno.product.domain.*` and the `randomProductId()` factory are already in `TestData` — the scaffold injects them. You only add the `product(...)` row factory below.
+> If you scaffolded, a `randomProductId()` factory (and an `import madrileno.product.domain.ProductId`) are already in `TestData` — the scaffold injects them. You only add the `product(...)` row factory below (and widen the import to `madrileno.product.domain.*` for the other types it needs).
 
 In `src/test/scala/madrileno/support/TestData.scala`, add to the imports and the object body:
 
