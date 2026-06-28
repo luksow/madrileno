@@ -1,7 +1,6 @@
 package madrileno.utils.outbox
 
 import cats.effect.IO
-import cats.syntax.all.*
 import io.circe.Json
 import madrileno.utils.db.dsl.*
 import madrileno.utils.db.transactor.{DB, DBInTransaction}
