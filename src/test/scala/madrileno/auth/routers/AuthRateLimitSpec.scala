@@ -24,8 +24,6 @@ class AuthRateLimitSpec extends BaseRouteSpec with TestApplicationLoader {
 
   describe("auth endpoint rate limiting") {
     it("returns 429 with Retry-After once the per-client limit for POST /auth/dev (10/min) is exceeded") {
-      // Dev auth is live in tests (TestApplicationLoader registers DevAuthVerifier),
-      // so the first 10 logins succeed; the 11th hits the limit.
       def postDev() = post("/v1/auth/dev", """{"email":"throttle@example.com"}""")
       (1 to 10).foreach(_ => postDev().status shouldBe Status.Ok)
       val limited = postDev()

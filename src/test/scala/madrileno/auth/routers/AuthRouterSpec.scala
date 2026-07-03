@@ -48,8 +48,6 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
       .unsafeRunSync()
   }
 
-  // Seeds a user the way a first dev login would create it (DevAuthVerifier maps an
-  // email to provider = Dev, providerUserId = email), so the next dev login finds it.
   private def seedDevUser(email: String): String = {
     val userAuthRepository = new UserAuthRepository()
     val devToken           = TestData.verifiedExternalToken(

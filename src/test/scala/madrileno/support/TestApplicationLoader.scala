@@ -77,8 +77,6 @@ trait TestApplicationLoader extends TestContainersForAll with TestMailpit { self
       CircuitBreakerRuntime.default,
       IORuntime.global
     ) {
-      // Dev uses the REAL verifier (it's pure): the /v1/auth/dev route is exercisable in
-      // tests deterministically, independent of the DEV_AUTH_ENABLED env toggle.
       override protected lazy val externalAuthVerifiers: AuthVerifiers =
         AuthVerifiers(
           Map(
