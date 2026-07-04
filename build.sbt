@@ -34,7 +34,7 @@ libraryDependencies ++= {
   val scalatagsV         = "0.13.1"
   val scaffeineV         = "5.3.0"
   val testcontainersV    = "0.44.1"
-  val baklavaV           = "1.4.0-2-3a3e30c-SNAPSHOT" // local build with baklava-orpc; restore to a release once published
+  val baklavaV           = "1.4.0-5-8987fa9-SNAPSHOT" // local build with baklava-orpc; restore to a release once published
   val swaggerUiV         = "5.32.6"
   val flywayV            = "12.9.0"
   val awsSdkV            = "2.46.14"
@@ -95,7 +95,6 @@ libraryDependencies ++= {
     "pl.iterators"                    %% "baklava-scalatest"                         % baklavaV           % "test",
     "pl.iterators"                    %% "baklava-openapi"                           % baklavaV           % "test",
     "pl.iterators"                    %% "baklava-simple"                            % baklavaV           % "test",
-    "pl.iterators"                    %% "baklava-tsrest"                            % baklavaV           % "test",
     "pl.iterators"                    %% "baklava-orpc"                              % baklavaV           % "test",
     "pl.iterators"                    %% "kebs-baklava"                              % kebsV              % "test",
     "com.dimafeng"                    %% "testcontainers-scala-scalatest"            % testcontainersV    % "test",
@@ -147,15 +146,6 @@ inConfig(Test)(
           |      "description" : "Resolved from BASE_URL at generation time; override per deployment"
           |    }
           |  ]
-          |}
-          |""".stripMargin,
-      "ts-rest-package-contract-json" ->
-        s"""
-          |{
-          |  "name": "@madrileno-dev/${name.value}-contracts",
-          |  "version": "${version.value}",
-          |  "main": "index.js",
-          |  "types": "index.d.ts"
           |}
           |""".stripMargin,
       "orpc-package-contract-json" ->

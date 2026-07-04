@@ -133,7 +133,7 @@ baklava generates the OpenAPI spec by observing stir routes during the test suit
 
 - `target/baklava/openapi/openapi.yml` — the OpenAPI spec
 - `target/baklava/swagger-ui/` — a static Swagger UI bundle pointing at the spec
-- `target/baklava/tsrest/` — a TypeScript ts-rest contract package
+- `target/baklava/orpc/` — a TypeScript [oRPC](https://orpc.dev) contract package (consumed by the reference frontend)
 
 In dev (`app.environment = "dev"` in config), the app serves the same artifacts at:
 

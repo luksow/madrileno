@@ -113,7 +113,7 @@ case PlaceBidResult.BidTooLow(currentHighest) =>
   error(Conflict, "bid-too-low", "Bid is below the current minimum", extension = Map("minAmount" -> currentHighest))
 ```
 
-The `Map[String, Price]` encodes into the `extension` field as a JSON object (`{"minAmount": 350.00}`). The frontend reads `extension.minAmount` and renders/localizes the message itself. Use a small case class instead of a `Map` when the extension has several fields and you want it to show up in the OpenAPI/ts-rest schema (a `Map` serializes fine but doesn't carry field names into the generated types).
+The `Map[String, Price]` encodes into the `extension` field as a JSON object (`{"minAmount": 350.00}`). The frontend reads `extension.minAmount` and renders/localizes the message itself. Use a small case class instead of a `Map` when the extension has several fields and you want it to show up in the OpenAPI/oRPC schema (a `Map` serializes fine but doesn't carry field names into the generated types).
 
 ## Framework rejections
 

@@ -183,7 +183,7 @@ The `ImagePosition` opaque type still rejects negatives in the domain — the ne
 - **`TestObjectStoreRuntime.inMemory`** — a `Ref`-backed in-memory `ObjectStore`. Used by `TestApplicationLoader` so route specs don't need MinIO. `get` returns `Streamed` (no presigned URL needed). `presignPut` returns a fake `PresignedPut` (URL like `https://example.test/<key>`) so service-level tests can exercise the presign/commit/analyzer/variant pipeline without a real bucket.
 - **`S3ObjectStoreSpec`** — runs against a MinIO Testcontainer pinned to `RELEASE.2024-11-07T00-52-20Z`. Creates the test bucket explicitly (the app no longer auto-creates) using a `Resource.fromAutoCloseable` S3 client so nothing leaks.
 - **`AuctionImageServiceSpec`** — exercises the service against real Postgres + the in-memory store. Covers multipart attach, detach, reorder, serve cross-auction guards, presign + commit (happy + missing-object + wrong-owner + idempotent retry), the analyzer task (happy + already-analyzed no-op + missing row), and variant generation (`Thumb` 256×256, `Medium` 1024-on-long-edge, idempotent re-runs).
-- **`AuctionImageRouterSpec`** — full baklava DSL against `TestApplicationLoader`. Uses `pl.iterators.baklava.{Multipart, FilePart}` for the upload body so the endpoints land in `target/baklava/openapi/openapi.yml` (and the ts-rest / simple-HTML outputs).
+- **`AuctionImageRouterSpec`** — full baklava DSL against `TestApplicationLoader`. Uses `pl.iterators.baklava.{Multipart, FilePart}` for the upload body so the endpoints land in `target/baklava/openapi/openapi.yml` (and the oRPC / simple-HTML outputs).
 
 ## Things that catch people out
 
