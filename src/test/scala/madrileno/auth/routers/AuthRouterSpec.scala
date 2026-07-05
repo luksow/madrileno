@@ -1,11 +1,18 @@
 package madrileno.auth.routers
 
 import cats.effect.IO
-import madrileno.auth.domain.{AuthContext, FirebaseJwt, RefreshTokenId, UserAgent, UserAuth}
+import madrileno.auth.domain.{AuthContext, Credential, FirebaseJwt, Provider, ProviderUserId, RefreshTokenId, UserAgent, UserAuth}
 import madrileno.auth.repositories.{RefreshTokenRepository, UserAuthRepository}
-import madrileno.auth.routers.dto.{AuthWithFirebaseRequest, AuthWithOidcRequest, AuthWithRefreshTokenRequest, AuthenticatedResponse, RefreshTokenDto}
+import madrileno.auth.routers.dto.{
+  AuthWithEmailRequest,
+  AuthWithFirebaseRequest,
+  AuthWithOidcRequest,
+  AuthWithRefreshTokenRequest,
+  AuthenticatedResponse,
+  RefreshTokenDto
+}
 import madrileno.support.{BaseRouteSpec, TestApplicationLoader, TestData}
-import madrileno.user.domain.{User, UserId}
+import madrileno.user.domain.{EmailAddress, User, UserId}
 import madrileno.utils.http.Error
 import madrileno.utils.json.JsonProtocol.*
 import org.http4s.Method.*
@@ -39,6 +46,27 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
         }
       }
       .unsafeRunSync()
+  }
+
+  private def seedDevUser(email: String): String = {
+    val userAuthRepository = new UserAuthRepository()
+    val devToken           = TestData.verifiedExternalToken(
+      provider = Provider.Dev,
+      providerUserId = ProviderUserId(email),
+      credential = Credential(email),
+      fullName = None,
+      emailAddress = Some(EmailAddress(email))
+    )
+    val now      = Instant.now()
+    val userId   = TestData.randomUserId()
+    val user     = User(userId, devToken)
+    val userAuth = UserAuth(TestData.randomUserAuthId(), userId, devToken)
+    val _        = application.transactor
+      .inTransaction {
+        application.userRepository.create(user, now) *> userAuthRepository.save(userAuth, now)
+      }
+      .unsafeRunSync()
+    email
   }
 
   private def seedRefreshToken(): RefreshTokenId = {
@@ -123,6 +151,40 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
         .assert { ctx =>
           val response = ctx.performRequest(allRoutes)
           response.body.title shouldBe Some("Invalid refresh token")
+        }
+    )
+  )
+
+  path("/v1/auth/dev")(
+    supports(
+      POST,
+      description =
+        "Dev-mode login: exchanges a bare email address for an internal JWT and refresh token, creating the user on first login. Gated by `DEV_AUTH_ENABLED` (`dev-auth.enabled`, off by default) — when disabled the endpoint answers 404. Never enable outside local/dev environments.",
+      summary = "Dev-only: authenticate with an email address (no password)",
+      tags = Seq("Auth")
+    )(
+      onRequest(body = AuthWithEmailRequest(s"dev-${TestData.randomUuid()}@example.com"))
+        .respondsWith[AuthenticatedResponse](Ok, description = "Authenticated; a new user account was created (userCreated = true)")
+        .assert { ctx =>
+          val response = ctx.performRequest(allRoutes)
+          response.body.jwt.toString should not be empty
+          response.body.refreshToken.toString should not be empty
+          response.body.userCreated shouldBe true
+        },
+      withSetup {
+        seedDevUser(s"dev-existing-${TestData.randomUuid()}@example.com")
+      }.request(email => onRequest(body = AuthWithEmailRequest(email)))
+        .respondsWith[AuthenticatedResponse](Ok, description = "Authenticated; existing user (userCreated = false)")
+        .assert { case (ctx, _) =>
+          val response = ctx.performRequest(allRoutes)
+          response.body.jwt.toString should not be empty
+          response.body.userCreated shouldBe false
+        },
+      onRequest(body = AuthWithEmailRequest("not-an-email"))
+        .respondsWith[Error[Unit]](Unauthorized, description = "The supplied value is not an email address")
+        .assert { ctx =>
+          val response = ctx.performRequest(allRoutes)
+          response.body.title shouldBe Some("dev auth requires an email address")
         }
     )
   )

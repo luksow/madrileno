@@ -8,7 +8,7 @@ import com.dimafeng.testcontainers.PostgreSQLContainer
 import com.dimafeng.testcontainers.scalatest.TestContainersForAll
 import madrileno.auction.gateways.VivinoGateway
 import madrileno.auth.domain.{AuthContext, Provider, VerifiedExternalToken}
-import madrileno.auth.services.{AuthVerifiers, JwtService}
+import madrileno.auth.services.{AuthVerifiers, DevAuthVerifier, JwtService}
 import madrileno.main.ApplicationLoader
 import madrileno.utils.db.transactor.{PgConfig, PgTransactor}
 import madrileno.utils.events.EventBusRuntime
@@ -78,7 +78,13 @@ trait TestApplicationLoader extends TestContainersForAll with TestMailpit { self
       IORuntime.global
     ) {
       override protected lazy val externalAuthVerifiers: AuthVerifiers =
-        AuthVerifiers(Map(Provider.Firebase -> FakeAuthVerifier(firebaseToken), Provider("test-oidc") -> FakeAuthVerifier(oidcToken)))
+        AuthVerifiers(
+          Map(
+            Provider.Firebase     -> FakeAuthVerifier(firebaseToken),
+            Provider("test-oidc") -> FakeAuthVerifier(oidcToken),
+            Provider.Dev          -> DevAuthVerifier
+          )
+        )
       // scripts:auction-block-start
       override protected lazy val vivinoGateway: VivinoGateway = (_, _) => IO.pure(None)
       // scripts:auction-block-end
