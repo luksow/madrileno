@@ -34,7 +34,7 @@ libraryDependencies ++= {
   val scalatagsV         = "0.13.1"
   val scaffeineV         = "5.3.0"
   val testcontainersV    = "0.44.1"
-  val baklavaV           = "2.0-6fc1401-SNAPSHOT" // local build with baklava-orpc; restore to a release once published
+  val baklavaV           = "2.0.0"
   val swaggerUiV         = "5.32.6"
   val flywayV            = "12.9.0"
   val awsSdkV            = "2.46.14"
@@ -163,7 +163,7 @@ inConfig(Test)(
 
 // Cache runtime classpath for `./scripts/dev-console.scala`.
 Compile / compile := {
-  val r = (Compile / compile).value
+  val r           = (Compile / compile).value
   val runtimeJars = update.value.configurations
     .find(_.configuration.name == "runtime")
     .toSeq
