@@ -56,5 +56,26 @@ class SchedulerOnAbandonSpec extends AsyncWordSpec with AsyncIOSpec with Matcher
         finalAttempts._2 shouldBe false // task row removed after abandon
       }
     }
+
+    "keep the task row when onAbandon raises and the abandon transaction rolls back" in {
+      for {
+        abandoned <- Ref.of[IO, Int](0)
+        descriptor = TaskDescriptor[Unit]("test-onabandon-rollback")
+        task       = OneTimeTask[Unit](descriptor, _ => IO.raiseError(new RuntimeException("always fails")))
+                 .copy(maxRetries = Some(0), onAbandon = Some(_ => abandoned.update(_ + 1) *> IO.raiseError(new RuntimeException("abandon boom"))))
+        scheduler = Scheduler(transactor, config)
+        client    = scheduler.client
+        result <- scheduler.run(recurringTasks = Nil, oneTimeTasks = List(task), customTasks = Nil).use { _ =>
+                    for {
+                      _         <- client.schedule(task.instance("run-rollback", ()))
+                      a         <- waitFor(abandoned, 1)
+                      remaining <- client.listTasks
+                    } yield (a, remaining.exists(r => r.taskName == "test-onabandon-rollback" && r.taskInstance == "run-rollback"))
+                  }
+      } yield {
+        result._1 should be >= 1
+        result._2 shouldBe true
+      }
+    }
   }
 }
