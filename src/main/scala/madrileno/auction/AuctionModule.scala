@@ -14,7 +14,7 @@ import madrileno.main.AppConfig
 import madrileno.user.repositories.UserRepository
 import madrileno.utils.cache.CacheRuntime
 import madrileno.utils.db.transactor.Transactor
-import madrileno.utils.events.{EventBus, EventBusRuntime}
+import madrileno.utils.events.bus.{EventBus, EventBusRuntime}
 import madrileno.utils.featureflag.services.FeatureFlagServiceLive
 import madrileno.utils.http.{AuthRouteProvider, RateLimiterRuntime, RouteProvider, WsRouteProvider}
 import madrileno.utils.mailer.{MailPreview, MailPreviewProvider, Mailer}

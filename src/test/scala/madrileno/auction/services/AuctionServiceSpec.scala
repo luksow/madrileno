@@ -10,7 +10,7 @@ import madrileno.auction.repositories.{AuctionRepository, BidRepository}
 import madrileno.support.{TestCacheRuntime, TestData, TestFeatureFlagService, TestGivens, TestMailpit, TestTransactor}
 import madrileno.user.domain.{User, UserId}
 import madrileno.user.repositories.UserRepository
-import madrileno.utils.events.{EventBus, EventBusRuntime}
+import madrileno.utils.events.bus.{EventBus, EventBusRuntime}
 import madrileno.utils.featureflag.domain.*
 import madrileno.utils.featureflag.repositories.{FeatureFlagAuditRepository, FeatureFlagRepository, RuleRepository, SegmentRepository}
 import madrileno.utils.featureflag.services.{CreateFlagCommand, CreateSegmentCommand, FeatureFlagServiceLive, RuleData}

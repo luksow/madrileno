@@ -1,4 +1,4 @@
-package madrileno.utils.events
+package madrileno.utils.events.bus
 
 import cats.effect.{IO, Resource}
 import fs2.Stream

@@ -1,4 +1,4 @@
-package madrileno.utils.outbox
+package madrileno.utils.events.outbox
 
 import io.circe.Json
 import pl.iterators.kebs.opaque.Opaque

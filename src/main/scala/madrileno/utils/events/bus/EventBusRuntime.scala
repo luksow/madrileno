@@ -1,12 +1,14 @@
-package madrileno.utils.events
+package madrileno.utils.events.bus
 
 import cats.effect.kernel.Deferred
 import cats.effect.std.Supervisor
 import cats.effect.{IO, Ref, Resource}
 import fs2.Stream
 import fs2.concurrent.Topic
+import io.circe.parser
 import madrileno.utils.async.Memoize
 import madrileno.utils.db.transactor.Transactor
+import madrileno.utils.events.EventCodec
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
 import skunk.data.Identifier
 
@@ -56,7 +58,7 @@ object EventBusRuntime {
     }
 
     override def publish(event: E): IO[Unit] =
-      transactor.notify(identifier, codec.encode(event))
+      transactor.notify(identifier, codec.encode(event).noSpaces)
 
     override def subscribe: Stream[IO, E] =
       Stream.eval(topic).flatMap(_.subscribe(maxQueued))
@@ -75,7 +77,7 @@ object EventBusRuntime {
           listenerReady.get.flatMap(_.complete(()).attempt.void) *>
             stream
               .evalMap { notification =>
-                codec.decode(notification.value) match {
+                parser.parse(notification.value).flatMap(codec.decode) match {
                   case Right(event) => sink.publish1(event).void
                   case Left(err)    => logger.warn(err)(s"Failed to decode notification on $name: ${notification.value}")
                 }

@@ -7,7 +7,7 @@ import cats.effect.{Clock, IO, Resource}
 import io.opentelemetry.api.OpenTelemetry
 import madrileno.utils.cache.CacheRuntime
 import madrileno.utils.db.transactor.{PgConfig, PgTransactor}
-import madrileno.utils.events.EventBusRuntime
+import madrileno.utils.events.bus.EventBusRuntime
 import madrileno.utils.http.RateLimiterRuntime
 import madrileno.utils.observability.TelemetryContext
 import madrileno.utils.resilience.CircuitBreakerRuntime

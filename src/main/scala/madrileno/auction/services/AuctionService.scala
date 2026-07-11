@@ -11,7 +11,7 @@ import madrileno.user.domain.*
 import madrileno.user.repositories.UserRepository
 import madrileno.utils.crypto.IdGenerator
 import madrileno.utils.db.transactor.{DB, DBInTransaction, Transactor}
-import madrileno.utils.events.EventBus
+import madrileno.utils.events.bus.EventBus
 import madrileno.utils.featureflag.domain.{AttributeName, AttributeValue, EvaluationContext, FlagKey, TargetingKey}
 import madrileno.utils.featureflag.services.FeatureFlagService
 import madrileno.utils.mailer.{Language, Mailer}

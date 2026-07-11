@@ -11,7 +11,7 @@ import madrileno.healthcheck.HealthCheckModule
 import madrileno.user.UserModule
 import madrileno.utils.cache.CacheRuntime
 import madrileno.utils.db.transactor.Transactor
-import madrileno.utils.events.EventBusRuntime
+import madrileno.utils.events.bus.EventBusRuntime
 import madrileno.utils.featureflag.FeatureFlagModule
 import madrileno.utils.featureflag.routers.FeatureFlagAdminRouter
 import madrileno.utils.http.{ApplicationRouteProvider, Handlers, RateLimiterRuntime}

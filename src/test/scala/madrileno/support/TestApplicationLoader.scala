@@ -11,7 +11,7 @@ import madrileno.auth.domain.{AuthContext, Provider, VerifiedExternalToken}
 import madrileno.auth.services.{AuthVerifiers, DevAuthVerifier, JwtService}
 import madrileno.main.ApplicationLoader
 import madrileno.utils.db.transactor.{PgConfig, PgTransactor}
-import madrileno.utils.events.EventBusRuntime
+import madrileno.utils.events.bus.EventBusRuntime
 import madrileno.utils.http.RateLimiterRuntime
 import madrileno.utils.mailer.MailerConfig
 import madrileno.utils.observability.TelemetryContext

@@ -6,7 +6,7 @@ import io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppen
 import madrileno.utils.cache.CacheRuntime
 import madrileno.utils.db.Migrations
 import madrileno.utils.db.transactor.{PgConfig, PgTransactor}
-import madrileno.utils.events.EventBusRuntime
+import madrileno.utils.events.bus.EventBusRuntime
 import madrileno.utils.http.{Cors, CorsConfig, RateLimiterRuntime}
 import madrileno.utils.observability.TelemetryContext
 import madrileno.utils.resilience.CircuitBreakerRuntime
