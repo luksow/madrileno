@@ -161,13 +161,21 @@ class Scheduler(transactor: Transactor, config: SchedulerConfig = SchedulerConfi
     val taskId     = task.taskId
     val previous   = task.consecutiveFailures.getOrElse(0)
     val failures   = previous + 1
-    val shouldDrop = maxRetries.exists(failures > _)
+    val shouldDrop = task.maxRetries.orElse(maxRetries).exists(failures > _)
     val outcome    = if (shouldDrop) "retries_exhausted" else "failure"
 
     meters.executions.inc(Attribute("task.name", task.descriptor.taskName), Attribute("outcome", outcome)) *> {
       if (shouldDrop) {
-        logger.error(error)(s"$taskId exceeded max retries ($failures), removing") *>
-          withVersionCheck(taskId, "remove")(repository.remove(task))
+        logger.error(error)(s"$taskId exceeded max retries ($failures), abandoning") *>
+          transactor
+            .inTransaction {
+              repository.remove(task).flatMap {
+                case true  => task.onAbandon.fold(IO.unit)(_(task))
+                case false =>
+                  logger.warn(s"$taskId: remove affected 0 rows (version mismatch, likely recovered by dead execution handler); skipping onAbandon")
+              }
+            }
+            .handleErrorWith(e => logger.error(e)(s"$taskId: abandon failed, leaving task in place for retry"))
       } else {
         Clock[IO].realTimeInstant.flatMap { now =>
           val backoffMs = math.min((retryBaseDelay.toMillis * math.pow(retryBackoffRate, previous.toDouble)).toLong, retryMaxDelay.toMillis)
