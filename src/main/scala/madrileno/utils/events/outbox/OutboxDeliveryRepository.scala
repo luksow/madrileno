@@ -63,29 +63,46 @@ class OutboxDeliveryRepository {
     eventId: DomainEventId,
     consumer: String,
     now: Instant
-  ): DBInTransaction[Unit] =
-    updateStatus(eventId, consumer, DeliveryStatus.Completed, None, now)
+  ): DBInTransaction[Unit] = {
+    val session = summon[Session[IO]]
+    session
+      .execute(sql"""UPDATE ${T.n}
+              SET ${T.status.n} = ${T.status.c}, ${T.lastError.n} = NULL, ${T.updatedAt.n} = ${T.updatedAt.c}
+              WHERE ${T.eventId.n} = ${T.eventId.c} AND ${T.consumer.n} = ${T.consumer.c}""".command)(
+        (DeliveryStatus.Completed, now, eventId, consumer)
+      )
+      .void
+  }
 
   def markFailed(
     eventId: DomainEventId,
     consumer: String,
-    error: String,
-    now: Instant
-  ): DBInTransaction[Unit] =
-    updateStatus(eventId, consumer, DeliveryStatus.Failed, Some(error), now)
-
-  private def updateStatus(
-    eventId: DomainEventId,
-    consumer: String,
-    status: DeliveryStatus,
     error: Option[String],
     now: Instant
   ): DBInTransaction[Unit] = {
     val session = summon[Session[IO]]
     session
       .execute(sql"""UPDATE ${T.n}
-              SET ${T.status.n} = ${T.status.c}, ${T.lastError.n} = ${T.lastError.c}, ${T.updatedAt.n} = ${T.updatedAt.c}
-              WHERE ${T.eventId.n} = ${T.eventId.c} AND ${T.consumer.n} = ${T.consumer.c}""".command)((status, error, now, eventId, consumer))
+              SET ${T.status.n} = ${T.status.c}, ${T.lastError.n} = COALESCE(${T.lastError.c}, ${T.lastError.n}), ${T.updatedAt.n} = ${T.updatedAt.c}
+              WHERE ${T.eventId.n} = ${T.eventId.c} AND ${T.consumer.n} = ${T.consumer.c}""".command)(
+        (DeliveryStatus.Failed, error, now, eventId, consumer)
+      )
+      .void
+  }
+
+  def recordError(
+    eventId: DomainEventId,
+    consumer: String,
+    error: String,
+    now: Instant
+  ): DB[Unit] = {
+    val session = summon[Session[IO]]
+    session
+      .execute(sql"""UPDATE ${T.n}
+              SET ${T.lastError.n} = ${T.lastError.c}, ${T.updatedAt.n} = ${T.updatedAt.c}
+              WHERE ${T.eventId.n} = ${T.eventId.c} AND ${T.consumer.n} = ${T.consumer.c} AND ${T.status.n} = ${T.status.c}""".command)(
+        (Some(error), now, eventId, consumer, DeliveryStatus.Pending)
+      )
       .void
   }
 
