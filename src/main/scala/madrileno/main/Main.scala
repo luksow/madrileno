@@ -68,6 +68,7 @@ object Main extends IOApp.Simple {
           runtime
         )
       _ <- scheduler.run(recurringTasks = application.recurringTasks, oneTimeTasks = application.oneTimeTasks, customTasks = application.customTasks)
+      _ <- application.outboxRecovery.run
       metricsOps <- OtelMetrics.serverMetricsOps[IO]().toResource
       redactor        = new QueryRedactor.NeverRedact with PathRedactor.NeverRedact
       routeClassifier = new RouteClassifier {
