@@ -41,8 +41,8 @@ The specific choices, and why:
 | ------ | --- |
 | **shadcn `base-nova` style, built on Base UI** (not the Radix default) | Base UI is the headless primitives library the newer shadcn styles sit on — accessible focus/keyboard/ARIA behaviour for free, with full control of the look. |
 | **Kept shadcn's default file locations & aliases** (`components.json`) | The vendored components stay diffable against the upstream registry, so re-running the CLI to pull a fix is a clean diff rather than a merge conflict. The template has no component conventions of its own to impose yet, so it invents none. |
-| **Neutral base + a wine accent** (`--primary` / `--ring` = `oklch(0.4 0.11 12)`) | A CSS-variable token palette with light / dark / system theming; the wine tint is the one deliberate touch of identity over an otherwise neutral base — enough to not look like every other starter, and cheap to retheme by editing the tokens in `src/styles/tailwind.css`. |
-| **lucide icons + sonner toasts** | shadcn's own defaults. sonner carries the typed bid-rejection feedback — a `bid-too-low` problem code becomes a specific toast, not a generic error. |
+| **Neutral base + a single brand accent** (`--primary` / `--ring` = `oklch(0.4 0.11 12)`) | A CSS-variable token palette with light / dark / system theming; one accent color is the deliberate touch of identity over an otherwise neutral base — enough to not look like every other starter, and cheap to retheme by editing the tokens in `src/styles/tailwind.css`. |
+| **lucide icons + sonner toasts** | shadcn's own defaults. sonner surfaces typed rejection feedback — a specific problem code from the RFC 9457 envelope becomes a specific toast, not a generic error. |
 
 Theming is a three-way light / dark / system toggle, SSR-safe: a pre-paint inline script sets the class before first paint, so there's no flash. Retheming is a token edit, not a component change.
 
@@ -69,4 +69,4 @@ The frontend ships the same "delete the demo" escape hatch as the backend's [`in
 pnpm run init-project my-project
 ```
 
-It deletes the auction demo (`src/features/auctions/` and every `frontend:auction-block-*` marker block, mirroring the backend's `scripts:auction-block-*` markers), renames the package to `my-project-frontend`, and leaves a runnable shell — login, the typed client, routing, tests, and the SSR opt-in all intact. Run it alongside the backend's own `init-project.scala`, then regenerate and resync the contract (`sbt test` → `pnpm run sync-contracts`) so the fresh project starts from your routes, not the auction ones.
+It deletes the bundled demo feature (`src/features/auctions/` and every `frontend:auction-block-*` marker block, mirroring the backend's `scripts:auction-block-*` markers), renames the package to `my-project-frontend`, and leaves a runnable shell — login, the typed client, routing, tests, and the SSR opt-in all intact. Run it alongside the backend's own `init-project.scala`, then regenerate and resync the contract (`sbt test` → `pnpm run sync-contracts`) so the fresh project starts from your own routes.
