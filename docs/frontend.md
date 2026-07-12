@@ -31,6 +31,21 @@ At a glance — details live in the frontend repo's own README:
 - **TanStack Query** for server state; **react-hook-form + zod** for forms; **Temporal** for time at the wire boundary (JS `Date` is confined to a single mapper module).
 - Auth against this backend's dev login + JWT/refresh flow (see [`auth.md`](auth.md)), with a single-flight 401-refresh at the fetch layer.
 
+## Design system
+
+The UI layer is **[shadcn/ui](https://ui.shadcn.com) on Tailwind v4** — where "shadcn" means the *approach*, not a dependency: the CLI copies component source into `src/components/ui/`, and the frontend **owns and vendors** those files. There is no design-system package to upgrade around; you edit the components in place. That mirrors the backend's own bias — own your code, no framework you can't see into.
+
+The specific choices, and why:
+
+| Choice | Why |
+| ------ | --- |
+| **shadcn `base-nova` style, built on Base UI** (not the Radix default) | Base UI is the headless primitives library the newer shadcn styles sit on — accessible focus/keyboard/ARIA behaviour for free, with full control of the look. |
+| **Kept shadcn's default file locations & aliases** (`components.json`) | The vendored components stay diffable against the upstream registry, so re-running the CLI to pull a fix is a clean diff rather than a merge conflict. The template has no component conventions of its own to impose yet, so it invents none. |
+| **Neutral base + a wine accent** (`--primary` / `--ring` = `oklch(0.4 0.11 12)`) | A CSS-variable token palette with light / dark / system theming; the wine tint is the one deliberate touch of identity over an otherwise neutral base — enough to not look like every other starter, and cheap to retheme by editing the tokens in `src/styles/tailwind.css`. |
+| **lucide icons + sonner toasts** | shadcn's own defaults. sonner carries the typed bid-rejection feedback — a `bid-too-low` problem code becomes a specific toast, not a generic error. |
+
+Theming is a three-way light / dark / system toggle, SSR-safe: a pre-paint inline script sets the class before first paint, so there's no flash. Retheming is a token edit, not a component change.
+
 ## Why a separate repo (and not a subdirectory or a fullstack framework)
 
 | Option | Verdict |
@@ -45,3 +60,13 @@ Clone it next to this repo, point its `sync-contracts` at `../madrileno/target/b
 
 - **In dev**, the frontend's Vite proxy makes the API same-origin, so there is no CORS to configure and nothing to change here.
 - **In production**, if the frontend is served from a different origin, set this backend's `CORS_ALLOWED_ORIGINS` (see [`configuration.md`](configuration.md)) — its existing env contract, not a new frontend coupling.
+
+## Starting a real project
+
+The frontend ships the same "delete the demo" escape hatch as the backend's [`init-project`](scripts.md):
+
+```bash
+pnpm run init-project my-project
+```
+
+It deletes the auction demo (`src/features/auctions/` and every `frontend:auction-block-*` marker block, mirroring the backend's `scripts:auction-block-*` markers), renames the package to `my-project-frontend`, and leaves a runnable shell — login, the typed client, routing, tests, and the SSR opt-in all intact. Run it alongside the backend's own `init-project.scala`, then regenerate and resync the contract (`sbt test` → `pnpm run sync-contracts`) so the fresh project starts from your routes, not the auction ones.
