@@ -6,6 +6,7 @@ import madrileno.user.domain.*
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AsyncWordSpec
 
+import java.net.URI
 import java.time.Instant
 
 class UserRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matchers with TestTransactor {
@@ -68,6 +69,26 @@ class UserRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
         _       <- repo.update(created.id, _.copy(fullName = Some(FullName("Should Not Change"))), now.plusSeconds(1))
         result  <- repo.findIncludingDeleted(created.id)
       } yield result.flatMap(_.fullName) shouldBe Some(FullName("Original"))
+    }
+
+    "anonymize strips PII, reports the transition once, and hides the user from find" in withRollback {
+      val user    = TestData.user(avatarUrl = Some(URI("https://example.com/avatar.png")))
+      val anonNow = Instant.parse("2026-07-14T10:00:00Z")
+      for {
+        _      <- repo.create(user, anonNow)
+        first  <- repo.anonymize(user.id, anonNow)
+        second <- repo.anonymize(user.id, anonNow)
+        found  <- repo.find(user.id)
+        raw    <- repo.findIncludingDeleted(user.id)
+      } yield {
+        first shouldBe true
+        second shouldBe false
+        found shouldBe None
+        raw.flatMap(_.fullName) shouldBe None
+        raw.flatMap(_.emailAddress) shouldBe None
+        raw.map(_.emailVerified) shouldBe Some(false)
+        raw.flatMap(_.avatarUrl) shouldBe None
+      }
     }
   }
 }

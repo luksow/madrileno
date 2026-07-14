@@ -110,6 +110,9 @@ class RefreshTokenRepository {
     repository.update(RefreshTokenRow(refreshToken))
   }
 
+  def revokeAllForUser(userId: UserId, now: Instant): DB[Unit] =
+    repository.softDeleteByFilter(RefreshTokenRowFilter(userId = p.equal(userId), deletedAt = p.isNull), now)
+
   def deleteStaleBefore(cutoff: Instant): DB[Unit] = {
     val session = summon[Session[IO]]
     val table   = RefreshTokenRowTable

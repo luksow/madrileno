@@ -75,6 +75,17 @@ class RefreshTokenRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Mat
         found      <- tokenRepo.findForUpdate(token.id)
       } yield found.flatMap(_.usedAt) shouldBe defined
     }
+
+    "revokeAllForUser invalidates active refresh tokens" in withRollback {
+      val now = Instant.now()
+      for {
+        (userId, _) <- createUserAndToken()
+        before      <- tokenRepo.listActive(userId, now)
+        _ = before should not be empty
+        _     <- tokenRepo.revokeAllForUser(userId, now)
+        after <- tokenRepo.listActive(userId, now)
+      } yield after shouldBe empty
+    }
   }
 
   "deleteStaleBefore" should {
