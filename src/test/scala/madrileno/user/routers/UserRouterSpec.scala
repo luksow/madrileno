@@ -42,10 +42,7 @@ class UserRouterSpec extends BaseRouteSpec with TestApplicationLoader {
           response.body.emailAddress shouldBe user.emailAddress
           response.body.emailVerified shouldBe user.emailVerified
         }
-    )
-  )
-
-  path("/v1/users/me")(
+    ),
     supports(
       DELETE,
       description =
