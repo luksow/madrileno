@@ -16,6 +16,10 @@ class OutboxDispatcher(
 )(using TelemetryContext)
     extends LoggingSupport {
 
+  private val duplicated: Set[(String, String)] =
+    subscriptions.groupBy(s => (s.consumer, s.eventType)).collect { case (key, ss) if ss.sizeIs > 1 => key }.toSet
+  require(duplicated.isEmpty, s"duplicate outbox subscriptions (consumer, eventType): ${duplicated.mkString(", ")}")
+
   private val byConsumer: Map[String, List[OutboxSubscription]] = subscriptions.groupBy(_.consumer)
 
   val consumers: List[String] = byConsumer.keys.toList.sorted

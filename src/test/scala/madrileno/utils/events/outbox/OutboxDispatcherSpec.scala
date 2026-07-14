@@ -158,5 +158,10 @@ class OutboxDispatcherSpec extends AsyncWordSpec with AsyncIOSpec with Matchers 
         err shouldBe Some("boom")
       }
     }
+
+    "reject duplicate (consumer, eventType) subscriptions at construction" in {
+      val sub = OutboxSubscription[DispatchEvent]("billing")(_ => IO.pure(Reaction.Done))
+      IO(intercept[IllegalArgumentException](dispatcher(sub, sub))).map(_.getMessage should include("billing"))
+    }
   }
 }
