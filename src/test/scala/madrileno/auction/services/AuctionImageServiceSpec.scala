@@ -24,9 +24,9 @@ import org.typelevel.otel4s.metrics.Meter
 import org.typelevel.otel4s.trace.Tracer
 
 import java.awt.Color
-import java.nio.file.{Files, Paths}
 import java.time.Instant
 import scala.concurrent.duration.DurationInt
+import scala.util.Using
 
 class AuctionImageServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers with TestTransactor {
 
@@ -65,7 +65,7 @@ class AuctionImageServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matche
     service.attachImage(auctionId, sellerId, "wine.jpg", jpeg, Stream.emits(bytes))
 
   private def resourceBytes(name: String): Array[Byte] =
-    Files.readAllBytes(Paths.get(getClass.getResource(name).toURI))
+    Using.resource(getClass.getResourceAsStream(name))(_.readAllBytes())
 
   "AuctionImageService.attachImage" should {
     "attach an image and return Attached with computed size" in {

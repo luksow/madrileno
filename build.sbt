@@ -109,6 +109,10 @@ libraryDependencies ++= {
 }
 Test / scalacOptions ++= Seq("-Wconf:msg=should not be used as infix:s", "-Wconf:msg=unused value of type org.scalatest:s")
 
+// sbt 2 exports jars on the classpath by default, which breaks classpath
+// scanning (baklava generation, ModuleWiringSpec) — keep class directories.
+exportJars := false
+
 javaOptions += "-Dotel.java.global-autoconfigure.enabled=true"
 
 Compile / run / fork := true
@@ -162,7 +166,7 @@ inConfig(Test)(
 )
 
 // Cache runtime classpath for `./scripts/dev-console.scala`.
-Compile / compile := {
+Compile / compile := Def.uncached {
   val r           = (Compile / compile).value
   val runtimeJars = update.value.configurations
     .find(_.configuration.name == "runtime")
@@ -171,7 +175,9 @@ Compile / compile := {
   val classDir    = (Compile / classDirectory).value.getAbsolutePath
   val resourceDir = (Compile / resourceDirectory).value.getAbsolutePath
   val cp          = (classDir +: resourceDir +: runtimeJars).mkString(":")
-  val dest        = target.value / "console-classpath"
+  // baseDirectory-anchored: sbt 2 moved `target` under target/out/..., but
+  // scripts/dev-console.scala expects the stable top-level location.
+  val dest = baseDirectory.value / "target" / "console-classpath"
   IO.write(dest, cp)
   streams.value.log.info(s"dev-console classpath cached at $dest")
   r
@@ -182,6 +188,6 @@ semanticdbEnabled := true
 semanticdbVersion := scalafixSemanticdb.revision
 
 lazy val verifyAll = taskKey[Unit]("Performs all verifications to assure that the build will pass CI checks.")
-Test / verifyAll := {
-  Def.sequential(Compile / scalafmtSbtCheck, Compile / scalafmtCheckAll, Compile / compile, Test / test).value
+Test / verifyAll := Def.uncached {
+  Def.sequential(Compile / scalafmtSbtCheck, Compile / scalafmtCheckAll, Compile / compile, (Test / test).toTask("")).value
 }
