@@ -6,17 +6,20 @@ It's optional. The template works without it. The MCP earns its keep when you're
 
 ## What it serves
 
-Five tools, designed around the conceptual units of the codebase (a module, a doc, a path, a diff):
+Six tools, designed around the conceptual units of the codebase (a module, a doc, a path, a diff):
 
 | Tool                       | Returns                                                                                    | Use when                                              |
 |----------------------------|--------------------------------------------------------------------------------------------|-------------------------------------------------------|
 | `madrileno_overview()`     | Orientation: what madrileno is, reference modules, doc index, pinned ref                   | First call in any session — the anchor                |
-| `madrileno_module(name)`   | Concatenated source of all main + test files under one module (`user`, `auction`, etc.)    | Learning a module pattern in full                     |
+| `madrileno_module(name, at?)` | Concatenated source of all main + test files under one module (`user`, `auction`, etc.), at the pinned ref or `at` | Learning a module pattern in full                     |
 | `madrileno_doc(name)`      | One doc (markdown), e.g. `auth`, `domain-modeling`, `adding-a-module`                       | Expanding on a concept                                |
-| `madrileno_source(path)`   | File at the pinned ref (`madrileno.*` package qualifiers rewritten — see below). Fallback for specific paths | "Show me this exact file"                             |
-| `madrileno_changes(since?, paths?, target?)` | `git log --oneline` between two refs, optionally path-filtered                | Pulling upstream changes since the project was anchored |
+| `madrileno_source(path, at?)` | One file, at the pinned ref or `at` (`madrileno.*` package qualifiers rewritten — see below). Fallback for specific paths | "Show me this exact file"                             |
+| `madrileno_changes(since?, paths?, target?)` | `git log --oneline` between two refs, optionally path-filtered                | Learning what landed upstream since the project was anchored |
+| `madrileno_diff(since?, target?, paths?, format?)` | `git diff` between two refs — `format="stat"` (default) for per-file sizes, `"patch"` for content | Pulling upstream changes — see [updating-from-upstream.md](updating-from-upstream.md) |
 
-Source returned by `madrileno_module` and `madrileno_source` is **automatically rewritten** from `madrileno.*` to your project's package. Docs are returned verbatim.
+Source returned by `madrileno_module`, `madrileno_source`, and `madrileno_diff(format="patch")` is **automatically rewritten** from `madrileno.*` to your project's package. Docs are returned verbatim.
+
+The `at` parameter on `madrileno_module` / `madrileno_source` defaults to the pinned ref; pass `at="origin/main"` (or any ref) to read a different version — the baseline you derived from and upstream-latest, side by side, is the comparison the update workflow runs on.
 
 ## How the anchoring works
 
@@ -30,6 +33,8 @@ ref=<sha at init time>
 `repo=` is derived from `git remote get-url origin` (so it works for forks / SSH clones), falling back to the canonical upstream when there's no origin. `ref=` is the sha of HEAD at init time.
 
 The MCP server reads this **once at startup** (lazy val) and anchors every tool call to that commit. If you edit `.madrileno-ref` while the server is running, restart the server for the change to take effect. Commit `.madrileno-ref` — collaborators benefit from a shared pin.
+
+The pin's meaning is **"I have triaged upstream up to here"** — not "I have adopted everything up to here." When you review upstream changes and adopt some but skip others, bump `ref=` to the reviewed sha anyway; a deliberate skip is a decision, and the pin records that it was made. Otherwise `madrileno_changes` re-reports your skips forever. [updating-from-upstream.md](updating-from-upstream.md) builds on this.
 
 The MCP server keeps a local shadow clone of the upstream repo at `.madrileno-mcp/repo/` (gitignored). First launch clones (~50MB, one-time). Every launch does a `git fetch origin` so `madrileno_changes` can compare your pinned ref against the latest `origin/main`.
 
@@ -90,7 +95,7 @@ The MCP doesn't dictate the answer — it routes Claude to the parts of the refe
 
 ## Pulling upstream changes
 
-Months after init, upstream Madrileno has evolved. To learn what's new in, say, the auth layer:
+Months after init, upstream Madrileno has evolved. The full workflow lives in [updating-from-upstream.md](updating-from-upstream.md) (also served as `madrileno_doc("updating-from-upstream")`, so the assistant can drive it directly); the shape of it:
 
 ```
 > madrileno_changes(paths=["src/main/scala/madrileno/auth"])
@@ -98,9 +103,13 @@ Months after init, upstream Madrileno has evolved. To learn what's new in, say, 
 
 840b2ac auth: provider map refactor + dev login
 208deeb Config: type AppConfig.environment as Environment enum
+
+> madrileno_diff(paths=["src/main/scala/madrileno/auth"])          # format="stat" — scope it
+> madrileno_diff(paths=["src/main/scala/madrileno/auth"], format="patch")   # content, package-rewritten
+> madrileno_module("auth", at="origin/main")                        # whole files when the patch isn't enough
 ```
 
-Ask Claude to walk through those commits against your auth code and propose updates. After applying, bump `ref=` in `.madrileno-ref` to the new sha. That's the "stay in sync with upstream patterns" loop.
+Ask Claude to walk through those changes against your auth code and propose updates. After the review, bump `ref=` in `.madrileno-ref` to the sha you triaged up to (even for changes you chose to skip — see above), restart the server, commit. That's the "stay in sync with upstream patterns" loop.
 
 ## Refreshing the shadow clone
 
@@ -121,5 +130,6 @@ Ask Claude to walk through those commits against your auth code and propose upda
 
 ## Where to look next
 
+- [`updating-from-upstream.md`](updating-from-upstream.md) — the catch-up-with-upstream workflow built on `madrileno_changes` / `madrileno_diff`.
 - [`scripts.md`](scripts.md) — the rest of the scala-cli scripts under `scripts/` (init, scaffold, dev-console).
 - [`adding-a-module.md`](adding-a-module.md) — the vertical-slice walkthrough the MCP's `madrileno_doc("adding-a-module")` returns.
