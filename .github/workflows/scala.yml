@@ -28,10 +28,6 @@ jobs:
         distribution: 'temurin'
         cache: 'sbt'
     - uses: sbt/setup-sbt@v1
-      # One sbt invocation: sbt 2's client/server handoff between separate steps
-      # is flaky, and the trailing shutdown ensures the dependency submission
-      # below gets a fresh server with its step-scoped GITHUB_TOKEN
-      # (scalacenter/sbt-dependency-submission#364).
     - name: Check formatting, scalafix, compile, test
       run: sbt "scalafmtCheckAll; scalafixAll --check; compile; test; shutdown"
       # Optional: This step uploads information to the GitHub dependency graph and unblocking Dependabot alerts for the repository
