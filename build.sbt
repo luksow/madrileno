@@ -6,7 +6,7 @@ scalaVersion := "3.8.4"
 
 libraryDependencies ++= {
   val http4sV            = "0.23.36"
-  val http4sStirV        = "0.4.1"
+  val http4sStirV        = "0.5.0"
   val http4sOtelV        = "0.18.0"
   val circeV             = "0.14.16"
   val pureconfigV        = "0.17.10"
@@ -17,7 +17,7 @@ libraryDependencies ++= {
   val catsEffectV        = "3.7.0"
   val catsEffectTestingV = "1.8.0"
   val chimneyV           = "1.11.0"
-  val kebsV              = "2.1.6"
+  val kebsV              = "2.2.1"
   val logbackV           = "1.5.38"
   val log4catsV          = "2.8.0"
   val otel4sV            = "1.0.1"
