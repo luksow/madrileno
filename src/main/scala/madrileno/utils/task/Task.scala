@@ -62,7 +62,11 @@ final case class OneTimeTask[A](
   }
 }
 
-final case class CustomTask[A](descriptor: TaskDescriptor[A], execution: Task[A] => IO[Unit | Schedule.NextAt[A]]) {
+final case class CustomTask[A](
+  descriptor: TaskDescriptor[A],
+  execution: Task[A] => IO[Unit | Schedule.NextAt[A]],
+  maxRetries: Option[Int] = None,
+  onAbandon: Option[Task[A] => DBInTransaction[Unit]] = None) {
   def instance(
     taskInstance: String,
     payload: A,
@@ -76,7 +80,9 @@ final case class CustomTask[A](descriptor: TaskDescriptor[A], execution: Task[A]
       execution = execution,
       version = 0L,
       priority = priority,
-      schedule = Schedule.NextAt(firstAt, payload)
+      schedule = Schedule.NextAt(firstAt, payload),
+      maxRetries = maxRetries,
+      onAbandon = onAbandon
     )
   }
 }

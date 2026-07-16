@@ -301,7 +301,15 @@ private[task] class SchedulerRepository(
               customTasks
                 .find(_.descriptor.taskName == row.taskName)
                 .flatMap { t =>
-                  reconstructTask(row, t.descriptor, t.execution, v => Schedule.NextAt(row.nextExecution, v), Some(row.nextExecution), None, None)
+                  reconstructTask(
+                    row,
+                    t.descriptor,
+                    t.execution,
+                    v => Schedule.NextAt(row.nextExecution, v),
+                    Some(row.nextExecution),
+                    t.maxRetries,
+                    t.onAbandon
+                  )
                 }
             }
             .orElse {

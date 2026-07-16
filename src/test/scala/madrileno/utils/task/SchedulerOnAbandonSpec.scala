@@ -57,6 +57,30 @@ class SchedulerOnAbandonSpec extends AsyncWordSpec with AsyncIOSpec with Matcher
       }
     }
 
+    "abandoning a custom task dead-letters and terminates its chain permanently" in {
+      for {
+        attempts  <- Ref.of[IO, Int](0)
+        abandoned <- Ref.of[IO, Int](0)
+        descriptor = TaskDescriptor[Unit]("test-onabandon-custom")
+        task       = CustomTask[Unit](descriptor, _ => attempts.update(_ + 1) *> IO.raiseError(new RuntimeException("always fails")))
+                 .copy(maxRetries = Some(0), onAbandon = Some(_ => abandoned.update(_ + 1)))
+        scheduler = Scheduler(transactor, config)
+        client    = scheduler.client
+        result <- scheduler.run(recurringTasks = Nil, oneTimeTasks = Nil, customTasks = List(task)).use { _ =>
+                    for {
+                      now       <- cats.effect.Clock[IO].realTimeInstant
+                      _         <- client.schedule(task.instance("chain-1", (), firstAt = now))
+                      _         <- waitFor(abandoned, 1)
+                      a         <- attempts.get
+                      remaining <- client.listTasks
+                    } yield (a, remaining.exists(r => r.taskName == "test-onabandon-custom" && r.taskInstance == "chain-1"))
+                  }
+      } yield {
+        result._1 shouldBe 1
+        result._2 shouldBe false // chain row removed: the recurring chain is permanently terminated
+      }
+    }
+
     "keep the task row when onAbandon raises and the abandon transaction rolls back" in {
       for {
         abandoned <- Ref.of[IO, Int](0)
