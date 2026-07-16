@@ -13,20 +13,6 @@ enum DeliveryStatus {
   case Pending, Completed, Failed
 }
 
-object DeliveryStatus {
-  def fromDb(s: String): DeliveryStatus = s match {
-    case "pending"   => Pending
-    case "completed" => Completed
-    case "failed"    => Failed
-    case other       => throw new IllegalArgumentException(s"Unknown delivery status: $other")
-  }
-  def toDb(s: DeliveryStatus): String = s match {
-    case Pending   => "pending"
-    case Completed => "completed"
-    case Failed    => "failed"
-  }
-}
-
 private[outbox] final case class OutboxDeliveryRow(
   eventId: DomainEventId,
   consumer: String,
@@ -38,7 +24,7 @@ private[outbox] final case class OutboxDeliveryRow(
 private[outbox] object OutboxDeliveryTable extends Table[OutboxDeliveryRow]("outbox_delivery") {
   val eventId: Column[DomainEventId]    = column("event_id", uuid.as[DomainEventId])
   val consumer: Column[String]          = column("consumer", text)
-  val status: Column[DeliveryStatus]    = column("status", text.imap(DeliveryStatus.fromDb)(DeliveryStatus.toDb))
+  val status: Column[DeliveryStatus]    = column("status", text.asEnum[DeliveryStatus])
   val lastError: Column[Option[String]] = column("last_error", text.opt)
   val createdAt: Column[Instant]        = column("created_at", timestamptz.asInstant)
   val updatedAt: Column[Instant]        = column("updated_at", timestamptz.asInstant)
