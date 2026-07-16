@@ -1,4 +1,4 @@
-package madrileno.utils.outbox
+package madrileno.utils.events.outbox
 
 import cats.effect.testing.scalatest.AsyncIOSpec
 import io.circe.Json

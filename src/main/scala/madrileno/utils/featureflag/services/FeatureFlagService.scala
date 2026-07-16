@@ -9,7 +9,7 @@ import madrileno.utils.cache.{Cache, CacheRuntime}
 import madrileno.utils.crypto.IdGenerator
 import madrileno.utils.db.dsl.Lock
 import madrileno.utils.db.transactor.Transactor
-import madrileno.utils.events.EventBus
+import madrileno.utils.events.bus.EventBus
 import madrileno.utils.featureflag.domain.*
 import madrileno.utils.featureflag.repositories.{FeatureFlagAuditRepository, FeatureFlagRepository, RuleRepository, SegmentRepository}
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}

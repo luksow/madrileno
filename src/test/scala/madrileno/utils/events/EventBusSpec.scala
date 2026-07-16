@@ -3,6 +3,7 @@ package madrileno.utils.events
 import cats.effect.IO
 import cats.effect.testing.scalatest.AsyncIOSpec
 import cats.syntax.all.*
+import madrileno.utils.events.bus.EventBusRuntime
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AsyncWordSpec
 

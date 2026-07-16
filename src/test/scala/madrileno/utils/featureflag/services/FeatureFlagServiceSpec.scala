@@ -5,7 +5,7 @@ import cats.effect.std.Supervisor
 import cats.effect.testing.scalatest.AsyncIOSpec
 import io.opentelemetry.api.OpenTelemetry
 import madrileno.support.{TestCacheRuntime, TestTransactor}
-import madrileno.utils.events.{EventBus, EventBusRuntime}
+import madrileno.utils.events.bus.{EventBus, EventBusRuntime}
 import madrileno.utils.featureflag.domain.*
 import madrileno.utils.featureflag.repositories.{FeatureFlagAuditRepository, FeatureFlagRepository, RuleRepository, SegmentRepository}
 import madrileno.utils.observability.TelemetryContext

@@ -5,6 +5,7 @@ import cats.effect.std.Supervisor
 import cats.effect.testing.scalatest.AsyncIOSpec
 import cats.syntax.all.*
 import madrileno.support.{TestData, TestTransactor}
+import madrileno.utils.events.bus.EventBusRuntime
 import madrileno.utils.observability.TelemetryContext
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AsyncWordSpec

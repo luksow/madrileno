@@ -6,7 +6,7 @@ import com.softwaremill.macwire.*
 import madrileno.auth.domain.AuthContext
 import madrileno.utils.cache.CacheRuntime
 import madrileno.utils.db.transactor.Transactor
-import madrileno.utils.events.{EventBus, EventBusRuntime}
+import madrileno.utils.events.bus.{EventBus, EventBusRuntime}
 import madrileno.utils.featureflag.domain.FeatureFlagEvent
 import madrileno.utils.featureflag.repositories.{FeatureFlagAuditRepository, FeatureFlagRepository, RuleRepository, SegmentRepository}
 import madrileno.utils.featureflag.routers.FeatureFlagRouter
