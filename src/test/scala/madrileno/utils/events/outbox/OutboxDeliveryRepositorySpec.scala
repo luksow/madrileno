@@ -69,7 +69,7 @@ class OutboxDeliveryRepositorySpec extends AsyncWordSpec with AsyncIOSpec with M
         _  <- delivery.openDelivery(e1.id, "billing", now)
         _  <- delivery.openDelivery(e2.id, "billing", now)
         _  <- delivery.markCompleted(e1.id, "billing", now)
-        _  <- delivery.markFailed(e2.id, "billing", "boom", now)
+        _  <- delivery.markFailed(e2.id, "billing", Some("boom"), now)
         s1 <- delivery.lockForDelivery(e1.id, "billing")
         s2 <- delivery.lockForDelivery(e2.id, "billing")
       } yield {
@@ -105,16 +105,56 @@ class OutboxDeliveryRepositorySpec extends AsyncWordSpec with AsyncIOSpec with M
         _    <- outbox.append(e2)
         _    <- delivery.openDelivery(e1.id, "billing", now)
         _    <- delivery.openDelivery(e2.id, "billing", now)
-        both <- delivery.pendingWithoutTask("outbox-deliver:", 100)
-        _    <- insertScheduledTask("outbox-deliver:billing", e1.id.unwrap.toString, now)
-        one  <- delivery.pendingWithoutTask("outbox-deliver:", 100)
+        both <- delivery.pendingWithoutTask(OutboxDeliveryTasks.TaskNamePrefix, 100)
+        _    <- insertScheduledTask(OutboxDeliveryTasks.taskName("billing"), OutboxDeliveryTasks.taskInstance(e1.id), now)
+        one  <- delivery.pendingWithoutTask(OutboxDeliveryTasks.TaskNamePrefix, 100)
         _    <- delivery.markCompleted(e2.id, "billing", now)
-        none <- delivery.pendingWithoutTask("outbox-deliver:", 100)
+        none <- delivery.pendingWithoutTask(OutboxDeliveryTasks.TaskNamePrefix, 100)
       } yield {
         both should contain theSameElementsAs List((e1.id, "billing"), (e2.id, "billing"))
         one shouldBe List((e2.id, "billing"))
         none shouldBe empty
       }
     }
+
+    "recordError sets last_error without touching pending status, and markFailed(None) preserves it" in withRollback {
+      val e   = event("sample-event.v1")
+      val now = Instant.parse("2026-06-28T10:00:01Z")
+      for {
+        _      <- outbox.append(e)
+        _      <- delivery.openDelivery(e.id, "billing", now)
+        _      <- delivery.recordError(e.id, "billing", "attempt 1 boom", now)
+        status <- delivery.lockForDelivery(e.id, "billing")
+        _      <- delivery.markFailed(e.id, "billing", None, now)
+        error  <- lastError(e.id, "billing")
+      } yield {
+        status shouldBe Some(DeliveryStatus.Pending)
+        error shouldBe Some("attempt 1 boom")
+      }
+    }
+
+    "recordError does not touch terminal rows and loadEvent round-trips" in withRollback {
+      val e   = event("sample-event.v1")
+      val now = Instant.parse("2026-06-28T10:00:01Z")
+      for {
+        _      <- outbox.append(e)
+        _      <- delivery.openDelivery(e.id, "billing", now)
+        _      <- delivery.markCompleted(e.id, "billing", now)
+        _      <- delivery.recordError(e.id, "billing", "late error", now)
+        error  <- lastError(e.id, "billing")
+        loaded <- outbox.loadEvent(e.id)
+        absent <- outbox.loadEvent(DomainEventId(TestData.randomUuid()))
+      } yield {
+        error shouldBe None
+        loaded shouldBe Some(e)
+        absent shouldBe None
+      }
+    }
+  }
+
+  private def lastError(eventId: DomainEventId, consumer: String): DBInTransaction[Option[String]] = {
+    val session = summon[Session[IO]]
+    session.unique(sql"""SELECT last_error FROM outbox_delivery
+                         WHERE event_id = $uuid AND consumer = $text""".query(text.opt))((eventId.unwrap, consumer))
   }
 }

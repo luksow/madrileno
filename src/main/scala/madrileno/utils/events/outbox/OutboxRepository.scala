@@ -32,6 +32,9 @@ class OutboxRepository {
   def append(event: DomainEvent): DBInTransaction[Unit] =
     repository.create(event).void
 
+  def loadEvent(eventId: DomainEventId): DB[Option[DomainEvent]] =
+    repository.findById(eventId)
+
   def findByAggregate(aggregateType: String, aggregateId: UUID): DB[List[DomainEvent]] = {
     val filter = DomainEventFilter(aggregateType = p.equal(aggregateType), aggregateId = p.equal(aggregateId))
     repository.findByFilter(filter).map(_.sortBy(_.id.unwrap.toString))
