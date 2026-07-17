@@ -42,7 +42,7 @@ class OutboxDispatcher(
   }
 
   private val taskByConsumer: Map[String, OneTimeTask[UUID]] =
-    deliveryTasks.map(t => t.descriptor.taskName -> t).toMap.map { case (name, t) => name.stripPrefix(OutboxDeliveryTasks.TaskNamePrefix) -> t }
+    deliveryTasks.map(t => t.descriptor.taskName.stripPrefix(OutboxDeliveryTasks.TaskNamePrefix) -> t).toMap
 
   def instanceFor(consumer: String, eventId: DomainEventId): Task[UUID] =
     taskByConsumer(consumer).instance(OutboxDeliveryTasks.taskInstance(eventId), eventId.unwrap)
@@ -82,7 +82,9 @@ class OutboxDispatcher(
       }
       .handleErrorWith { error =>
         Clock[IO].realTimeInstant
-          .flatMap(now => transactor.inSession(deliveryRepository.recordError(eventId, consumer, error.getMessage, now)))
+          .flatMap(now =>
+            transactor.inSession(deliveryRepository.recordError(eventId, consumer, Option(error.getMessage).getOrElse(error.getClass.getName), now))
+          )
           .handleErrorWith(e => logger.warn(e)(s"failed to record delivery error for $eventId/$consumer"))
           .flatMap(_ => IO.raiseError(error))
       }
