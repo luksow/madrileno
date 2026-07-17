@@ -47,7 +47,7 @@ object EventBusRuntime {
       with LoggingSupport {
 
     private val identifier =
-      Identifier.fromString(name).fold(msg => throw new IllegalArgumentException(s"Invalid channel name '$name': $msg"), identity)
+      Identifier.fromValue(name).fold(msg => throw new IllegalArgumentException(s"Invalid channel name '$name': $msg"), identity)
     private val codec = EventCodec[E]
 
     private val listenerReady: Ref[IO, Deferred[IO, Unit]] =
