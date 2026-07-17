@@ -9,9 +9,11 @@ import madrileno.user.routers.UserRouter
 import madrileno.user.services.UserService
 import madrileno.utils.db.transactor.Transactor
 import madrileno.utils.http.AuthRouteProvider
+import madrileno.utils.observability.TelemetryContext
 import pl.iterators.stir.server.Route
 
 trait UserModule extends AuthRouteProvider {
+  given telemetryContext: TelemetryContext
   val clock: Clock[IO]
   val transactor: Transactor
   lazy val userRepository: UserRepository = wire[UserRepository]

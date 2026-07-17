@@ -15,16 +15,18 @@ class UserServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers with 
   private val now                 = Instant.now()
 
   "UserService" should {
-    "getCurrentUser returns the user for an existing id" in {
+    "getCurrentUser returns the user for an existing id and None for a missing one" in {
       val user = TestData.user()
       for {
         _       <- transactor.inSession(userRepository.create(user, now))
         fetched <- service.getCurrentUser(user.id)
+        absent  <- service.getCurrentUser(TestData.randomUserId())
       } yield {
-        fetched.id shouldBe user.id
-        fetched.fullName shouldBe user.fullName
-        fetched.emailAddress shouldBe user.emailAddress
-        fetched.emailVerified shouldBe user.emailVerified
+        fetched.map(_.id) shouldBe Some(user.id)
+        fetched.flatMap(_.fullName) shouldBe user.fullName
+        fetched.flatMap(_.emailAddress) shouldBe user.emailAddress
+        fetched.map(_.emailVerified) shouldBe Some(user.emailVerified)
+        absent shouldBe None
       }
     }
   }
