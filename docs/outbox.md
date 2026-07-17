@@ -35,7 +35,7 @@ final case class UserAccountDeleted(userId: UserId) derives EventCodec
 
 object UserAccountDeleted {
   given DomainEventDescriptor[UserAccountDeleted] =
-    DomainEventDescriptor("user-account-deleted.v1", "user", _.userId.unwrap)
+    DomainEventDescriptor("user-account-deleted.v1", "user", _.userId)
 }
 
 transactor.inTransaction {
@@ -131,14 +131,14 @@ A bump looks like this. The frozen shape takes the version suffix; the current s
 final case class UserAccountDeletedV1(userId: UserId) derives EventCodec
 object UserAccountDeletedV1 {
   given DomainEventDescriptor[UserAccountDeletedV1] =
-    DomainEventDescriptor("user-account-deleted.v1", "user", _.userId.unwrap)
+    DomainEventDescriptor("user-account-deleted.v1", "user", _.userId)
 }
 
 // current — what publishers publish
 final case class UserAccountDeleted(userId: UserId, deletedAt: Instant) derives EventCodec
 object UserAccountDeleted {
   given DomainEventDescriptor[UserAccountDeleted] =
-    DomainEventDescriptor("user-account-deleted.v2", "user", _.userId.unwrap)
+    DomainEventDescriptor("user-account-deleted.v2", "user", _.userId)
 }
 ```
 

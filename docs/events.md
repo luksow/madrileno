@@ -36,7 +36,7 @@ delivery machinery (see [outbox.md](outbox.md)) with retry, dead-lettering, and 
     final case class UserAccountDeleted(userId: UserId) derives EventCodec
     object UserAccountDeleted {
       given DomainEventDescriptor[UserAccountDeleted] =
-        DomainEventDescriptor("user-account-deleted.v1", "user", _.userId.unwrap)
+        DomainEventDescriptor("user-account-deleted.v1", "user", _.userId)
     }
 
     transactor.inTransaction {

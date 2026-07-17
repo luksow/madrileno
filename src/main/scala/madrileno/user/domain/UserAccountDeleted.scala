@@ -7,5 +7,5 @@ import madrileno.utils.events.outbox.DomainEventDescriptor
 final case class UserAccountDeleted(userId: UserId) derives EventCodec
 
 object UserAccountDeleted {
-  given DomainEventDescriptor[UserAccountDeleted] = DomainEventDescriptor("user-account-deleted.v1", "user", _.userId.unwrap)
+  given DomainEventDescriptor[UserAccountDeleted] = DomainEventDescriptor("user-account-deleted.v1", "user", _.userId)
 }
