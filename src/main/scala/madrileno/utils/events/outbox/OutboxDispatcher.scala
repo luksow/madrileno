@@ -1,10 +1,13 @@
 package madrileno.utils.events.outbox
 
 import cats.effect.{Clock, IO}
-import madrileno.utils.db.transactor.Transactor
+import cats.syntax.all.*
+import madrileno.utils.db.transactor.{DBInTransaction, Transactor}
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
 import madrileno.utils.task.{OneTimeTask, Task, TaskDescriptor}
+import org.typelevel.otel4s.Attribute
 
+import java.time.Instant
 import java.util.UUID
 
 class OutboxDispatcher(
@@ -35,7 +38,8 @@ class OutboxDispatcher(
       maxRetries = config.deliveryMaxRetries,
       onAbandon = Some { task =>
         Clock[IO].realTimeInstant.flatMap { now =>
-          deliveryRepository.markFailed(DomainEventId(task.payload), consumer, None, now)
+          deliveryRepository.markFailed(DomainEventId(task.payload), consumer, None, now) *>
+            recordDelivery(consumer, "exhausted")
         }
       }
     )
@@ -57,22 +61,22 @@ class OutboxDispatcher(
       .inTransaction {
         deliveryRepository.lockForDelivery(eventId, consumer).flatMap {
           case None =>
-            logger.warn(s"outbox delivery row missing for $eventId/$consumer, skipping")
+            logger.warn(s"outbox delivery row missing for $eventId/$consumer, skipping").as(None)
           case Some(DeliveryStatus.Completed) | Some(DeliveryStatus.Failed) =>
-            IO.unit
+            IO.pure(None)
           case Some(DeliveryStatus.Pending) =>
             Clock[IO].realTimeInstant.flatMap { now =>
               outboxRepository.loadEvent(eventId).flatMap {
                 case None =>
-                  deliveryRepository.markFailed(eventId, consumer, Some("domain_event row missing"), now)
+                  deadLetter(eventId, consumer, "domain_event row missing", now)
                 case Some(event) =>
                   subs.find(_.eventType == event.eventType) match {
                     case None =>
-                      deliveryRepository.markFailed(eventId, consumer, Some(s"no subscription for ${event.eventType}"), now)
+                      deadLetter(eventId, consumer, s"no subscription for ${event.eventType}", now)
                     case Some(sub) =>
                       sub.run(event, Delivery(eventId, consumer, attempt, event.occurredAt)).flatMap {
-                        case Reaction.Done          => deliveryRepository.markCompleted(eventId, consumer, now)
-                        case Reaction.Drop(reason)  => deliveryRepository.markFailed(eventId, consumer, Some(reason), now)
+                        case Reaction.Done          => deliveryRepository.markCompleted(eventId, consumer, now).as(Some("completed"))
+                        case Reaction.Drop(reason)  => deadLetter(eventId, consumer, reason, now)
                         case Reaction.Retry(reason) => IO.raiseError(OutboxRetryRequested(reason))
                       }
                   }
@@ -80,6 +84,7 @@ class OutboxDispatcher(
             }
         }
       }
+      .flatMap(_.traverse_(recordDelivery(consumer, _)))
       .handleErrorWith { error =>
         Clock[IO].realTimeInstant
           .flatMap(now =>
@@ -88,4 +93,19 @@ class OutboxDispatcher(
           .handleErrorWith(e => logger.warn(e)(s"failed to record delivery error for $eventId/$consumer"))
           .flatMap(_ => IO.raiseError(error))
       }
+
+  private def deadLetter(
+    eventId: DomainEventId,
+    consumer: String,
+    reason: String,
+    now: Instant
+  ): DBInTransaction[Option[String]] =
+    logger.warn(s"dead-lettering outbox delivery $eventId/$consumer: $reason") *>
+      deliveryRepository.markFailed(eventId, consumer, Some(reason), now).as(Some("dropped"))
+
+  private def recordDelivery(consumer: String, outcome: String): IO[Unit] =
+    summon[TelemetryContext].meter
+      .counter[Long]("outbox.deliveries")
+      .create
+      .flatMap(_.inc(Attribute("consumer", consumer), Attribute("outcome", outcome)))
 }

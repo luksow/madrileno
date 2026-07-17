@@ -112,7 +112,7 @@ UPDATE outbox_delivery SET status = 'Pending', updated_at = now()
 WHERE consumer = 'auction' AND status = 'Failed';
 ```
 
-Alert on dead-letter growth. The signals: the `scheduler.executions` counter with `outcome="retries_exhausted"` and `task.name="outbox-deliver:<consumer>"` fires once per abandonment; a `count(*)` on `Failed` rows is the queue-depth check. Removing a cap (`delivery-max-retries` absent → retry forever) trades dead-letters for indefinite retry noise — pick per deployment.
+Alert on dead-letter growth. The signal is the `outbox.deliveries` counter with `outcome="dropped"` (a handler `Drop`, including auto-dropped poison payloads) or `outcome="exhausted"` (retries ran out) — note the scheduler's `retries_exhausted` metric only sees the latter, because a `Drop` is a *successful* task execution. A `count(*)` on `Failed` rows is the queue-depth check. Every dead-letter is also warn-logged with its reason. Removing a cap (`delivery-max-retries` absent → retry forever) trades dead-letters for indefinite retry noise — pick per deployment.
 
 ## Recovery, deploys, multiple nodes
 
@@ -124,6 +124,13 @@ All repair actions are safe to race: opening a ledger row is `ON CONFLICT DO NOT
 
 - **`domain_event` is forever, by design** — it is the audit log, and `event_type` is a versioned contract (additive changes within `.v1`, breaking changes bump to `.v2` with the old decoder retained). The corollary: **payloads must not contain data you may be obliged to erase.** `UserAccountDeleted(userId)` carries only the id — keep it that way; if an event needs personal data, reference it, don't embed it (or you're into crypto-shredding territory).
 - **`outbox_delivery` is the dedup memory, not a scratch table.** A `Completed` row is the only thing telling recovery not to re-deliver that event. Never prune the ledger alone while the events remain and the consumer still subscribes to the type — recovery would faithfully re-deliver all of it. If unbounded growth becomes a problem, prune *event and ledger rows together* (ledger first — it has the FK) for events older than your horizon whose deliveries are all terminal; accept that replay-from-history stops working past that horizon.
+
+## Observability
+
+- **Per-attempt traces and metrics ride the scheduler.** Every delivery attempt is a scheduler task, so it runs in a `scheduler.execute outbox-deliver:<consumer>/<eventId>` span (event id, attempt count, recorded exception) and shows up in `scheduler.executions{task.name="outbox-deliver:<consumer>"}` alongside `scheduler.in_flight` and `scheduler.revived`.
+- **Terminal outcomes**: `outbox.deliveries{consumer, outcome="completed"|"dropped"|"exhausted"}`, counted once per terminal transition, after the transaction commits — rolled-back `Retry` attempts don't count.
+- **Recovery repairs**: `outbox.recovered{case="missing_ledger"|"stranded_task"}`, plus an info log per non-empty pass. A *steadily* nonzero rate in a healthy system means something upstream is wrong (crashing deploys, deleted tasks) — recovery healing constantly is a symptom, not a feature.
+- **Traces do not cross the async hop — deliberately.** The publishing request's trace ends at commit; each delivery runs in its own trace, like every other scheduler task in this template. Correlate by event id: it's the delivery span's `task.payload` attribute and in every outbox log line. Propagating a `traceparent` through `domain_event` and linking producer/consumer spans (the OTel messaging conventions) needs a column on the event table — if you want it, add it before your first release, not after.
 
 ## Configuration
 
