@@ -191,6 +191,20 @@ Three points control where identity comes from:
 
 For browser-based OIDC (Authorization Code + PKCE), this template assumes the frontend does the redirect handshake; the backend only verifies the resulting `id_token`. If you need a backend-driven flow (the server owns `/start` and `/callback`), that's an extra pair of endpoints around `Rs256TokenVerifier` — same downstream from there.
 
+## Account deletion
+
+`DELETE /v1/users/me` (`AccountService.deleteAccount`) runs in one transaction: anonymize the `user` row in place (PII columns nulled, `deleted_at` set — the id and audit timestamps survive for referential integrity), soft-delete all `user_auth` provider identities, revoke all refresh tokens, and publish `UserAccountDeleted` through the [outbox](outbox.md). The event is published only when the anonymize actually transitioned the row, so the endpoint is idempotent: the second call is a no-op and both return 204. Downstream cleanup (cancelling the user's auctions, mailing bidders) is the outbox consumer's job, not the request's.
+
+Signing in again with the same provider identity is a *fresh registration* — the soft-deleted `user_auth` row no longer matches, so a new `User` is created. That's the intended semantics of "delete", not a bug.
+
+**The residual access-token window.** Refresh tokens die with the account, but already-issued JWTs are stateless and stay valid until they expire. During that window `GET /v1/users/me` returns 401 `account-deleted` (the router treats "authenticated user's row is gone" as a dead session, so clients drop their tokens), while other authenticated endpoints that load the user may surface errors. This transiently-inconsistent window is accepted and bounded by the JWT lifetime; closing it for real means a revocation check on every request (a denylist or a `deleted_at` lookup in the auth gate), which this template deliberately doesn't spend a DB round-trip on.
+
+Industry-standard companions that are deliberately **not** pre-built, in the spirit of [What you can't do](#what-you-cant-do):
+
+- **Recent-auth ("sudo mode").** Big providers require a fresh re-authentication before destructive account actions; here any valid JWT suffices. The hook point is the `DELETE /users/me` route — gate it on a recently-issued token (`iat` claim) or a re-verified provider token.
+- **Grace period / undo.** Common practice is a 14–30 day window where the account is deactivated but recoverable. Here deletion is immediate and final; a grace period means deferring the anonymize+event behind a scheduled task that a re-login cancels.
+- **Pre-deletion data export.** GDPR-adjacent flows usually offer "download your data" first; there's no export endpoint.
+
 ## What you can't do
 
 - **Change the internal JWT's signing scheme to RS256/asymmetric.** `JwtService` uses HMAC. Easy to extend — provide a key pair and switch the algorithm — but not done out of the box.

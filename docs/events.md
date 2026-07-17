@@ -30,7 +30,7 @@ bounded by the cache TTL.
 
 An append-only `domain_event` log written **in the same transaction** as your state change, so the
 fact and the state commit atomically. Delivery to consumers is handled by the scheduler-backed
-delivery machinery (see the design doc) with retry, dead-lettering, and replay.
+delivery machinery (see [outbox.md](outbox.md)) with retry, dead-lettering, and replay.
 
     // package madrileno.user.domain
     final case class UserAccountDeleted(userId: UserId) derives EventCodec

@@ -24,7 +24,9 @@ Skim the **Start here** path on day one. Reach for the rest by topic.
 - [`auth.md`](auth.md) — Firebase + JWT + refresh tokens; `AuthContext`; the `ExternalAuthVerifier` swap point.
 - [`scheduler.md`](scheduler.md) — db-scheduler-inspired Postgres scheduler; recurring + one-time tasks; admin UI.
 - [`mailer.md`](mailer.md) — render → serialize → schedule → SMTP; scalatags templates; dev previews.
+- [`events.md`](events.md) — the two event channels (transient bus vs durable outbox) and how to pick one.
 - [`event-bus.md`](event-bus.md) — local fs2 Topic vs Postgres LISTEN/NOTIFY; the `AuctionEvent` worked example.
+- [`outbox.md`](outbox.md) — transactional outbox: durable domain events, delivery ledger, retries, dead-letters, replay.
 - [`websockets.md`](websockets.md) — `WsRouteProvider`; projecting internal events to public envelope DTOs.
 - [`external-apis.md`](external-apis.md) — sttp client stack and the trait + `Live` class gateway pattern.
 - [`file-storage.md`](file-storage.md) — disk + S3-compatible object storage; auction images as the worked example.
