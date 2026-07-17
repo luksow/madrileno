@@ -45,7 +45,8 @@ delivery machinery (see [outbox.md](outbox.md)) with retry, dead-lettering, and 
     }
 
 `eventType` is a versioned contract (`*.v1`): stored payloads live forever, so changes within a
-version must be additive/tolerant, and breaking changes bump to `.v2` with the old decoder retained.
+version must be additive/tolerant, and breaking changes bump to `.v2` with the old decoder retained
+(the full procedure — code shape, rollout order, hazards — is in [outbox.md](outbox.md#versioning-an-event)).
 
 ## How they relate
 

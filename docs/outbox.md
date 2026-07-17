@@ -120,9 +120,48 @@ The `OutboxRecovery` fiber (started in `Main`) runs every `recovery-interval` an
 
 All repair actions are safe to race: opening a ledger row is `ON CONFLICT DO NOTHING`, task scheduling is an upsert that leaves running rows alone, and the terminal-status guard makes a duplicate task a no-op. Several nodes running recovery concurrently just do redundant reads.
 
+## Versioning an event
+
+The decision rule first: **if old payloads still decode into the new class, you don't bump.** A new `Option` field, a field with a sensible default, a hand-written tolerant decoder — that's the "additive within `.v1`" path, and it's a normal code change. Bump to `.v2` only when old payloads *can't* decode, or would decode into something that lies about what happened.
+
+A bump looks like this. The frozen shape takes the version suffix; the current shape keeps the good name, so suffixes accrete on dead code, not live code. The wire strings being explicit is what makes the rename safe (nothing about delivery keys off the class name), and the aggregate identity stays the same across versions:
+
+```scala
+// frozen — exists only to decode history
+final case class UserAccountDeletedV1(userId: UserId) derives EventCodec
+object UserAccountDeletedV1 {
+  given DomainEventDescriptor[UserAccountDeletedV1] =
+    DomainEventDescriptor("user-account-deleted.v1", "user", _.userId.unwrap)
+}
+
+// current — what publishers publish
+final case class UserAccountDeleted(userId: UserId, deletedAt: Instant) derives EventCodec
+object UserAccountDeleted {
+  given DomainEventDescriptor[UserAccountDeleted] =
+    DomainEventDescriptor("user-account-deleted.v2", "user", _.userId.unwrap)
+}
+```
+
+Each consumer then holds **two subscriptions with one handler**, upcasting at the edge so knowledge of the v1 shape is quarantined to one adapter line — the domain handler only ever sees the current class:
+
+```scala
+override abstract def outboxSubscriptions: List[OutboxSubscription] =
+  super.outboxSubscriptions :+
+    OutboxSubscription[UserAccountDeleted]("auction")(cleanup.onAccountDeleted) :+
+    OutboxSubscription.withDelivery[UserAccountDeletedV1]("auction")((e, d) =>
+      cleanup.onAccountDeleted(UserAccountDeleted(e.userId, d.occurredAt)))
+```
+
+**Roll out in two releases, subscriptions first.** Release 1 adds the v2 class and the v2 subscriptions everywhere while the publisher still emits v1; release 2 switches the publisher. The reason is a rolling-deploy race: a v2 delivery task can be picked by a still-old node whose subscription registry doesn't know v2, which instantly dead-letters it with `no subscription for user-account-deleted.v2` — recoverable by redrive, but avoidable by ordering. Consumers before producers, the classic expand/contract rule, here enforced by a concrete failure mode.
+
+Two things to keep in view afterwards:
+
+- **A consumer left on v1-only goes silent, not loud.** Fan-out creates deliveries only for consumers subscribed to the published type, and recovery repairs only *subscribed* types — so missing the v2 subscription in one module means that consumer simply never hears about v2 events. No dead-letter, no metric. The bump PR must touch every consumer of the type.
+- **The v1 subscription is effectively forever, not transitional.** Full-history replay means a consumer added later meets v1 events; drop the v1 subscription (or the frozen class) only if you also seed those events as `Completed` for it (see [New consumers replay history](#new-consumers-replay-history)). Dropping it while v1 deliveries are still pending dead-letters them.
+
 ## Retention
 
-- **`domain_event` is forever, by design** — it is the audit log, and `event_type` is a versioned contract (additive changes within `.v1`, breaking changes bump to `.v2` with the old decoder retained). The corollary: **payloads must not contain data you may be obliged to erase.** `UserAccountDeleted(userId)` carries only the id — keep it that way; if an event needs personal data, reference it, don't embed it (or you're into crypto-shredding territory).
+- **`domain_event` is forever, by design** — it is the audit log, and `event_type` is a versioned contract (additive changes within `.v1`, breaking changes bump to `.v2` — see [Versioning an event](#versioning-an-event)). The corollary: **payloads must not contain data you may be obliged to erase.** `UserAccountDeleted(userId)` carries only the id — keep it that way; if an event needs personal data, reference it, don't embed it (or you're into crypto-shredding territory).
 - **`outbox_delivery` is the dedup memory, not a scratch table.** A `Completed` row is the only thing telling recovery not to re-deliver that event. Never prune the ledger alone while the events remain and the consumer still subscribes to the type — recovery would faithfully re-deliver all of it. If unbounded growth becomes a problem, prune *event and ledger rows together* (ledger first — it has the FK) for events older than your horizon whose deliveries are all terminal; accept that replay-from-history stops working past that horizon.
 
 ## Observability
