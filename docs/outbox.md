@@ -181,7 +181,9 @@ outbox {
 }
 ```
 
-Each key has an `OUTBOX_*` environment override (`application.conf`).
+Each key has an `OUTBOX_*` environment override (`application.conf`) — with one asymmetry: an env var can set `delivery-max-retries` but never *unset* it, so "retry forever" requires deleting the key from the conf.
+
+Do the retry math before tuning `delivery-max-retries`: under the scheduler's default backoff (30s base, ×1.5, capped at 1h) the ten retry delays sum to ~57 minutes, so a permanently failing delivery dead-letters after **~1 hour and 11 attempts**; past attempt 10 the cap dominates, so each additional retry buys roughly one more hour (e.g. `20` ≈ an overnight-outage budget of ~10h). Detection doesn't wait for exhaustion either way — `scheduler.executions{outcome="failure"}` fires on every attempt, and a premature dead-letter costs exactly one redrive `UPDATE`.
 
 ## Where to look
 
