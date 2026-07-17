@@ -11,6 +11,7 @@ import madrileno.auth.services.AccountService
 import madrileno.support.{TestData, TestGivens, TestTransactor}
 import madrileno.user.domain.{UserAccountDeleted, UserId}
 import madrileno.user.repositories.UserRepository
+import madrileno.utils.events.bus.EventBusRuntime
 import madrileno.utils.events.outbox.*
 import madrileno.utils.mailer.*
 import madrileno.utils.observability.TelemetryContext
@@ -25,6 +26,7 @@ import skunk.implicits.*
 
 import java.net.URI
 import java.time.Instant
+import scala.concurrent.duration.*
 
 class AuctionAccountCleanupSpec extends AsyncWordSpec with AsyncIOSpec with Matchers with TestTransactor {
 
@@ -42,7 +44,9 @@ class AuctionAccountCleanupSpec extends AsyncWordSpec with AsyncIOSpec with Matc
   private lazy val smtpSender = SmtpSender(MailerConfig(host = "localhost", port = 25, fromAddress = "test@example.com", tls = false))
   private lazy val mailer     = new Mailer(smtpSender, scheduler.client, MailContext(baseUrl = URI("https://example.com")))
 
-  private lazy val service = new AuctionAccountCleanupService(auctionRepo, bidRepo, userRepo, mailer)
+  private lazy val auctionEventBus = EventBusRuntime.local.topic[AuctionEvent]("auction_events_cleanup_test", maxQueued = 64)
+
+  private lazy val service = new AuctionAccountCleanupService(auctionRepo, bidRepo, userRepo, mailer, auctionEventBus)
 
   private val seller          = TestData.user()
   private val bidder          = TestData.user()
@@ -94,15 +98,25 @@ class AuctionAccountCleanupSpec extends AsyncWordSpec with AsyncIOSpec with Matc
     }
 
   "AuctionAccountCleanupService.onAccountDeleted" should {
-    "cancels open auctions, skips closed ones, and enqueues bidder notifications" in {
+    "cancels open auctions, skips closed ones, publishes the live event, and enqueues bidder notifications" in {
       (for {
-        _        <- seedAll
-        reaction <- transactor.inTransaction(service.onAccountDeleted(UserAccountDeleted(seller.id)))
-        open     <- transactor.inSession(auctionRepo.find(openAuction.id))
-        closed   <- transactor.inSession(auctionRepo.find(closedAuction.id))
-        mails    <- sendMailTaskCount
+        _                 <- seedAll
+        (reaction, event) <- auctionEventBus.subscribeAwait
+                               .use { stream =>
+                                 for {
+                                   subFiber <- stream.take(1).compile.lastOrError.start
+                                   reaction <- transactor.inTransaction(service.onAccountDeleted(UserAccountDeleted(seller.id)))
+                                   event    <- subFiber.joinWithNever
+                                 } yield (reaction, event)
+                               }
+                               .timeout(5.seconds)
+        open   <- transactor.inSession(auctionRepo.find(openAuction.id))
+        closed <- transactor.inSession(auctionRepo.find(closedAuction.id))
+        mails  <- sendMailTaskCount
       } yield {
         reaction shouldBe Reaction.Done
+        event.auctionId shouldBe openAuction.id
+        event shouldBe a[AuctionEvent.AuctionCancelled]
         open.map(_.status) shouldBe Some(AuctionStatus.Cancelled)
         closed.map(_.status) shouldBe Some(AuctionStatus.Closed)
         mails shouldBe 1L

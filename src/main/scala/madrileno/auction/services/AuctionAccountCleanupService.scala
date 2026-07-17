@@ -8,6 +8,7 @@ import madrileno.auction.repositories.{AuctionRepository, BidRepository}
 import madrileno.user.domain.UserAccountDeleted
 import madrileno.user.repositories.UserRepository
 import madrileno.utils.db.transactor.DBInTransaction
+import madrileno.utils.events.bus.EventBus
 import madrileno.utils.events.outbox.Reaction
 import madrileno.utils.mailer.{Language, Mailer}
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
@@ -17,7 +18,8 @@ class AuctionAccountCleanupService(
   auctionRepository: AuctionRepository,
   bidRepository: BidRepository,
   userRepository: UserRepository,
-  mailer: Mailer
+  mailer: Mailer,
+  eventBus: EventBus[AuctionEvent]
 )(using
   TelemetryContext,
   Clock[IO])
@@ -32,6 +34,7 @@ class AuctionAccountCleanupService(
             auctionRepository.update(auction.id, _.cancelBySystem(now)).flatMap {
               case Some(Right(cancelled)) =>
                 logger.info(s"cancelled auction ${cancelled.id} after account deletion of ${event.userId}") *>
+                  publish(AuctionEvent.auctionCancelled(cancelled)) *>
                   notifyBidders(cancelled)
               case _ => IO.unit
             }
@@ -39,6 +42,9 @@ class AuctionAccountCleanupService(
         }
         .as(Reaction.Done)
     }
+
+  private def publish(event: AuctionEvent): IO[Unit] =
+    eventBus.publish(event).handleErrorWith(t => logger.warn(t)(s"Failed to publish $event"))
 
   private def notifyBidders(auction: Auction): DBInTransaction[Unit] =
     bidRepository.listByAuction(auction.id).flatMap { bids =>
