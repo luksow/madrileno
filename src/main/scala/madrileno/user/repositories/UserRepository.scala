@@ -1,10 +1,13 @@
 package madrileno.user.repositories
 
+import cats.effect.IO
 import madrileno.user.domain.*
 import madrileno.utils.db.dsl.*
 import madrileno.utils.db.transactor.DB
 import skunk.*
 import skunk.codec.all.*
+import skunk.data.Completion
+import skunk.implicits.*
 
 import java.net.URI
 import java.time.Instant
@@ -91,6 +94,17 @@ class UserRepository {
 
   def findIncludingDeleted(id: UserId): DB[Option[User]] =
     repository.findByIdWithDeleted(id).map(_.map(_.toUser))
+
+  def anonymize(id: UserId, now: Instant): DB[Boolean] = {
+    val session = summon[Session[IO]]
+    val t       = UserRowTable
+    session
+      .execute(sql"""UPDATE ${t.n}
+              SET ${t.fullName.n} = NULL, ${t.emailAddress.n} = NULL, ${t.emailVerified.n} = false,
+                  ${t.avatarUrl.n} = NULL, ${t.deletedAt.n} = ${t.updatedAt.c}, ${t.updatedAt.n} = ${t.updatedAt.c}
+              WHERE ${t.id.n} = ${t.id.c} AND ${t.deletedAt.n} IS NULL""".command)((now, now, id))
+      .map(_ == Completion.Update(1))
+  }
 
   private val repository: IdRepository[UserRow, UserId] & SoftDeleteRepository[UserRow, UserId] & FilteringRepository[UserRow, UserRowFilter] =
     new IdRepository[UserRow, UserId](_.id) with SoftDeleteRepository[UserRow, UserId] with FilteringRepository[UserRow, UserRowFilter] {

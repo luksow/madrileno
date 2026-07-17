@@ -99,6 +99,9 @@ class UserAuthRepository {
   def softDelete(userAuthId: UserAuthId, now: Instant): DB[Unit] =
     repository.softDeleteById(userAuthId, now)
 
+  def softDeleteByUser(userId: UserId, now: Instant): DB[Unit] =
+    repository.softDeleteByFilter(UserAuthRowFilter(userId = p.equal(userId), deletedAt = p.isNull), now)
+
   private val repository: IdRepository[UserAuthRow, UserAuthId] & SoftDeleteRepository[UserAuthRow, UserAuthId] & ForeignIdRepository[
     UserAuthRow,
     UserId

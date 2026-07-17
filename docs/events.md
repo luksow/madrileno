@@ -32,10 +32,11 @@ An append-only `domain_event` log written **in the same transaction** as your st
 fact and the state commit atomically. Delivery to consumers is handled by the scheduler-backed
 delivery machinery (see the design doc) with retry, dead-lettering, and replay.
 
-    final case class UserAccountDeleted(userId: UUID) derives EventCodec
+    // package madrileno.user.domain
+    final case class UserAccountDeleted(userId: UserId) derives EventCodec
     object UserAccountDeleted {
       given DomainEventDescriptor[UserAccountDeleted] =
-        DomainEventDescriptor("user-account-deleted.v1", "user", _.userId)
+        DomainEventDescriptor("user-account-deleted.v1", "user", _.userId.unwrap)
     }
 
     transactor.inTransaction {

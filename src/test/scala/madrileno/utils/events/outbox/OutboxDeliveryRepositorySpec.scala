@@ -150,6 +150,18 @@ class OutboxDeliveryRepositorySpec extends AsyncWordSpec with AsyncIOSpec with M
         absent shouldBe None
       }
     }
+
+    "markCompleted clears a previously recorded last_error" in withRollback {
+      val e   = event("sample-event.v1")
+      val now = Instant.parse("2026-06-28T10:00:01Z")
+      for {
+        _   <- outbox.append(e)
+        _   <- delivery.openDelivery(e.id, "billing", now)
+        _   <- delivery.recordError(e.id, "billing", "transient boom", now)
+        _   <- delivery.markCompleted(e.id, "billing", now)
+        err <- lastError(e.id, "billing")
+      } yield err shouldBe None
+    }
   }
 
   private def lastError(eventId: DomainEventId, consumer: String): DBInTransaction[Option[String]] = {

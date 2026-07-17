@@ -158,6 +158,11 @@ final case class Auction(
     else Right(copy(status = AuctionStatus.Cancelled, updatedAt = now))
   }
 
+  def cancelBySystem(now: Instant): Either[CancellationRejection, Auction] = {
+    if (status != AuctionStatus.Open) Left(CancellationRejection.AuctionNotOpen)
+    else Right(copy(status = AuctionStatus.Cancelled, updatedAt = now))
+  }
+
   def close(now: Instant): Either[CloseRejection, Auction] = {
     if (status != AuctionStatus.Open) Left(CloseRejection.AuctionNotOpen)
     else Right(copy(status = AuctionStatus.Closed, updatedAt = now))

@@ -40,20 +40,24 @@ class OutboxRecoverySpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
   private def cleanup(eventIds: List[DomainEventId]): IO[Unit] =
     transactor.inSession {
       val session = summon[Session[IO]]
-      session.execute(sql"DELETE FROM scheduled_task WHERE task_name LIKE ${text}".command)(OutboxDeliveryTasks.TaskNamePrefix + "%") *>
-        eventIds
-          .map(_.unwrap)
-          .traverse_(id =>
+      eventIds
+        .map(_.unwrap)
+        .traverse_(id =>
+          session.execute(sql"DELETE FROM scheduled_task WHERE task_instance = $text".command)(id.toString) *>
             session.execute(sql"DELETE FROM outbox_delivery WHERE event_id = $uuid".command)(id) *>
-              session.execute(sql"DELETE FROM domain_event WHERE id = $uuid".command)(id)
-          )
+            session.execute(sql"DELETE FROM domain_event WHERE id = $uuid".command)(id)
+        )
     }
 
-  private def scheduledCount: IO[Long] =
-    transactor.inSession {
-      val session = summon[Session[IO]]
-      session.unique(sql"SELECT count(*) FROM scheduled_task WHERE task_name LIKE ${text}".query(int8))(OutboxDeliveryTasks.TaskNamePrefix + "%")
-    }
+  private def scheduledCount(eventIds: List[DomainEventId]): IO[Long] =
+    eventIds
+      .traverse { id =>
+        transactor.inSession {
+          val session = summon[Session[IO]]
+          session.unique(sql"SELECT count(*) FROM scheduled_task WHERE task_instance = $text".query(int8))(id.unwrap.toString)
+        }
+      }
+      .map(_.sum)
 
   private def pendingStatus(id: DomainEventId): IO[Option[DeliveryStatus]] =
     transactor.inTransaction(delivery.lockForDelivery(id, "billing"))
@@ -69,9 +73,9 @@ class OutboxRecoverySpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
         _  <- recovery(d).recoverOnce
         s1 <- pendingStatus(matched.id)
         s2 <- pendingStatus(other.id)
-        n  <- scheduledCount
+        n  <- scheduledCount(List(matched.id, other.id))
         _  <- recovery(d).recoverOnce
-        n2 <- scheduledCount
+        n2 <- scheduledCount(List(matched.id, other.id))
       } yield {
         s1 shouldBe Some(DeliveryStatus.Pending)
         s2 shouldBe None
@@ -86,7 +90,7 @@ class OutboxRecoverySpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
       (for {
         _ <- transactor.inTransaction(outbox.append(e) *> delivery.openDelivery(e.id, "billing", now).void)
         _ <- recovery(d).recoverOnce
-        n <- scheduledCount
+        n <- scheduledCount(List(e.id))
       } yield n shouldBe 1L).guarantee(cleanup(List(e.id)))
     }
   }

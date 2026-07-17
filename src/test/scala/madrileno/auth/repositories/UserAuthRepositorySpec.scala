@@ -84,5 +84,18 @@ class UserAuthRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Matcher
         after <- repo.findForUpdate(auth.provider, auth.providerUserId)
       } yield after shouldBe None
     }
+
+    "softDeleteByUser hides all provider identities from findForUpdate" in withRollback {
+      val now             = Instant.now()
+      val (user, auth, _) = createUserAuth()
+      for {
+        _      <- userRepo.create(user, now)
+        _      <- repo.save(auth, now)
+        before <- repo.findForUpdate(auth.provider, auth.providerUserId)
+        _ = before shouldBe defined
+        _     <- repo.softDeleteByUser(user.id, now)
+        after <- repo.findForUpdate(auth.provider, auth.providerUserId)
+      } yield after shouldBe None
+    }
   }
 }
