@@ -11,6 +11,7 @@ import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AsyncWordSpec
 import org.typelevel.otel4s.metrics.Meter
 import org.typelevel.otel4s.trace.Tracer
+import pl.iterators.kebs.core.macros.ValueClassLike
 import skunk.*
 import skunk.codec.all.*
 import skunk.implicits.*
@@ -21,6 +22,8 @@ import java.util.UUID
 final case class DispatchEvent(id: UUID, tag: String) derives EventCodec
 
 object DispatchEvent {
+  given ValueClassLike[UUID, UUID] = new ValueClassLike(identity, identity)
+
   given DomainEventDescriptor[DispatchEvent] = DomainEventDescriptor("dispatch-event.v1", "dispatch", _.id)
 }
 

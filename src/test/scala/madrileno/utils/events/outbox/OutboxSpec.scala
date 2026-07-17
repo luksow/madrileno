@@ -14,6 +14,7 @@ import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AsyncWordSpec
 import org.typelevel.otel4s.metrics.Meter
 import org.typelevel.otel4s.trace.Tracer
+import pl.iterators.kebs.core.macros.ValueClassLike
 import skunk.*
 import skunk.codec.all.*
 import skunk.implicits.*
@@ -24,6 +25,8 @@ import java.util.UUID
 final case class SampleEvent(userId: UUID, name: String) derives EventCodec
 
 object SampleEvent {
+  given ValueClassLike[UUID, UUID] = new ValueClassLike(identity, identity)
+
   given DomainEventDescriptor[SampleEvent] = DomainEventDescriptor("sample-event.v1", "sample", _.userId)
 }
 
