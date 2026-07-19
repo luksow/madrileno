@@ -15,9 +15,6 @@ import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AsyncWordSpec
 import org.typelevel.otel4s.metrics.Meter
 import org.typelevel.otel4s.trace.Tracer
-import skunk.*
-import skunk.codec.all.*
-import skunk.implicits.*
 
 import java.time.Instant
 
@@ -50,27 +47,10 @@ class AccountServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
         refreshTokenRepo.save(TestData.refreshToken(userId = user.id)).as(())
     }
 
-  private def cleanup(user: User): IO[Unit] =
-    for {
-      events <- transactor.inSession(outboxRepository.findByAggregate("user", user.id.unwrap))
-      _      <- transactor.inSession {
-             val session = summon[Session[IO]]
-             events.foldLeft(IO.unit) { (acc, e) =>
-               val id = e.id.unwrap
-               acc *>
-                 session.execute(sql"DELETE FROM outbox_delivery WHERE event_id = $uuid".command)(id).as(()) *>
-                 session.execute(sql"DELETE FROM domain_event WHERE id = $uuid".command)(id).as(())
-             } *>
-               session.execute(sql"DELETE FROM refresh_token WHERE user_id = $uuid".command)(user.id.unwrap).as(()) *>
-               session.execute(sql"DELETE FROM user_auth WHERE user_id = $uuid".command)(user.id.unwrap).as(()) *>
-               session.execute(sql"""DELETE FROM "user" WHERE id = $uuid""".command)(user.id.unwrap).as(())
-           }
-    } yield ()
-
   "AccountService.deleteAccount" should {
     "anonymizes, revokes auth, and publishes exactly one event — idempotently" in {
       val user = TestData.user()
-      (for {
+      for {
         _      <- seed(user)
         first  <- accountService.deleteAccount(user.id)
         second <- accountService.deleteAccount(user.id)
@@ -84,7 +64,7 @@ class AccountServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
         events.head.eventType shouldBe "user-account-deleted.v1"
         found shouldBe None
         tokens shouldBe empty
-      }).guarantee(cleanup(user))
+      }
     }
   }
 }

@@ -37,18 +37,6 @@ class OutboxRecoverySpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
       OutboxConfig()
     )
 
-  private def cleanup(eventIds: List[DomainEventId]): IO[Unit] =
-    transactor.inSession {
-      val session = summon[Session[IO]]
-      eventIds
-        .map(_.unwrap)
-        .traverse_(id =>
-          session.execute(sql"DELETE FROM scheduled_task WHERE task_instance = $text".command)(id.toString) *>
-            session.execute(sql"DELETE FROM outbox_delivery WHERE event_id = $uuid".command)(id) *>
-            session.execute(sql"DELETE FROM domain_event WHERE id = $uuid".command)(id)
-        )
-    }
-
   private def scheduledCount(eventIds: List[DomainEventId]): IO[Long] =
     eventIds
       .traverse { id =>
@@ -68,7 +56,7 @@ class OutboxRecoverySpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
       val matched =
         DomainEvent(DomainEventId(TestData.randomUuid()), "dispatch-event.v1", "dispatch", TestData.randomUuid(), io.circe.Json.obj(), now)
       val other = DomainEvent(DomainEventId(TestData.randomUuid()), "unrelated.v1", "dispatch", TestData.randomUuid(), io.circe.Json.obj(), now)
-      (for {
+      for {
         _  <- transactor.inTransaction(outbox.append(matched) *> outbox.append(other))
         _  <- recovery(d).recoverOnce
         s1 <- pendingStatus(matched.id)
@@ -81,17 +69,17 @@ class OutboxRecoverySpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
         s2 shouldBe None
         n shouldBe 1L
         n2 shouldBe 1L
-      }).guarantee(cleanup(List(matched.id, other.id)))
+      }
     }
 
     "case b: re-enqueues a pending ledger row whose task vanished" in {
       val d = subscribed
       val e = DomainEvent(DomainEventId(TestData.randomUuid()), "dispatch-event.v1", "dispatch", TestData.randomUuid(), io.circe.Json.obj(), now)
-      (for {
+      for {
         _ <- transactor.inTransaction(outbox.append(e) *> delivery.openDelivery(e.id, "billing", now).void)
         _ <- recovery(d).recoverOnce
         n <- scheduledCount(List(e.id))
-      } yield n shouldBe 1L).guarantee(cleanup(List(e.id)))
+      } yield n shouldBe 1L
     }
   }
 }
