@@ -33,6 +33,12 @@ private[outbox] object OutboxDeliveryTable extends Table[OutboxDeliveryRow]("out
     (eventId, consumer, status, lastError, createdAt, updatedAt)
 }
 
+private[outbox] final case class OutboxDeliveryFilter(eventId: SqlPredicate[DomainEventId] = p.any, consumer: SqlPredicate[String] = p.any)
+    extends SqlFilter {
+  override def filterFragment: AppliedFragment =
+    SqlFilterDerivation.filterFragment(this, (OutboxDeliveryTable.eventId, OutboxDeliveryTable.consumer))
+}
+
 class OutboxDeliveryRepository {
   private val T  = OutboxDeliveryTable
   private val DE = DomainEventTable
@@ -41,23 +47,13 @@ class OutboxDeliveryRepository {
     eventId: DomainEventId,
     consumer: String,
     now: Instant
-  ): DBInTransaction[Boolean] = {
-    val session = summon[Session[IO]]
-    val row     = OutboxDeliveryRow(eventId, consumer, DeliveryStatus.Pending, None, now, now)
-    session
-      .option(sql"""INSERT INTO ${T.n} (${T.*}) VALUES (${T.c})
-              ON CONFLICT (${T.eventId.n}, ${T.consumer.n}) DO NOTHING
-              RETURNING 1""".query(int4))(row)
-      .map(_.isDefined)
-  }
+  ): DBInTransaction[Boolean] =
+    repository.insertIfAbsent(OutboxDeliveryRow(eventId, consumer, DeliveryStatus.Pending, None, now, now))
 
-  def lockForDelivery(eventId: DomainEventId, consumer: String): DBInTransaction[Option[DeliveryStatus]] = {
-    val session = summon[Session[IO]]
-    session
-      .option(sql"""SELECT ${T.status.n} FROM ${T.n}
-              WHERE ${T.eventId.n} = ${T.eventId.c} AND ${T.consumer.n} = ${T.consumer.c}
-              FOR UPDATE""".query(T.status.c))((eventId, consumer))
-  }
+  def lockForDelivery(eventId: DomainEventId, consumer: String): DBInTransaction[Option[DeliveryStatus]] =
+    repository
+      .findOneByFilter(OutboxDeliveryFilter(eventId = p.equal(eventId), consumer = p.equal(consumer)), Lock.ForUpdate)
+      .map(_.map(_.status))
 
   def markCompleted(
     eventId: DomainEventId,
@@ -140,4 +136,9 @@ class OutboxDeliveryRepository {
               LIMIT $int4""".query(T.eventId.c ~ T.consumer.c))((DeliveryStatus.Pending, taskNamePrefix, limit))
       .map(_.map { case id ~ consumer => (id, consumer) })
   }
+
+  private val repository: FilteringRepository[OutboxDeliveryRow, OutboxDeliveryFilter] =
+    new FilteringRepository[OutboxDeliveryRow, OutboxDeliveryFilter] {
+      override val table: OutboxDeliveryTable.type = OutboxDeliveryTable
+    }
 }
