@@ -1,6 +1,8 @@
 # madrileno
 
-A Scala 3 backend template. Wine auctions are the showcase domain.
+An AI-first Scala 3 backend template. Wine auctions are the showcase domain.
+
+AI-first means the repo is wired for assistant-driven development out of the box: a committed `.mcp.json` gives your assistant a live compile/test loop (Metals) and a read-only upstream reference (the madrileno MCP server), and the [`docs/`](docs/README.md) double as its knowledge base. See [`docs/ai-assisted-dev.md`](docs/ai-assisted-dev.md) for the full setup.
 
 If you're using this as a template, run the rename script first — it swaps `madrileno` for your project name + package and removes the auction demo:
 
