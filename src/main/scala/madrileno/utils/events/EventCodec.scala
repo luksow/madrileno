@@ -1,7 +1,6 @@
 package madrileno.utils.events
 
 import io.circe.{Codec, Json}
-import madrileno.utils.json.JsonProtocol
 
 import scala.deriving.Mirror
 
@@ -10,7 +9,7 @@ trait EventCodec[E] {
   def decode(json: Json): Either[Throwable, E]
 }
 
-object EventCodec extends JsonProtocol {
+object EventCodec {
   def apply[E](using ec: EventCodec[E]): EventCodec[E] = ec
 
   inline def derived[E](using inline m: Mirror.Of[E]): EventCodec[E] = fromCodec(Codec.AsObject.derived[E])

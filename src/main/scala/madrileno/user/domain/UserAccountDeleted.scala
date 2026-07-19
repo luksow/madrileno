@@ -1,8 +1,7 @@
 package madrileno.user.domain
 
-import madrileno.utils.events.EventCodec
-import madrileno.utils.events.EventCodec.given
 import madrileno.utils.events.outbox.DomainEventDescriptor
+import madrileno.utils.events.{EventCodec, given}
 
 final case class UserAccountDeleted(userId: UserId) derives EventCodec
 
