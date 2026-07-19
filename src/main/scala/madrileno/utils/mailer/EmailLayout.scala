@@ -3,18 +3,15 @@ package madrileno.utils.mailer
 import scalatags.Text.TypedTag
 import scalatags.Text.all.*
 
-/** One shared look for every transactional email, aligned with the frontend's design tokens (its `src/styles/tailwind.css`). Email clients support
-  * neither oklch nor CSS variables, so the tokens are resolved to hex here — rebrand by editing them.
-  */
 object EmailLayout {
-  private val Canvas            = "#f5f5f5" // --muted
-  private val Surface           = "#ffffff" // --background
-  private val Foreground        = "#0a0a0a" // --foreground
-  private val MutedForeground   = "#737373" // --muted-foreground
-  private val Primary           = "#772938" // --primary
-  private val PrimaryForeground = "#fafafa" // --primary-foreground
-  private val BorderColor       = "#e5e5e5" // --border
-  private val Radius            = "10px" // --radius (0.625rem)
+  private val Canvas            = "#f5f5f5"
+  private val Surface           = "#ffffff"
+  private val Foreground        = "#0a0a0a"
+  private val MutedForeground   = "#737373"
+  private val Primary           = "#772938"
+  private val PrimaryForeground = "#fafafa"
+  private val BorderColor       = "#e5e5e5"
+  private val Radius            = "10px"
 
   private val FontStack =
     "'Geist Variable', Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
@@ -34,7 +31,6 @@ object EmailLayout {
     .footer p { margin: 0; }
   """
 
-  /** The wordmark mirrors the frontend header; `init-project` renames it with everything else. */
   def page(heading: String, blocks: Frag*): TypedTag[String] =
     html(
       head(
