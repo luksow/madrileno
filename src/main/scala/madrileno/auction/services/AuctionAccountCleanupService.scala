@@ -5,7 +5,7 @@ import cats.syntax.all.*
 import madrileno.auction.domain.*
 import madrileno.auction.emails.AuctionCancelledEmailTemplate
 import madrileno.auction.repositories.{AuctionRepository, BidRepository}
-import madrileno.user.domain.UserAccountDeleted
+import madrileno.user.domain.{UserAccountDeleted, UserId}
 import madrileno.user.repositories.UserRepository
 import madrileno.utils.db.transactor.DBInTransaction
 import madrileno.utils.events.bus.EventBus
@@ -13,6 +13,8 @@ import madrileno.utils.events.outbox.Reaction
 import madrileno.utils.mailer.{Language, Mailer}
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
 import pl.iterators.sealedmonad.syntax.*
+
+import java.time.Instant
 
 class AuctionAccountCleanupService(
   auctionRepository: AuctionRepository,
@@ -26,21 +28,23 @@ class AuctionAccountCleanupService(
     extends LoggingSupport {
 
   def onAccountDeleted(event: UserAccountDeleted): DBInTransaction[Reaction] =
-    Clock[IO].realTimeInstant.flatMap { now =>
-      auctionRepository
-        .listOpenBySeller(event.userId)
-        .flatMap {
-          _.traverse_ { auction =>
-            auctionRepository.update(auction.id, _.cancelBySystem(now)).flatMap {
-              case Some(Right(cancelled)) =>
-                logger.info(s"cancelled auction ${cancelled.id} after account deletion of ${event.userId}") *>
-                  publish(AuctionEvent.auctionCancelled(cancelled)) *>
-                  notifyBidders(cancelled)
-              case _ => IO.unit
-            }
-          }
-        }
-        .as(Reaction.Done)
+    for {
+      now      <- Clock[IO].realTimeInstant
+      auctions <- auctionRepository.listOpenBySeller(event.userId)
+      _        <- auctions.traverse_(cancelAndNotify(_, now, event.userId))
+    } yield Reaction.Done
+
+  private def cancelAndNotify(
+    auction: Auction,
+    now: Instant,
+    deletedUserId: UserId
+  ): DBInTransaction[Unit] =
+    auctionRepository.update(auction.id, _.cancelBySystem(now)).flatMap {
+      case Some(Right(cancelled)) =>
+        logger.info(s"cancelled auction ${cancelled.id} after account deletion of $deletedUserId") *>
+          publish(AuctionEvent.auctionCancelled(cancelled)) *>
+          notifyBidders(cancelled)
+      case _ => IO.unit
     }
 
   private def publish(event: AuctionEvent): IO[Unit] =
