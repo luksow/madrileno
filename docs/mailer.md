@@ -86,6 +86,20 @@ Three things to know:
 
 The companion's `preview: MailPreview` is what makes the template show up in the dev preview UI. Always provide one — see "Previews" below.
 
+## Look and feel
+
+Templates don't carry their own CSS. `EmailLayout` (in `madrileno.utils.mailer`) owns the shell — canvas, card, wordmark header, heading, CTA button, footer — so every email looks the same and a restyle happens in one place:
+
+```scala
+EmailLayout.page(
+  "You've been outbid!",
+  p("Someone has placed a higher bid on ", EmailLayout.highlight(wineName.toString), "."),
+  EmailLayout.cta(ctx.baseUrl.toString, "Place a New Bid")
+)
+```
+
+Its palette mirrors the [reference frontend](frontend.md)'s design tokens (`src/styles/tailwind.css`), resolved to hex — email clients support neither `oklch` nor CSS variables. Rebrand by editing the constants at the top of `EmailLayout`; keep them in step with the frontend's tokens so mail and app stay recognisably the same product. The emails are deliberately light-only (`color-scheme: light`) rather than mirroring the frontend's dark mode, since client dark-mode handling is inconsistent.
+
 ## Sending
 
 `Mailer` exposes three send variants, mirroring the `DB` / `DBInTransaction` distinction:
