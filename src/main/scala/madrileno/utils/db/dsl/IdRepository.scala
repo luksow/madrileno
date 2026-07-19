@@ -35,11 +35,6 @@ trait IdRepository[A, Id](val getId: A => Id) extends BaseRepository[A] {
       )((a, a))
       .void
 
-  def insertIfAbsent(a: A)(using session: Session[IO]): IO[Boolean] =
-    session
-      .option(sql"INSERT INTO ${table.n} (${table.*}) VALUES (${table.c}) ON CONFLICT DO NOTHING RETURNING 1".query(int4))(a)
-      .map(_.isDefined)
-
   def findById(id: Id, lock: Lock = Lock.NoLock)(using session: Session[IO]): IO[Option[A]] =
     session.option(sql"SELECT ${table.*} FROM ${table.n} WHERE $baseFilter AND ${table.id.n} = ${table.id.c} ${lock.fragment}".query(table.c))(id)
 
