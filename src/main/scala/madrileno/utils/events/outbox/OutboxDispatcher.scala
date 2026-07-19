@@ -6,6 +6,7 @@ import madrileno.utils.db.transactor.{DBInTransaction, Transactor}
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
 import madrileno.utils.task.{OneTimeTask, Task, TaskDescriptor}
 import org.typelevel.otel4s.Attribute
+import pl.iterators.sealedmonad.syntax.*
 
 import java.time.Instant
 import java.util.UUID
@@ -59,30 +60,27 @@ class OutboxDispatcher(
   ): IO[Unit] =
     transactor
       .inTransaction {
-        deliveryRepository.lockForDelivery(eventId, consumer).flatMap {
-          case None =>
-            logger.warn(s"outbox delivery row missing for $eventId/$consumer, skipping").as(None)
-          case Some(DeliveryStatus.Completed) | Some(DeliveryStatus.Failed) =>
-            IO.pure(None)
-          case Some(DeliveryStatus.Pending) =>
-            Clock[IO].realTimeInstant.flatMap { now =>
-              outboxRepository.loadEvent(eventId).flatMap {
-                case None =>
-                  deadLetter(eventId, consumer, "domain_event row missing", now)
-                case Some(event) =>
-                  subs.find(_.eventType == event.eventType) match {
-                    case None =>
-                      deadLetter(eventId, consumer, s"no subscription for ${event.eventType}", now)
-                    case Some(sub) =>
-                      sub.run(event, Delivery(eventId, consumer, attempt, event.occurredAt)).flatMap {
-                        case Reaction.Done          => deliveryRepository.markCompleted(eventId, consumer, now).as(Some("completed"))
-                        case Reaction.Drop(reason)  => deadLetter(eventId, consumer, reason, now)
-                        case Reaction.Retry(reason) => IO.raiseError(OutboxRetryRequested(reason))
-                      }
-                  }
-              }
-            }
-        }
+        (for {
+          _ <- deliveryRepository
+                 .lockForDelivery(eventId, consumer)
+                 .valueOrF(logger.warn(s"outbox delivery row missing for $eventId/$consumer, skipping").as(Option.empty[String]))
+                 .ensure(_ == DeliveryStatus.Pending, Option.empty[String])
+          now   <- Clock[IO].realTimeInstant.seal
+          event <- outboxRepository
+                     .loadEvent(eventId)
+                     .valueOrF(deadLetter(eventId, consumer, "domain_event row missing", now))
+          sub <- IO
+                   .pure(subs.find(_.eventType == event.eventType))
+                   .valueOrF(deadLetter(eventId, consumer, s"no subscription for ${event.eventType}", now))
+          outcome <- sub
+                       .run(event, Delivery(eventId, consumer, attempt, event.occurredAt))
+                       .flatMap {
+                         case Reaction.Done          => deliveryRepository.markCompleted(eventId, consumer, now).as(Option("completed"))
+                         case Reaction.Drop(reason)  => deadLetter(eventId, consumer, reason, now)
+                         case Reaction.Retry(reason) => IO.raiseError(OutboxRetryRequested(reason))
+                       }
+                       .seal
+        } yield outcome).run
       }
       .flatMap(_.traverse_(recordDelivery(consumer, _)))
       .handleErrorWith { error =>

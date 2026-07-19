@@ -31,18 +31,17 @@ class OutboxRecovery(
     dispatcher.consumers.foldMapM { consumer =>
       transactor
         .inSession(deliveryRepository.deliveriesMissingFor(consumer, dispatcher.eventTypesFor(consumer), config.recoveryBatchSize))
-        .flatMap {
-          _.foldMapM { event =>
-            Clock[IO].realTimeInstant.flatMap { now =>
-              transactor.inTransaction {
-                deliveryRepository.openDelivery(event.id, consumer, now).flatMap {
-                  case true  => schedulerClient.scheduleTransactionally(dispatcher.instanceFor(consumer, event.id)).as(1L)
-                  case false => IO.pure(0L)
-                }
-              }
-            }
-          }
+        .flatMap(_.foldMapM(openAndSchedule(consumer, _)))
+    }
+
+  private def openAndSchedule(consumer: String, event: DomainEvent): IO[Long] =
+    Clock[IO].realTimeInstant.flatMap { now =>
+      transactor.inTransaction {
+        deliveryRepository.openDelivery(event.id, consumer, now).flatMap {
+          case true  => schedulerClient.scheduleTransactionally(dispatcher.instanceFor(consumer, event.id)).as(1L)
+          case false => IO.pure(0L)
         }
+      }
     }
 
   private def strandedPendingRows: IO[Long] =
