@@ -7,6 +7,7 @@ import madrileno.user.repositories.UserRepository
 import madrileno.utils.db.transactor.Transactor
 import madrileno.utils.events.outbox.Outbox
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
+import pl.iterators.sealedmonad.syntax.*
 
 enum DeleteAccountResult {
   case Deleted, AlreadyDeleted
@@ -26,15 +27,13 @@ class AccountService(
   def deleteAccount(userId: UserId): IO[DeleteAccountResult] =
     transactor
       .inTransaction {
-        Clock[IO].realTimeInstant.flatMap { now =>
-          userRepository.anonymize(userId, now).flatMap {
-            case false => IO.pure(DeleteAccountResult.AlreadyDeleted)
-            case true  =>
-              userAuthRepository.softDeleteByUser(userId, now) *>
-                refreshTokenRepository.revokeAllForUser(userId, now) *>
-                outbox.publishTransactionally(UserAccountDeleted(userId)).as(DeleteAccountResult.Deleted)
-          }
-        }
+        (for {
+          now <- Clock[IO].realTimeInstant.seal
+          _   <- userRepository.anonymize(userId, now).seal.ensure(identity, DeleteAccountResult.AlreadyDeleted)
+          _   <- userAuthRepository.softDeleteByUser(userId, now).seal
+          _   <- refreshTokenRepository.revokeAllForUser(userId, now).seal
+          _   <- outbox.publishTransactionally(UserAccountDeleted(userId)).seal
+        } yield DeleteAccountResult.Deleted).run
       }
       .flatTap {
         case DeleteAccountResult.Deleted        => logger.info(s"account deleted: $userId")
