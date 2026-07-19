@@ -174,6 +174,11 @@ class AuctionRepository {
     repository.findByFilter(filter).map(_.map(_.id))
   }
 
+  def listOpenBySeller(sellerId: UserId): DB[List[Auction]] = {
+    val filter = AuctionRowFilter(sellerId = p.equal(sellerId), status = p.equal(AuctionStatus.Open))
+    repository.findByFilter(filter).map(_.map(_.toAuction))
+  }
+
   def update[E](id: AuctionId, f: Auction => Either[E, Auction]): DBInTransaction[Option[Either[E, Auction]]] =
     findForUpdate(id).flatMap {
       case None          => IO.pure(None)

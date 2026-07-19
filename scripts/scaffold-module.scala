@@ -37,7 +37,7 @@ object ScaffoldModule {
     // Singular and plural may legitimately be identical in English (`Fish fish`,
     // `News news`). Singular drives Scala identifiers, directories, table names,
     // and migration filenames (matching the upstream convention — see V1__user_auth.sql
-    // / V3__auction.sql etc.); plural drives URL segments and OpenAPI tags.
+    // / V5__auction.sql etc.); plural drives URL segments and OpenAPI tags.
 
     val root = os.pwd
     require(os.exists(root / "build.sbt"),

@@ -11,7 +11,8 @@ import madrileno.auth.domain.{AuthContext, Provider, VerifiedExternalToken}
 import madrileno.auth.services.{AuthVerifiers, DevAuthVerifier, JwtService}
 import madrileno.main.ApplicationLoader
 import madrileno.utils.db.transactor.{PgConfig, PgTransactor}
-import madrileno.utils.events.EventBusRuntime
+import madrileno.utils.events.bus.EventBusRuntime
+import madrileno.utils.events.outbox.OutboxConfig
 import madrileno.utils.http.RateLimiterRuntime
 import madrileno.utils.mailer.MailerConfig
 import madrileno.utils.observability.TelemetryContext
@@ -77,6 +78,7 @@ trait TestApplicationLoader extends TestContainersForAll with TestMailpit { self
       CircuitBreakerRuntime.default,
       IORuntime.global
     ) {
+      override lazy val outboxConfig: OutboxConfig                     = OutboxConfig()
       override protected lazy val externalAuthVerifiers: AuthVerifiers =
         AuthVerifiers(
           Map(

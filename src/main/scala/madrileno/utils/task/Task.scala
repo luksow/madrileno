@@ -2,6 +2,7 @@ package madrileno.utils.task
 
 import cats.effect.IO
 import io.circe.{Decoder, Encoder}
+import madrileno.utils.db.transactor.DBInTransaction
 
 import java.time.Instant
 import scala.concurrent.duration.*
@@ -30,11 +31,17 @@ final case class Task[A] private[task] (
   priority: Short,
   schedule: Schedule,
   consecutiveFailures: Option[Int] = None,
-  scheduledAt: Option[Instant] = None) {
+  scheduledAt: Option[Instant] = None,
+  maxRetries: Option[Int] = None,
+  onAbandon: Option[Task[A] => DBInTransaction[Unit]] = None) {
   def taskId: String = s"${descriptor.taskName}/$taskInstance"
 }
 
-final case class OneTimeTask[A](descriptor: TaskDescriptor[A], execution: Task[A] => IO[Unit]) {
+final case class OneTimeTask[A](
+  descriptor: TaskDescriptor[A],
+  execution: Task[A] => IO[Unit],
+  maxRetries: Option[Int] = None,
+  onAbandon: Option[Task[A] => DBInTransaction[Unit]] = None) {
   def instance(
     taskInstance: String,
     payload: A,
@@ -48,12 +55,18 @@ final case class OneTimeTask[A](descriptor: TaskDescriptor[A], execution: Task[A
       execution = execution,
       version = 0L,
       priority = priority,
-      schedule = at.fold[Schedule](Schedule.Once)(Schedule.OnceAt(_))
+      schedule = at.fold[Schedule](Schedule.Once)(Schedule.OnceAt(_)),
+      maxRetries = maxRetries,
+      onAbandon = onAbandon
     )
   }
 }
 
-final case class CustomTask[A](descriptor: TaskDescriptor[A], execution: Task[A] => IO[Unit | Schedule.NextAt[A]]) {
+final case class CustomTask[A](
+  descriptor: TaskDescriptor[A],
+  execution: Task[A] => IO[Unit | Schedule.NextAt[A]],
+  maxRetries: Option[Int] = None,
+  onAbandon: Option[Task[A] => DBInTransaction[Unit]] = None) {
   def instance(
     taskInstance: String,
     payload: A,
@@ -67,7 +80,9 @@ final case class CustomTask[A](descriptor: TaskDescriptor[A], execution: Task[A]
       execution = execution,
       version = 0L,
       priority = priority,
-      schedule = Schedule.NextAt(firstAt, payload)
+      schedule = Schedule.NextAt(firstAt, payload),
+      maxRetries = maxRetries,
+      onAbandon = onAbandon
     )
   }
 }

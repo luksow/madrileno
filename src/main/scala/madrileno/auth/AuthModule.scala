@@ -10,6 +10,7 @@ import madrileno.auth.services.*
 import madrileno.user.repositories.UserRepository
 import madrileno.utils.cache.CacheRuntime
 import madrileno.utils.db.transactor.Transactor
+import madrileno.utils.events.outbox.Outbox
 import madrileno.utils.http.{AuthRouteProvider, RateLimiterRuntime, RouteProvider}
 import madrileno.utils.mailer.{MailPreview, MailPreviewProvider, Mailer}
 import madrileno.utils.observability.TelemetryContext
@@ -30,6 +31,7 @@ trait AuthModule extends RouteProvider with AuthRouteProvider with RecurringTask
   val cacheRuntime: CacheRuntime
   val rateLimiterRuntime: RateLimiterRuntime
   lazy val httpClient: WebSocketStreamBackend[IO, Fs2Streams[IO]]
+  lazy val outbox: Outbox
   lazy val userRepository: UserRepository
   lazy val mailer: Mailer
 
@@ -58,10 +60,11 @@ trait AuthModule extends RouteProvider with AuthRouteProvider with RecurringTask
     AuthVerifiers((List(firebase, dev).flatten ++ oidc).toMap)
   }
 
-  private val userAuthRepository     = wire[UserAuthRepository]
-  private val refreshTokenRepository = wire[RefreshTokenRepository]
-  private val authenticationService  = wire[AuthenticationService]
-  private val authRouter             = wire[AuthRouter]
+  private val userAuthRepository          = wire[UserAuthRepository]
+  private val refreshTokenRepository      = wire[RefreshTokenRepository]
+  private val authenticationService       = wire[AuthenticationService]
+  private val authRouter                  = wire[AuthRouter]
+  lazy val accountService: AccountService = wire[AccountService]
 
   override abstract def route(auth: AuthContext): Route = {
     super.route(auth) ~ authRouter.authedRoutes(auth)

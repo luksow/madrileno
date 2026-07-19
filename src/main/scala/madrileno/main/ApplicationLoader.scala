@@ -11,7 +11,8 @@ import madrileno.healthcheck.HealthCheckModule
 import madrileno.user.UserModule
 import madrileno.utils.cache.CacheRuntime
 import madrileno.utils.db.transactor.Transactor
-import madrileno.utils.events.EventBusRuntime
+import madrileno.utils.events.bus.EventBusRuntime
+import madrileno.utils.events.outbox.{OutboxConfig, OutboxModule}
 import madrileno.utils.featureflag.FeatureFlagModule
 import madrileno.utils.featureflag.routers.FeatureFlagAdminRouter
 import madrileno.utils.http.{ApplicationRouteProvider, Handlers, RateLimiterRuntime}
@@ -91,14 +92,16 @@ class ApplicationLoader(
     with UserModule
     with AuctionModule
     with FeatureFlagModule
-    with HealthCheckModule {
-  lazy val httpConfig: HttpConfig             = config.at("http").loadOrThrow[HttpConfig]
-  lazy val appConfig: AppConfig               = config.at("app").loadOrThrow[AppConfig]
-  lazy val adminConfig: AdminConfig           = config.at("admin").loadOrThrow[AdminConfig]
-  lazy val telemetryContext: TelemetryContext = summon[TelemetryContext]
-  lazy val supervisor: Supervisor[IO]         = summon[Supervisor[IO]]
-  lazy val mailContext: MailContext           = MailContext(httpConfig.baseUrl)
-  val objectStore: ObjectStore                = objectStoreRuntime.objectStore
+    with HealthCheckModule
+    with OutboxModule {
+  lazy val httpConfig: HttpConfig              = config.at("http").loadOrThrow[HttpConfig]
+  lazy val appConfig: AppConfig                = config.at("app").loadOrThrow[AppConfig]
+  lazy val adminConfig: AdminConfig            = config.at("admin").loadOrThrow[AdminConfig]
+  override lazy val outboxConfig: OutboxConfig = config.at("outbox").loadOrThrow[OutboxConfig]
+  lazy val telemetryContext: TelemetryContext  = summon[TelemetryContext]
+  lazy val supervisor: Supervisor[IO]          = summon[Supervisor[IO]]
+  lazy val mailContext: MailContext            = MailContext(httpConfig.baseUrl)
+  val objectStore: ObjectStore                 = objectStoreRuntime.objectStore
 
   protected lazy val mailerConfig: MailerConfig = config.at("mailer").loadOrThrow[MailerConfig]
   private lazy val smtpSender                   = new SmtpSender(mailerConfig)

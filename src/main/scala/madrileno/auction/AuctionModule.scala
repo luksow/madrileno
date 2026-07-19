@@ -4,17 +4,19 @@ import cats.effect.IO
 import com.softwaremill.macwire.*
 import io.chrisdavenport.circuit.{Backoff, CircuitBreaker}
 import madrileno.auction.domain.AuctionEvent
-import madrileno.auction.emails.{AuctionClosedEmailTemplate, OutbidEmailTemplate}
+import madrileno.auction.emails.{AuctionCancelledEmailTemplate, AuctionClosedEmailTemplate, OutbidEmailTemplate}
 import madrileno.auction.gateways.{VivinoGateway, VivinoGatewayLive}
 import madrileno.auction.repositories.{AuctionImageRepository, AuctionRepository, BidRepository}
 import madrileno.auction.routers.{AuctionImageRouter, AuctionRouter}
-import madrileno.auction.services.{AuctionImageService, AuctionService}
+import madrileno.auction.services.{AuctionAccountCleanupService, AuctionImageService, AuctionService}
 import madrileno.auth.domain.AuthContext
 import madrileno.main.AppConfig
+import madrileno.user.domain.UserAccountDeleted
 import madrileno.user.repositories.UserRepository
 import madrileno.utils.cache.CacheRuntime
 import madrileno.utils.db.transactor.Transactor
-import madrileno.utils.events.{EventBus, EventBusRuntime}
+import madrileno.utils.events.bus.{EventBus, EventBusRuntime}
+import madrileno.utils.events.outbox.{OutboxSubscription, OutboxSubscriptionProvider}
 import madrileno.utils.featureflag.services.FeatureFlagServiceLive
 import madrileno.utils.http.{AuthRouteProvider, RateLimiterRuntime, RouteProvider, WsRouteProvider}
 import madrileno.utils.mailer.{MailPreview, MailPreviewProvider, Mailer}
@@ -35,7 +37,8 @@ trait AuctionModule
     with WsRouteProvider
     with RecurringTaskProvider
     with OneTimeTaskProvider
-    with MailPreviewProvider {
+    with MailPreviewProvider
+    with OutboxSubscriptionProvider {
   given telemetryContext: TelemetryContext
   val transactor: Transactor
   val cacheRuntime: CacheRuntime
@@ -57,13 +60,14 @@ trait AuctionModule
   protected lazy val auctionEventBus: EventBus[AuctionEvent] = eventBusRuntime.topic[AuctionEvent]("auction_events", maxQueued = 64)
   protected lazy val signedUrlTtl: SignedUrlTtl              = SignedUrlTtl(5.minutes)
 
-  private val auctionRepository        = wire[AuctionRepository]
-  private val bidRepository            = wire[BidRepository]
-  private val auctionImageRepository   = wire[AuctionImageRepository]
-  private val auctionService           = wire[AuctionService]
-  private lazy val auctionImageService = wire[AuctionImageService]
-  private val auctionRouter            = wire[AuctionRouter]
-  private lazy val auctionImageRouter  = new AuctionImageRouter(auctionImageService)
+  private val auctionRepository                 = wire[AuctionRepository]
+  private val bidRepository                     = wire[BidRepository]
+  private val auctionImageRepository            = wire[AuctionImageRepository]
+  private val auctionService                    = wire[AuctionService]
+  private lazy val auctionAccountCleanupService = wire[AuctionAccountCleanupService]
+  private lazy val auctionImageService          = wire[AuctionImageService]
+  private val auctionRouter                     = wire[AuctionRouter]
+  private lazy val auctionImageRouter           = new AuctionImageRouter(auctionImageService)
 
   override abstract def route(auth: AuthContext): Route = {
     super.route(auth) ~ auctionRouter.authedRoutes(auth) ~ auctionImageRouter.authedRoutes(auth)
@@ -85,7 +89,11 @@ trait AuctionModule
     super.oneTimeTasks :+ auctionImageService.analyzeImageTask :+ auctionImageService.generateVariantTask
   }
 
+  override abstract def outboxSubscriptions: List[OutboxSubscription] = {
+    super.outboxSubscriptions :+ OutboxSubscription[UserAccountDeleted]("auction")(auctionAccountCleanupService.onAccountDeleted)
+  }
+
   override abstract def mailPreviews: List[MailPreview] = {
-    super.mailPreviews :+ OutbidEmailTemplate.preview :+ AuctionClosedEmailTemplate.sellerPreview :+ AuctionClosedEmailTemplate.winnerPreview
+    super.mailPreviews :+ OutbidEmailTemplate.preview :+ AuctionClosedEmailTemplate.sellerPreview :+ AuctionClosedEmailTemplate.winnerPreview :+ AuctionCancelledEmailTemplate.preview
   }
 }

@@ -7,7 +7,7 @@ import madrileno.auction.routers.dto.*
 import madrileno.auction.services.*
 import madrileno.auth.domain.AuthContext
 import madrileno.user.domain.UserId
-import madrileno.utils.events.EventBus
+import madrileno.utils.events.bus.EventBus
 import madrileno.utils.http.{BaseRouter, RateLimitDirectives, RateLimiterRuntime}
 import madrileno.utils.observability.TelemetryContext
 import org.http4s.Request

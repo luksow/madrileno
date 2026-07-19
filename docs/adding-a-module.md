@@ -701,8 +701,7 @@ Events live in the domain layer and derive `EventCodec` (the project's wrapper o
 ```scala
 package madrileno.product.domain
 
-import madrileno.utils.events.EventCodec
-import madrileno.utils.events.EventCodec.given
+import madrileno.utils.events.{EventCodec, given}
 
 import java.time.Instant
 

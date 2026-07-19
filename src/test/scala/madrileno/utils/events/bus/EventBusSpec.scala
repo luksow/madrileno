@@ -1,8 +1,9 @@
-package madrileno.utils.events
+package madrileno.utils.events.bus
 
 import cats.effect.IO
 import cats.effect.testing.scalatest.AsyncIOSpec
 import cats.syntax.all.*
+import madrileno.utils.events.EventCodec
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AsyncWordSpec
 

@@ -6,6 +6,6 @@ import madrileno.user.repositories.UserRepository
 import madrileno.utils.db.transactor.Transactor
 
 class UserService(userRepository: UserRepository, transactor: Transactor) {
-  def getCurrentUser(userId: UserId): IO[User] =
-    transactor.inSession(userRepository.get(userId))
+  def getCurrentUser(userId: UserId): IO[Option[User]] =
+    transactor.inSession(userRepository.find(userId))
 }

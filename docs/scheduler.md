@@ -177,6 +177,21 @@ scheduler {
 
 Defaults are for a "modest backend"; a high-throughput app raises `concurrency` and may want a tighter `polling-interval`. A scheduler that hosts a lot of long-running tasks raises `heartbeat-interval` so the heartbeats themselves don't dominate the load.
 
+## Per-task retry caps and abandon hooks
+
+`max-retries` in config is the global default. `OneTimeTask` and `CustomTask` can override it per task type and attach a dead-letter hook:
+
+```scala
+OneTimeTask[UUID](
+  descriptor = TaskDescriptor[UUID]("outbox-deliver:auction"),
+  execution = task => deliver(task),
+  maxRetries = Some(10),
+  onAbandon = Some(task => markFailed(task.payload))    // Task[A] => DBInTransaction[Unit]
+)
+```
+
+When retries are exhausted, the scheduler removes the row and runs `onAbandon` **in one transaction** — the version-checked remove and the hook's writes commit atomically, so a task is never dropped without its dead-letter bookkeeping (and never bookkept without being dropped). If the abandon transaction itself fails, the row stays and the drop is retried after the next revival. Both fields are resolved from the registered task definition, never persisted — a deploy that changes them affects already-enqueued rows too. The outbox delivery tasks ([outbox.md](outbox.md)) are the worked example.
+
 ## Wiring tasks into a module
 
 The scheduler reads task lists from the application's task providers (`recurringTasks`, `oneTimeTasks`, `customTasks`). A module contributes via `super.<thing> :+ myTask`:
@@ -194,7 +209,7 @@ trait MyModule extends RecurringTaskProvider with OneTimeTaskProvider {
 ## Failure modes the scheduler handles for you
 
 - **Process crash mid-task.** Heartbeats stop. After `missed-heartbeat-limit` heartbeat intervals, another scheduler revives the row. The task runs again from scratch — the assumption is that tasks are idempotent, so retry-from-scratch is the recovery model.
-- **Transient task failure.** Caught, logged, scheduled for retry with backoff. After `max-retries` attempts (if configured), the row is removed; without a cap, retries continue indefinitely.
+- **Transient task failure.** Caught, logged, scheduled for retry with backoff. After the task's `maxRetries` (falling back to the global `max-retries`, if configured), the row is removed and its `onAbandon` hook runs in the same transaction; without a cap, retries continue indefinitely.
 - **Multiple scheduler instances.** `SELECT … FOR UPDATE SKIP LOCKED` ensures only one instance picks any given row. Heartbeat `(scheduler_name, ...)` lets the dead-execution loop tell "alive elsewhere" from "actually dead".
 - **A task whose payload no longer parses.** When `pickAndMark` returns rows whose payloads can't be decoded against any registered descriptor, those rows are deleted with an error log — the task type was renamed or removed and the orphaned row would otherwise loop forever.
 

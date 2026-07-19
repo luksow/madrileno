@@ -1,7 +1,6 @@
 package madrileno.utils.task
 
 import pureconfig.*
-import pureconfig.generic.semiauto.deriveReader
 
 import scala.concurrent.duration.*
 
@@ -15,7 +14,4 @@ final case class SchedulerConfig(
   retryMaxDelay: Duration = 1.hour,
   maxRetries: Option[Int] = None,
   schedulerName: Option[String] = None)
-
-object SchedulerConfig {
-  given ConfigReader[SchedulerConfig] = deriveReader[SchedulerConfig]
-}
+    derives ConfigReader

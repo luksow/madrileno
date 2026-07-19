@@ -67,7 +67,7 @@ Two positional arguments:
 1. **Aggregate** — PascalCase singular, drives class names: `Wine`, `WineId`, `WineRepository`, `WineModule`, etc.
 2. **Plural** — lowercase plural, drives URL segments (`/v1/wines/{id}`) and OpenAPI tags (`tags = Seq("Wines")`).
 
-The script derives the singular lowercase variant from the aggregate (`Wine` → `wine`) and uses it for the module subpackage name, variable names, the SQL table name (`wine`), and the migration filename (`V<N>__wine.sql`). This matches upstream's convention — `V1__user_auth.sql`, `V3__auction.sql`, etc. all use singular table names. The project's root package is auto-detected from the single directory under `src/main/scala/`.
+The script derives the singular lowercase variant from the aggregate (`Wine` → `wine`) and uses it for the module subpackage name, variable names, the SQL table name (`wine`), and the migration filename (`V<N>__wine.sql`). This matches upstream's convention — `V1__user_auth.sql`, `V5__auction.sql`, etc. all use singular table names. The project's root package is auto-detected from the single directory under `src/main/scala/`.
 
 What it does:
 

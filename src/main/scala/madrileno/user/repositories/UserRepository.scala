@@ -1,8 +1,9 @@
 package madrileno.user.repositories
 
+import cats.effect.IO
 import madrileno.user.domain.*
 import madrileno.utils.db.dsl.*
-import madrileno.utils.db.transactor.DB
+import madrileno.utils.db.transactor.{DB, DBInTransaction}
 import skunk.*
 import skunk.codec.all.*
 
@@ -91,6 +92,15 @@ class UserRepository {
 
   def findIncludingDeleted(id: UserId): DB[Option[User]] =
     repository.findByIdWithDeleted(id).map(_.map(_.toUser))
+
+  def anonymize(id: UserId, now: Instant): DBInTransaction[Boolean] =
+    repository.findById(id, Lock.ForUpdate).flatMap {
+      case None      => IO.pure(false)
+      case Some(row) =>
+        repository
+          .update(row.copy(fullName = None, emailAddress = None, emailVerified = false, avatarUrl = None, deletedAt = Some(now), updatedAt = now))
+          .as(true)
+    }
 
   private val repository: IdRepository[UserRow, UserId] & SoftDeleteRepository[UserRow, UserId] & FilteringRepository[UserRow, UserRowFilter] =
     new IdRepository[UserRow, UserId](_.id) with SoftDeleteRepository[UserRow, UserId] with FilteringRepository[UserRow, UserRowFilter] {

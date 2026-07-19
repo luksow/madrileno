@@ -4,7 +4,7 @@ import cats.effect.{Clock, IO}
 import cats.syntax.all.*
 import io.circe.Json
 import madrileno.utils.db.dsl.*
-import madrileno.utils.db.transactor.DB
+import madrileno.utils.db.transactor.{DB, DBInTransaction}
 import skunk.circe.codec.all.*
 import skunk.codec.all.*
 import skunk.data.Completion
@@ -229,7 +229,9 @@ private[task] class SchedulerRepository(
     descriptor: TaskDescriptor[A],
     execution: Task[A] => IO[Unit | A | Schedule.NextAt[A]],
     schedule: A => Schedule,
-    scheduledAt: Option[Instant]
+    scheduledAt: Option[Instant],
+    maxRetries: Option[Int],
+    onAbandon: Option[Task[A] => DBInTransaction[Unit]]
   ): Option[Task[?]] = {
     descriptor.decoder.decodeJson(row.taskData) match {
       case Right(value) =>
@@ -243,7 +245,9 @@ private[task] class SchedulerRepository(
             priority = row.priority,
             schedule = schedule(value),
             consecutiveFailures = row.consecutiveFailures,
-            scheduledAt = scheduledAt
+            scheduledAt = scheduledAt,
+            maxRetries = maxRetries,
+            onAbandon = onAbandon
           )
         )
       case Left(_) =>
@@ -291,20 +295,28 @@ private[task] class SchedulerRepository(
           val found = oneTimeTasks
             .find(_.descriptor.taskName == row.taskName)
             .flatMap { t =>
-              reconstructTask(row, t.descriptor, t.execution, _ => Schedule.Once, Some(row.nextExecution))
+              reconstructTask(row, t.descriptor, t.execution, _ => Schedule.Once, Some(row.nextExecution), t.maxRetries, t.onAbandon)
             }
             .orElse {
               customTasks
                 .find(_.descriptor.taskName == row.taskName)
                 .flatMap { t =>
-                  reconstructTask(row, t.descriptor, t.execution, v => Schedule.NextAt(row.nextExecution, v), Some(row.nextExecution))
+                  reconstructTask(
+                    row,
+                    t.descriptor,
+                    t.execution,
+                    v => Schedule.NextAt(row.nextExecution, v),
+                    Some(row.nextExecution),
+                    t.maxRetries,
+                    t.onAbandon
+                  )
                 }
             }
             .orElse {
               startTasks
                 .find(_.descriptor.taskName == row.taskName)
                 .flatMap { t =>
-                  reconstructTask(row, t.descriptor, t.execution, _ => t.schedule, Some(row.nextExecution))
+                  reconstructTask(row, t.descriptor, t.execution, _ => t.schedule, Some(row.nextExecution), t.maxRetries, t.onAbandon)
                 }
             }
 
