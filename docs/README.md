@@ -54,3 +54,7 @@ Skim the **Start here** path on day one. Reach for the rest by topic.
 - [`configuration.md`](configuration.md) — pureconfig + HOCON + `.env`; the override pyramid.
 - [`observability.md`](observability.md) — OpenTelemetry traces / metrics / logs; trace-ids in error responses.
 - [`deployment.md`](deployment.md) — sbt-native-packager Docker image; the env-var contract; migrations as a separate step.
+
+## Frontend
+
+- [`frontend.md`](frontend.md) — the reference frontend companion (a separate repo); the generated-contract loop that keeps it type-safe against the router specs.

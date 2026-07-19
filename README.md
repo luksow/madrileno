@@ -130,4 +130,6 @@ Reference material lives in [`docs/`](docs/README.md). For day one, read in this
 
 Driving development with an AI assistant? [`docs/ai-assisted-dev.md`](docs/ai-assisted-dev.md) covers the Metals + madrileno MCP server setup (the build tools `CLAUDE.md` assumes).
 
+Building a UI against it? [`docs/frontend.md`](docs/frontend.md) covers the reference frontend companion and the generated-contract loop that keeps it type-safe.
+
 The [`docs/README.md`](docs/README.md) lists everything else by topic — stack (auth, scheduler, observability…), conventions (domain modeling, sealed monad, error handling), operations (configuration, deployment).
