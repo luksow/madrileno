@@ -162,7 +162,7 @@ inConfig(Test)(
 )
 
 // Cache runtime classpath for `./scripts/dev-console.scala`.
-Compile / compile := {
+Compile / compile := Def.uncached {
   val r           = (Compile / compile).value
   val runtimeJars = update.value.configurations
     .find(_.configuration.name == "runtime")
@@ -171,7 +171,7 @@ Compile / compile := {
   val classDir    = (Compile / classDirectory).value.getAbsolutePath
   val resourceDir = (Compile / resourceDirectory).value.getAbsolutePath
   val cp          = (classDir +: resourceDir +: runtimeJars).mkString(":")
-  val dest        = target.value / "console-classpath"
+  val dest        = baseDirectory.value / "target" / "console-classpath"
   IO.write(dest, cp)
   streams.value.log.info(s"dev-console classpath cached at $dest")
   r
@@ -182,6 +182,6 @@ semanticdbEnabled := true
 semanticdbVersion := scalafixSemanticdb.revision
 
 lazy val verifyAll = taskKey[Unit]("Performs all verifications to assure that the build will pass CI checks.")
-Test / verifyAll := {
-  Def.sequential(Compile / scalafmtSbtCheck, Compile / scalafmtCheckAll, Compile / compile, Test / test).value
+Test / verifyAll := Def.uncached {
+  Def.sequential(Compile / scalafmtSbtCheck, Compile / scalafmtCheckAll, Compile / compile, (Test / test).toTask("")).value
 }

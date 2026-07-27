@@ -8,7 +8,7 @@ import org.scalatest.wordspec.AsyncWordSpec
 import scodec.bits.ByteVector
 
 import java.awt.Color
-import java.nio.file.{Files, Paths}
+import scala.util.Using
 
 class ImagingSpec extends AsyncWordSpec with AsyncIOSpec with Matchers {
 
@@ -34,7 +34,7 @@ class ImagingSpec extends AsyncWordSpec with AsyncIOSpec with Matchers {
 
   // 1200x600 sensor pixels, EXIF Orientation 6 ⇒ displays 600x1200
   private val rotatedJpeg: ByteVector =
-    ByteVector(Files.readAllBytes(Paths.get(getClass.getResource("/exif-orientation-6.jpg").toURI)))
+    Using.resource(getClass.getResourceAsStream("/exif-orientation-6.jpg"))(in => ByteVector(in.readAllBytes()))
 
   "Imaging.info" should {
     "return dimensions and format for a JPEG" in {

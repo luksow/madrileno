@@ -26,6 +26,8 @@ class ModuleWiringSpec extends AnyFunSpec with Matchers {
         fqn.startsWith(s"$pkg.") && fqn.split('.').last.endsWith("Module") && isProjectTrait(fqn)
       }
 
+      withClue("classpath scan found no *Module traits — is the scan broken?") { moduleTraits should not be empty }
+
       val mixedIn = allInterfaces(classOf[ApplicationLoader]).map(_.getName)
       val missing = (moduleTraits diff mixedIn) diff intentionallyNotMixedIn.keySet
 
