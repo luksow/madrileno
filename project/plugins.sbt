@@ -10,6 +10,8 @@ addSbtPlugin("com.indoorvivants" % "sbt-revolver" % "0.11.2")
 
 addSbtPlugin("nl.gn0s1s" % "sbt-dotenv" % "3.2.0")
 
+addSbtPlugin("com.timushev.sbt" % "sbt-rewarn" % "0.2.0")
+
 addSbtPlugin("com.timushev.sbt" % "sbt-updates" % "0.7.0")
 
 addSbtPlugin("pl.iterators" % "baklava-sbt-plugin" % "2.0.0")
