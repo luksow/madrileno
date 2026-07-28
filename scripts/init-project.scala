@@ -99,6 +99,16 @@ object InitProject {
     ).filter(os.exists)
     templateCiFiles.foreach(os.remove)
 
+    val licenseFile    = root / "LICENSE"
+    val licenseDeleted = os.exists(licenseFile)
+    if (licenseDeleted) os.remove(licenseFile)
+    val readme = root / "README.md"
+    if (os.exists(readme)) {
+      val current  = os.read(readme)
+      val stripped = """(?ms)^## License[ \t]*\r?\n.*?(?=^## |\z)""".r.replaceAllIn(current, "")
+      if (stripped != current) os.write.over(readme, stripped)
+    }
+
     // 2. Rewrite text files. Order matters: do the auction surgery while the strings
     //    still say `madrileno.auction`, then run the package + standalone-name renames.
     //    Auction surgery:
@@ -201,6 +211,7 @@ object InitProject {
     println(s"Package: $packageName")
     println(s"Deleted: ${deleted.size} auction-related paths")
     if (templateCiFiles.nonEmpty) println(s"Deleted: ${templateCiFiles.size} template-internal CI files (link-check + script-tests workflows, check-links.scala)")
+    if (licenseDeleted) println("Deleted: LICENSE (the template's Apache-2.0 — generated projects may relicense freely)")
     if (docsDeleted) println("Deleted: docs/ (pass --keep-docs to retain a local copy; the MCP server serves them from the pinned ref)")
     println(s"Updated: $totalUpdated files")
     println(s"Anchored: $upstreamRepo @ ${sha.take(10)} (see .madrileno-ref)")
@@ -223,6 +234,7 @@ object InitProject {
     println("Next:")
     println("  cp .env.sample .env")
     println("  sbt test")
+    if (licenseDeleted) println("  pick a LICENSE for your project        # the template's Apache-2.0 file was removed")
     val mcpDocLink =
       if (docsDeleted) s"$upstreamWeb/blob/$sha/docs/mcp.md"
       else "docs/mcp.md"

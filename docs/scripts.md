@@ -4,7 +4,7 @@ scala-cli scripts under `scripts/` for project lifecycle tasks. Each is self-con
 
 ## `init-project.scala`
 
-Use this once, right after cloning the template, to turn it into your project. Renames `madrileno` everywhere, swaps the Scala package, drops the auction showcase domain, pins the upstream sha for the MCP server, and (by default) deletes the local `docs/` tree since the MCP serves them from the pinned ref.
+Use this once, right after cloning the template, to turn it into your project. Renames `madrileno` everywhere, swaps the Scala package, drops the auction showcase domain, removes the template's Apache-2.0 `LICENSE` (generated projects may relicense freely — see the README's License section), pins the upstream sha for the MCP server, and (by default) deletes the local `docs/` tree since the MCP serves them from the pinned ref.
 
 ```bash
 ./scripts/init-project.scala wine-cellar
@@ -18,17 +18,18 @@ What it does, in order:
 
 1. **Sanity checks** — refuses to run if `build.sbt` isn't present, if `src/main/scala/madrileno/` is missing (already renamed), or if `git rev-parse HEAD` can't resolve a sha (init must run from a git clone — the sha gets pinned in `.madrileno-ref`).
 2. **Deletes the auction demo** — `src/{main,test}/scala/madrileno/auction/` and any Flyway migration whose filename mentions `auction` or `bid`.
-3. **Rewrites file contents** under every text file outside `.git`, `target`, IDE caches, `node_modules`, and `scripts/`:
+3. **Deletes `LICENSE` and the README's License section** — both describe the template, not your project. The README section explicitly grants projects generated via this script the right to relicense with no attribution required, so add whatever license fits yours.
+4. **Rewrites file contents** under every text file outside `.git`, `target`, IDE caches, `node_modules`, and `scripts/`:
    - Drops blocks bracketed by `// scripts:auction-block-start` / `// scripts:auction-block-end` — auction-coupled fragments in test support that can't be deleted as whole files (today: two in `TestData.scala`, one in `TestApplicationLoader.scala`, one in `SchedulerAdminRouterSpec.scala`). The markers must occupy their own line — inline mentions in prose are ignored.
    - Drops `import madrileno.auction.*` lines and `with AuctionModule` lines from the loaders' `extends` chains.
    - Renames `madrileno.<X>` package references to `<package>.<X>`.
    - Renames standalone `madrileno` to `<project-name>` (HOCON `app.name`, container names, `OTEL_SERVICE_NAME`, `PG_DATABASE`, `MAILER_FROM_ADDRESS`, README/doc references, etc.).
    - **Skips `docs/mcp.md`** — that file documents the MCP system itself; its `madrileno_*` tool names, the upstream repo URL, and the upstream path examples are intentional and must not be renamed.
-4. **Renames the source directories** — `src/{main,test}/scala/madrileno/` → `src/{main,test}/scala/<package>/`.
-5. **Writes `.madrileno-ref`** with the upstream URL (derived from `git remote get-url origin`, falling back to the canonical madrileno URL) + the sha resolved at step 1. The MCP server reads this to anchor every tool call to a specific upstream commit. Commit it — your collaborators (and Claude) benefit from a shared pin.
-6. **Updates `.gitignore`** — whitelists `.madrileno-ref` (the template's blanket `.*` rule would otherwise hide it) and adds `.madrileno-mcp/` (the shadow clone the MCP server keeps for serving docs/source).
-7. **Deletes `docs/`** unless `--keep-docs`. The MCP server serves docs on demand from the pinned ref; most projects don't need them in-tree.
-8. **Rewrites `docs/<X>` link targets** across every `*.md` in the project tree (outside `.git`, `target`, IDE caches, `node_modules`, `scripts/`) to point at upstream at the pinned sha (e.g. README's reference-section links become `https://github.com/luksow/madrileno/blob/<sha>/docs/<X>`). Matches any link target starting with `docs/` — `.md`, images, anything. Only runs when docs were deleted, so the links stay clickable. Under `--keep-docs` the links stay local.
+5. **Renames the source directories** — `src/{main,test}/scala/madrileno/` → `src/{main,test}/scala/<package>/`.
+6. **Writes `.madrileno-ref`** with the upstream URL (derived from `git remote get-url origin`, falling back to the canonical madrileno URL) + the sha resolved at step 1. The MCP server reads this to anchor every tool call to a specific upstream commit. Commit it — your collaborators (and Claude) benefit from a shared pin.
+7. **Updates `.gitignore`** — whitelists `.madrileno-ref` (the template's blanket `.*` rule would otherwise hide it) and adds `.madrileno-mcp/` (the shadow clone the MCP server keeps for serving docs/source).
+8. **Deletes `docs/`** unless `--keep-docs`. The MCP server serves docs on demand from the pinned ref; most projects don't need them in-tree.
+9. **Rewrites `docs/<X>` link targets** across every `*.md` in the project tree (outside `.git`, `target`, IDE caches, `node_modules`, `scripts/`) to point at upstream at the pinned sha (e.g. README's reference-section links become `https://github.com/luksow/madrileno/blob/<sha>/docs/<X>`). Matches any link target starting with `docs/` — `.md`, images, anything. Only runs when docs were deleted, so the links stay clickable. Under `--keep-docs` the links stay local.
 
 After running:
 

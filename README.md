@@ -133,3 +133,7 @@ Driving development with an AI assistant? [`docs/ai-assisted-dev.md`](docs/ai-as
 Building a UI against it? [`docs/frontend.md`](docs/frontend.md) covers the reference frontend companion and the generated-contract loop that keeps it type-safe.
 
 The [`docs/README.md`](docs/README.md) lists everything else by topic — stack (auth, scheduler, observability…), conventions (domain modeling, sealed monad, error handling), operations (configuration, deployment).
+
+## License
+
+The template is licensed under [Apache-2.0](LICENSE), but projects generated from it are unencumbered: you may relicense the code created via `./scripts/init-project.scala` under any terms, with no attribution required. The init script removes the LICENSE file (and this section) so you can add a license of your own choosing.
