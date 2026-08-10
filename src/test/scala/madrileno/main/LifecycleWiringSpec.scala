@@ -6,7 +6,7 @@ import io.opentelemetry.api.OpenTelemetry
 import madrileno.utils.cache.CacheRuntime
 import madrileno.utils.db.transactor.{DB, DBInTransaction, Transactor}
 import madrileno.utils.events.bus.EventBusRuntime
-import madrileno.utils.events.outbox.{OutboxConfig, OutboxModule}
+import madrileno.utils.events.outbox.{OutboxConfig, OutboxModule, OutboxSubscription, OutboxSubscriptionProvider, Reaction}
 import madrileno.utils.featureflag.FeatureFlagModule
 import madrileno.utils.http.ApplicationRouteProvider
 import madrileno.utils.lifecycle.LifecycleProvider
@@ -18,9 +18,6 @@ import org.typelevel.otel4s.metrics.Meter
 import org.typelevel.otel4s.trace.Tracer
 import skunk.data.{Identifier, Notification}
 
-// Guards the `override abstract def lifecycles = super.lifecycles :+ ...` seam: if any LifecycleProvider
-// module drops the `super` call, its peers' contributions vanish silently. Constructs the real modules
-// (no DB — the lifecycle resources are built but never run) and checks both contributions survive linearization.
 class LifecycleWiringSpec extends AnyFunSpec with Matchers {
 
   private val stubTransactor: Transactor = new Transactor {
@@ -31,6 +28,7 @@ class LifecycleWiringSpec extends AnyFunSpec with Matchers {
       Resource.raiseError[IO, Stream[IO, Notification[String]], Throwable](new NotImplementedError())
   }
 
+  // No DB: the lifecycle Resources are built but never run, so a stub transactor / in-memory bus suffice.
   private class LifecycleFixture(using TelemetryContext)
       extends ApplicationRouteProvider
       with ApplicationTaskProvider
@@ -49,6 +47,24 @@ class LifecycleWiringSpec extends AnyFunSpec with Matchers {
     it("accumulate every LifecycleProvider module's contribution through trait linearization") {
       given TelemetryContext = TelemetryContext(Meter.noop[IO], Tracer.noop[IO], OpenTelemetry.noop())
       new LifecycleFixture().lifecycles should have size 2
+    }
+  }
+
+  // Synthetic contributors: only one production module registers subscriptions today, so a dropped `super`
+  // there is undetectable — these two lock the idiom for when a second real subscriber appears.
+  private def dummySubscription(consumer: String): OutboxSubscription =
+    OutboxSubscription(consumer, s"evt-$consumer", (_, _) => IO.pure(Reaction.Drop("test")))
+
+  private trait SubscribingModuleA extends OutboxSubscriptionProvider {
+    override abstract def outboxSubscriptions: List[OutboxSubscription] = super.outboxSubscriptions :+ dummySubscription("a")
+  }
+  private trait SubscribingModuleB extends OutboxSubscriptionProvider {
+    override abstract def outboxSubscriptions: List[OutboxSubscription] = super.outboxSubscriptions :+ dummySubscription("b")
+  }
+
+  describe("outbox subscriptions") {
+    it("accumulate every contributing module's subscriptions through trait linearization") {
+      (new SubscribingModuleA with SubscribingModuleB {}).outboxSubscriptions should have size 2
     }
   }
 }

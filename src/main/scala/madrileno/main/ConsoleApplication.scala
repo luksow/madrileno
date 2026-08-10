@@ -61,8 +61,7 @@ object ConsoleApplication {
           IORuntime.global
         )
       }
-      // Same lifecycles Main runs (outbox recovery, feature-flag invalidation): without this a
-      // console session never subscribes to invalidations and serves cache-stale reads until TTL.
+      // Without this the console never subscribes to invalidations — it would serve cache-stale reads until TTL.
       _ <- application.lifecycles.sequence_
     } yield application
 
