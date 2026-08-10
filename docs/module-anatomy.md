@@ -66,6 +66,8 @@ Most providers are grouped under an `Application…` umbrella. `ApplicationRoute
 
 A `LifecycleProvider` contribution is a `Resource[IO, Unit]` — acquire at boot, release at shutdown. `Main` runs them (`application.lifecycles.sequence_`) inside its resource scope, after the runtimes are up and before the HTTP server binds. Use it for a module's app-lifetime background work: the outbox recovery loop and the feature-flag cache-invalidation subscription are the two worked examples. Keep them independent of each other; if one needs another to be running first, compose that ordering inside a single `Resource`.
 
+Acquisition starts a lifecycle; it does not wait for it to become *ready*. A `.background` contribution forks its fiber and returns immediately, so the server can bind before, say, an event-bus subscription has actually registered. Treat lifecycles as fail-open: the feature-flag invalidation tolerates a brief startup window where a peer update is missed and the cache falls back to its TTL. If a contribution genuinely must be ready before boot proceeds, encode that wait in the `Resource`'s acquire step rather than assuming acquisition implies readiness.
+
 A module mixes in only what it contributes. The auction module mixes in six providers; `HealthCheckModule` mixes in only `RouteProvider`.
 
 ## Dependencies
@@ -105,7 +107,7 @@ A few things to keep in mind:
 
 It's three small pieces:
 
-1. **Define the trait.** A provider is a `trait` with one abstract method. Put it next to the existing providers (`utils.http.ApplicationRouteProvider` for HTTP-shaped, `utils.task.ApplicationTaskProvider` for task-shaped, …) so the umbrella file has them together.
+1. **Define the trait.** A provider is a small `trait` declaring what a module contributes — usually one method. If it belongs to a category that has several shapes (routes, tasks), put it next to the others (`utils.http.ApplicationRouteProvider` for HTTP-shaped, `utils.task.ApplicationTaskProvider` for task-shaped, …) so the umbrella file has them together. A standalone provider (like `MailPreviewProvider` or `LifecycleProvider`) just lives on its own.
 
    ```scala
    trait FeatureFlagProvider {
@@ -113,7 +115,7 @@ It's three small pieces:
    }
    ```
 
-2. **Add to the umbrella with a default.** The umbrella trait extends every provider in its category and supplies a no-op default. `ApplicationLoader` extends the umbrella, so the default keeps `super.<thing>` chains terminating.
+2. **Give it a default so the `super.<thing>` chain terminates.** For a category with an umbrella, the umbrella trait extends every provider in the category and supplies the no-op default; `ApplicationLoader` extends the umbrella.
 
    ```scala
    trait ApplicationFeatureProvider extends FeatureFlagProvider {
@@ -121,6 +123,14 @@ It's three small pieces:
    }
    ```
 
-3. **Wire the contributions somewhere they get used.** A provider only matters if something downstream consumes it. For routes that's `routes(wsb)` in `ApplicationLoader`; for tasks it's `scheduler.run(...)` in `Main`; for mail previews it's the `MailPreviewRouter` constructor. Find or add the consumer that walks the list.
+   A standalone provider has no umbrella — it inlines the default on the trait itself, and `ApplicationLoader` mixes the provider in directly.
 
-That's the whole pattern. The reason there aren't more providers in the template is that the existing eight (four route, three task, one mail preview) cover almost every cross-cutting concern a typical web backend has.
+   ```scala
+   trait LifecycleProvider {
+     def lifecycles: List[Resource[IO, Unit]] = Nil
+   }
+   ```
+
+3. **Wire the contributions somewhere they get used.** A provider only matters if something downstream consumes it. For routes that's `routes(wsb)` in `ApplicationLoader`; for tasks it's `scheduler.run(...)` in `Main`; for lifecycles it's `application.lifecycles.sequence_` in `Main`; for mail previews it's the `MailPreviewRouter` constructor. Find or add the consumer that walks the list.
+
+That's the whole pattern. The reason there aren't more providers in the template is that the existing nine (four route, three task, one mail preview, one lifecycle) cover almost every cross-cutting concern a typical web backend has.

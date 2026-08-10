@@ -4,6 +4,7 @@ import cats.effect.std.Supervisor
 import cats.effect.unsafe.IORuntime
 import cats.effect.unsafe.implicits.global
 import cats.effect.{Clock, IO, Resource}
+import cats.syntax.all.*
 import io.opentelemetry.api.OpenTelemetry
 import madrileno.utils.cache.CacheRuntime
 import madrileno.utils.db.transactor.{PgConfig, PgTransactor}
@@ -40,26 +41,30 @@ object ConsoleApplication {
       transactor           <- PgTransactor.resource(pgConfig)
       objectStoreRuntime   <- ObjectStoreRuntime.s3(storageConfig)
       given Supervisor[IO] <- Supervisor[IO]
-    } yield {
-      val scheduler             = Scheduler(transactor, schedulerConfig)
-      val cacheRuntime          = CacheRuntime.scaffeine
-      val rateLimiterRuntime    = RateLimiterRuntime.scaffeine()
-      val eventBusRuntime       = EventBusRuntime.postgres(transactor)
-      val circuitBreakerRuntime = CircuitBreakerRuntime.default
-      ApplicationLoader(
-        config,
-        httpClient,
-        transactor,
-        Clock[IO],
-        scheduler.client,
-        cacheRuntime,
-        rateLimiterRuntime,
-        objectStoreRuntime,
-        eventBusRuntime,
-        circuitBreakerRuntime,
-        IORuntime.global
-      )
-    }
+      application = {
+        val scheduler             = Scheduler(transactor, schedulerConfig)
+        val cacheRuntime          = CacheRuntime.scaffeine
+        val rateLimiterRuntime    = RateLimiterRuntime.scaffeine()
+        val eventBusRuntime       = EventBusRuntime.postgres(transactor)
+        val circuitBreakerRuntime = CircuitBreakerRuntime.default
+        ApplicationLoader(
+          config,
+          httpClient,
+          transactor,
+          Clock[IO],
+          scheduler.client,
+          cacheRuntime,
+          rateLimiterRuntime,
+          objectStoreRuntime,
+          eventBusRuntime,
+          circuitBreakerRuntime,
+          IORuntime.global
+        )
+      }
+      // Same lifecycles Main runs (outbox recovery, feature-flag invalidation): without this a
+      // console session never subscribes to invalidations and serves cache-stale reads until TTL.
+      _ <- application.lifecycles.sequence_
+    } yield application
 
     // Single allocation, single release. Shutdown hook runs the release on JVM exit
     // so connections / supervisors close cleanly.

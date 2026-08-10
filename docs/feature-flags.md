@@ -67,7 +67,7 @@ EvaluationContext(
 
 ## Caching and invalidation
 
-Evaluation is fronted by three per-JVM caches (60s TTL): per-key flags, the segment set, and the client-exposed flag list. Writes invalidate synchronously on the instance that made the change and publish a `FeatureFlagEvent` on the [event bus](event-bus.md); peers pick it up — through a boot-time bus subscription started as a module `LifecycleProvider` — and invalidate their own caches (falling back to the TTL if a publish is lost). Cache writes are epoch-guarded so a slow load can't resurrect a value that was invalidated mid-flight. See [cache.md](cache.md) for the runtime.
+Evaluation is fronted by three per-JVM caches (60s TTL): per-key flags, the segment set, and the client-exposed flag list. Writes invalidate synchronously on the instance that made the change and publish a `FeatureFlagEvent` on the [event bus](event-bus.md); peers pick it up — through a boot-time bus subscription started as a module `LifecycleProvider` — and invalidate their own caches (falling back to the TTL if a publish is lost). The subscription registers asynchronously as the node boots, so a freshly started instance may briefly miss a concurrent peer update and serve a cached value until its TTL; this is fail-open by design, not a readiness gate. Cache writes are epoch-guarded so a slow load can't resurrect a value that was invalidated mid-flight. See [cache.md](cache.md) for the runtime.
 
 ## Admin API
 
