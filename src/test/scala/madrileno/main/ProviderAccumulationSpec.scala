@@ -18,7 +18,7 @@ import org.typelevel.otel4s.metrics.Meter
 import org.typelevel.otel4s.trace.Tracer
 import skunk.data.{Identifier, Notification}
 
-class LifecycleWiringSpec extends AnyFunSpec with Matchers {
+class ProviderAccumulationSpec extends AnyFunSpec with Matchers {
 
   private val stubTransactor: Transactor = new Transactor {
     override def inTransaction[A](f: DBInTransaction[A]): IO[A]         = IO.raiseError(new NotImplementedError())
