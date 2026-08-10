@@ -60,8 +60,11 @@ A provider is a tiny trait with one or two abstract methods. Modules mix them in
 | `OneTimeTaskProvider`     | Tasks scheduled in response to events (analyze, send mail, …)        | `def oneTimeTasks: List[OneTimeTask[?]]`        |
 | `CustomTaskProvider`      | Tasks that compute their next run dynamically                        | `def customTasks: List[CustomTask[?]]`          |
 | `MailPreviewProvider`     | Renderable email previews for the dev-mode `/admin/mail-previews` UI | `def mailPreviews: List[MailPreview]`           |
+| `LifecycleProvider`       | Background processes / startup–shutdown effects that run for the app's lifetime | `def lifecycles: List[Resource[IO, Unit]]`      |
 
-Most providers are grouped under an `Application…` umbrella. `ApplicationRouteProvider` extends the four route providers and supplies `RouteDirectives.reject` as the default. `ApplicationTaskProvider` extends the three task providers and supplies `Nil`. `MailPreviewProvider` stands on its own and inlines `Nil` as its default. `ApplicationLoader` mixes them all in, so the chain always terminates cleanly even if no module implements a given provider.
+Most providers are grouped under an `Application…` umbrella. `ApplicationRouteProvider` extends the four route providers and supplies `RouteDirectives.reject` as the default. `ApplicationTaskProvider` extends the three task providers and supplies `Nil`. `MailPreviewProvider` and `LifecycleProvider` stand on their own and inline `Nil` as their default. `ApplicationLoader` mixes them all in, so the chain always terminates cleanly even if no module implements a given provider.
+
+A `LifecycleProvider` contribution is a `Resource[IO, Unit]` — acquire at boot, release at shutdown. `Main` runs them (`application.lifecycles.sequence_`) inside its resource scope, after the runtimes are up and before the HTTP server binds. Use it for a module's app-lifetime background work: the outbox recovery loop and the feature-flag cache-invalidation subscription are the two worked examples. Keep them independent of each other; if one needs another to be running first, compose that ordering inside a single `Resource`.
 
 A module mixes in only what it contributes. The auction module mixes in six providers; `HealthCheckModule` mixes in only `RouteProvider`.
 

@@ -16,6 +16,7 @@ import madrileno.utils.events.outbox.{OutboxConfig, OutboxModule}
 import madrileno.utils.featureflag.FeatureFlagModule
 import madrileno.utils.featureflag.routers.FeatureFlagAdminRouter
 import madrileno.utils.http.{ApplicationRouteProvider, Handlers, RateLimiterRuntime}
+import madrileno.utils.lifecycle.LifecycleProvider
 import madrileno.utils.mailer.{MailContext, MailPreviewProvider, MailPreviewRouter, Mailer, MailerConfig, SmtpSender}
 import madrileno.utils.observability.*
 import madrileno.utils.observability.admin.{ConfigAdminRouter, HeapdumpAdminRouter, LoggersAdminRouter, ThreaddumpAdminRouter}
@@ -85,6 +86,7 @@ class ApplicationLoader(
   Supervisor[IO])
     extends ApplicationRouteProvider
     with ApplicationTaskProvider
+    with LifecycleProvider
     with MailPreviewProvider
     with LoggingSupport
     with Handlers

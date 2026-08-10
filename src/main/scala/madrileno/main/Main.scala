@@ -2,6 +2,7 @@ package madrileno.main
 
 import cats.effect.std.Supervisor
 import cats.effect.{Clock, IO, IOApp, Resource}
+import cats.syntax.all.*
 import io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppender
 import madrileno.utils.cache.CacheRuntime
 import madrileno.utils.db.Migrations
@@ -68,7 +69,7 @@ object Main extends IOApp.Simple {
           runtime
         )
       _ <- scheduler.run(recurringTasks = application.recurringTasks, oneTimeTasks = application.oneTimeTasks, customTasks = application.customTasks)
-      _ <- application.outboxRecovery.run
+      _ <- application.lifecycles.sequence_
       metricsOps <- OtelMetrics.serverMetricsOps[IO]().toResource
       redactor        = new QueryRedactor.NeverRedact with PathRedactor.NeverRedact
       routeClassifier = new RouteClassifier {

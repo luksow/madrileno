@@ -1,10 +1,8 @@
 package madrileno.utils.featureflag.services
 
-import cats.effect.std.Supervisor
-import cats.effect.{Clock, IO, Ref}
+import cats.effect.{Clock, IO, Ref, Resource}
 import cats.syntax.all.*
 import io.circe.Json
-import madrileno.utils.async.Memoize
 import madrileno.utils.cache.{Cache, CacheRuntime}
 import madrileno.utils.crypto.IdGenerator
 import madrileno.utils.db.dsl.Lock
@@ -96,9 +94,7 @@ class FeatureFlagServiceLive(
   cacheRuntime: CacheRuntime,
   transactor: Transactor,
   eventBus: EventBus[FeatureFlagEvent]
-)(using
-  TelemetryContext,
-  Supervisor[IO])
+)(using TelemetryContext)
     extends FeatureFlagService
     with LoggingSupport {
 
@@ -254,7 +250,7 @@ class FeatureFlagServiceLive(
       }
 
   def evaluateClientExposed(ctx: EvaluationContext): IO[Map[FlagKey, Json]] =
-    (invalidationStarted *> cachedLoad(clientFlagsCache, (), transactor.inSession(repository.findAllClientExposed)))
+    cachedLoad(clientFlagsCache, (), transactor.inSession(repository.findAllClientExposed))
       .flatMap(_.traverse(flag => fetchSegments(flag).map(segments => flag.key -> FlagEvaluationEngine.evaluate(flag, segments, ctx).value.toJson)))
       .map(_.toMap)
 
@@ -313,8 +309,7 @@ class FeatureFlagServiceLive(
       IO.sleep(1.second)
   }.foreverM
 
-  private val invalidationStarted: IO[Unit] =
-    Memoize(summon[Supervisor[IO]].supervise(invalidationLoop).void)
+  val invalidationLifecycle: Resource[IO, Unit] = invalidationLoop.background.void
 
   private def cachedLoad[K, V](
     cache: Cache[K, V],
@@ -351,7 +346,7 @@ class FeatureFlagServiceLive(
     extract: FlagVariant => Option[T],
     ctx: EvaluationContext
   ): IO[EvaluationDetail[T]] =
-    (invalidationStarted *> fetchFlag(key))
+    fetchFlag(key)
       .flatMap {
         case None       => IO.pure(EvaluationDetail(default, EvaluationReason.Error, Some(EvaluationErrorCode.FlagNotFound)))
         case Some(flag) =>

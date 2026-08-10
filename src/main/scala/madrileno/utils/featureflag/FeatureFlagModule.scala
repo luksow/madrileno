@@ -1,7 +1,6 @@
 package madrileno.utils.featureflag
 
-import cats.effect.IO
-import cats.effect.std.Supervisor
+import cats.effect.{IO, Resource}
 import com.softwaremill.macwire.*
 import madrileno.auth.domain.AuthContext
 import madrileno.utils.cache.CacheRuntime
@@ -12,12 +11,12 @@ import madrileno.utils.featureflag.repositories.{FeatureFlagAuditRepository, Fea
 import madrileno.utils.featureflag.routers.FeatureFlagRouter
 import madrileno.utils.featureflag.services.FeatureFlagServiceLive
 import madrileno.utils.http.AuthRouteProvider
+import madrileno.utils.lifecycle.LifecycleProvider
 import madrileno.utils.observability.TelemetryContext
 import pl.iterators.stir.server.Route
 
-trait FeatureFlagModule extends AuthRouteProvider {
+trait FeatureFlagModule extends AuthRouteProvider with LifecycleProvider {
   given telemetryContext: TelemetryContext
-  given supervisor: Supervisor[IO]
   val transactor: Transactor
   val cacheRuntime: CacheRuntime
   val eventBusRuntime: EventBusRuntime
@@ -36,5 +35,9 @@ trait FeatureFlagModule extends AuthRouteProvider {
 
   override abstract def route(auth: AuthContext): Route = {
     super.route(auth) ~ featureFlagRouter.authedRoutes(auth)
+  }
+
+  override abstract def lifecycles: List[Resource[IO, Unit]] = {
+    super.lifecycles :+ featureFlagService.invalidationLifecycle
   }
 }

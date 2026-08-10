@@ -21,7 +21,7 @@ Reading order if you're tracing a request: Module first (where the route is defi
 
 ## Main
 
-`Main` is one big `Resource[IO, _]` `for`-comprehension. It loads config, starts OpenTelemetry, opens the database connection pool, builds the HTTP client, and constructs every `Runtime` (cache, rate limiter, object store, event bus, circuit breaker). At the end it constructs `ApplicationLoader` with all of those, hands the loader's task lists to the scheduler, wraps the loader's HTTP routes in middleware (metrics, request size limits, tracing), and binds the result to an Ember server.
+`Main` is one big `Resource[IO, _]` `for`-comprehension. It loads config, starts OpenTelemetry, opens the database connection pool, builds the HTTP client, and constructs every `Runtime` (cache, rate limiter, object store, event bus, circuit breaker). At the end it constructs `ApplicationLoader` with all of those, hands the loader's task lists to the scheduler, runs the loader's lifecycle resources (module background processes), wraps the loader's HTTP routes in middleware (metrics, request size limits, tracing), and binds the result to an Ember server.
 
 What's important about `Main`:
 
@@ -41,7 +41,7 @@ The loader also owns a few application-level concerns that don't belong to any s
 
 ## Modules
 
-A module is a trait. It mixes in one or more `Provider` interfaces — `RouteProvider`, `AuthRouteProvider`, `WsRouteProvider`, `RecurringTaskProvider`, `OneTimeTaskProvider`, `MailPreviewProvider` — to declare what it contributes. It declares its abstract dependencies (for example, `val transactor: Transactor`). Inside, it wires its own services, routers, and templates.
+A module is a trait. It mixes in one or more `Provider` interfaces — `RouteProvider`, `AuthRouteProvider`, `WsRouteProvider`, `RecurringTaskProvider`, `OneTimeTaskProvider`, `MailPreviewProvider`, `LifecycleProvider` — to declare what it contributes. It declares its abstract dependencies (for example, `val transactor: Transactor`). Inside, it wires its own services, routers, and templates.
 
 The auction module is the worked example. It mixes in route providers, task providers, and the mail-preview provider; it declares dependencies on the transactor, object store, scheduler client, cache, rate limiter, and event bus; and it wires `AuctionService`, `AuctionImageService`, the routers, and the mail templates with macwire.
 

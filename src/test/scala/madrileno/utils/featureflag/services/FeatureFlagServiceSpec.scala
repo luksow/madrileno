@@ -1,7 +1,6 @@
 package madrileno.utils.featureflag.services
 
 import cats.effect.IO
-import cats.effect.std.Supervisor
 import cats.effect.testing.scalatest.AsyncIOSpec
 import io.opentelemetry.api.OpenTelemetry
 import madrileno.support.{TestCacheRuntime, TestTransactor}
@@ -21,14 +20,6 @@ import scala.concurrent.duration.DurationInt
 class FeatureFlagServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers with TestTransactor {
 
   given TelemetryContext = TelemetryContext(Meter.noop[IO], Tracer.noop[IO], OpenTelemetry.noop())
-
-  private val (supervisorInstance, supervisorRelease) = Supervisor[IO].allocated.unsafeRunSync()
-  given Supervisor[IO]                                = supervisorInstance
-
-  override def beforeContainersStop(containers: Containers): Unit = {
-    supervisorRelease.unsafeRunSync()
-    super.beforeContainersStop(containers)
-  }
 
   private val eventBus: EventBus[FeatureFlagEvent] =
     EventBusRuntime.local.topic[FeatureFlagEvent]("feature_flag_events_test", maxQueued = 64)
@@ -199,14 +190,16 @@ class FeatureFlagServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matcher
           if (detail.reason == EvaluationReason.Disabled || attempts <= 0) IO.pure(detail)
           else eventBus.publish(FeatureFlagEvent.Invalidated(key)) *> IO.sleep(50.millis) *> pollUntilDisabled(attempts - 1)
         }
-      for {
-        _          <- seedFlag(key.unwrap, enabled = true)
-        first      <- reader.evaluator(ctx).booleanDetail(key, default = false)
-        _          <- service.toggleFlag(ToggleFlagCommand(key, enabled = false, actor))
-        afterEvent <- pollUntilDisabled(attempts = 100)
-      } yield {
-        first.reason shouldBe EvaluationReason.Default
-        afterEvent.reason shouldBe EvaluationReason.Disabled
+      reader.invalidationLifecycle.use { _ =>
+        for {
+          _          <- seedFlag(key.unwrap, enabled = true)
+          first      <- reader.evaluator(ctx).booleanDetail(key, default = false)
+          _          <- service.toggleFlag(ToggleFlagCommand(key, enabled = false, actor))
+          afterEvent <- pollUntilDisabled(attempts = 100)
+        } yield {
+          first.reason shouldBe EvaluationReason.Default
+          afterEvent.reason shouldBe EvaluationReason.Disabled
+        }
       }
     }
 

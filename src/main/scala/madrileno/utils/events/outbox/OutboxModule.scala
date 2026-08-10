@@ -1,6 +1,8 @@
 package madrileno.utils.events.outbox
 
+import cats.effect.{IO, Resource}
 import madrileno.utils.db.transactor.Transactor
+import madrileno.utils.lifecycle.LifecycleProvider
 import madrileno.utils.observability.TelemetryContext
 import madrileno.utils.task.{OneTimeTask, OneTimeTaskProvider, SchedulerClient}
 
@@ -8,7 +10,7 @@ trait OutboxSubscriptionProvider {
   def outboxSubscriptions: List[OutboxSubscription] = Nil
 }
 
-trait OutboxModule extends OneTimeTaskProvider with OutboxSubscriptionProvider {
+trait OutboxModule extends OneTimeTaskProvider with OutboxSubscriptionProvider with LifecycleProvider {
   given telemetryContext: TelemetryContext
   val transactor: Transactor
   val schedulerClient: SchedulerClient
@@ -28,5 +30,9 @@ trait OutboxModule extends OneTimeTaskProvider with OutboxSubscriptionProvider {
 
   override abstract def oneTimeTasks: List[OneTimeTask[?]] = {
     super.oneTimeTasks ++ outboxDispatcher.deliveryTasks
+  }
+
+  override abstract def lifecycles: List[Resource[IO, Unit]] = {
+    super.lifecycles :+ outboxRecovery.run
   }
 }

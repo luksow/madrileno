@@ -603,7 +603,7 @@ trait ProductModule extends RouteProvider with AuthRouteProvider {
 
 `Clock[IO]` and `UUIDGen[IO]` (required by `ProductService`) resolve implicitly — `ApplicationLoader` takes `val clock: Clock[IO]` in its constructor, and cats-effect's `UUIDGen.fromSync[IO]` given is always in scope. You don't wire them explicitly.
 
-If the module has a recurring task or email previews, also extend `RecurringTaskProvider` / `MailPreviewProvider` and implement the corresponding `override abstract def`. See `AuctionModule` for the full shape.
+If the module has a recurring task, email previews, or an app-lifetime background process, also extend `RecurringTaskProvider` / `MailPreviewProvider` / `LifecycleProvider` and implement the corresponding `override abstract def`. See `AuctionModule` for the full shape.
 
 Then one line in `ApplicationLoader.scala`:
 
@@ -1100,7 +1100,7 @@ Skim this list. Each item is something a reviewer (human or Copilot) has flagged
 - [ ] A list endpoint that can grow is paginated — `paginated(...)` + `PageableSqlFilter` + `Page[Dto]`, or `cursorPaginated` + `KeysetSqlFilter` + `Cursor[A]` for a feed (Step 5.5)
 
 **Module wiring**
-- [ ] Trait extends the right providers (`RouteProvider`, `AuthRouteProvider`, optionally `RecurringTaskProvider`, `MailPreviewProvider`)
+- [ ] Trait extends the right providers (`RouteProvider`, `AuthRouteProvider`, optionally `RecurringTaskProvider`, `MailPreviewProvider`, `LifecycleProvider`)
 - [ ] `override abstract def` chains through `super` so other modules' contributions aren't lost
 - [ ] Module trait is mixed into `ApplicationLoader` — `ModuleWiringSpec` will fail in CI if you forget
 
