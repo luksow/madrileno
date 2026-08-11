@@ -1,6 +1,6 @@
 package madrileno.auction.services
 
-import cats.effect.std.{Supervisor, UUIDGen}
+import cats.effect.std.UUIDGen
 import cats.effect.testing.scalatest.AsyncIOSpec
 import cats.effect.{Clock, IO}
 import io.opentelemetry.api.OpenTelemetry
@@ -49,7 +49,6 @@ class AuctionServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers wi
   private val featureFlags                     = TestFeatureFlagService.empty
   private lazy val service = new AuctionService(auctionRepo, bidRepo, userRepo, vivinoGateway, eventBus, transactor, mailer, featureFlags)
 
-  private given Supervisor[IO]                       = Supervisor[IO].allocated.unsafeRunSync()._1
   private val ffEventBus: EventBus[FeatureFlagEvent] = EventBusRuntime.local.topic[FeatureFlagEvent]("ff_events_auction_test", maxQueued = 64)
   private lazy val ffRuleRepo                        = new RuleRepository
   private lazy val realFeatureFlags                  = new FeatureFlagServiceLive(

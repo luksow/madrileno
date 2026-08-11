@@ -116,7 +116,7 @@ Alert on dead-letter growth. The signal is the `outbox.deliveries` counter with 
 
 ## Recovery, deploys, multiple nodes
 
-The `OutboxRecovery` fiber (started in `Main`) runs every `recovery-interval` and repairs exactly two situations: events a subscribed consumer never got a ledger row for (consumer registered after publish, or publish raced a deploy), and `Pending` rows whose scheduler task vanished (e.g. the scheduler deleted an undecodable task row). Pending rows for a consumer that is no longer registered are logged and left alone so a removed module can drain gracefully after a rollback or a deliberate decommission.
+The `OutboxRecovery` fiber (run at boot as a module `LifecycleProvider`) runs every `recovery-interval` and repairs exactly two situations: events a subscribed consumer never got a ledger row for (consumer registered after publish, or publish raced a deploy), and `Pending` rows whose scheduler task vanished (e.g. the scheduler deleted an undecodable task row). Pending rows for a consumer that is no longer registered are logged and left alone so a removed module can drain gracefully after a rollback or a deliberate decommission.
 
 All repair actions are safe to race: opening a ledger row is `ON CONFLICT DO NOTHING`, task scheduling is an upsert that leaves running rows alone, and the terminal-status guard makes a duplicate task a no-op. Several nodes running recovery concurrently just do redundant reads.
 
