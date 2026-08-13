@@ -3,7 +3,10 @@ package madrileno.main
 import cats.effect.std.Supervisor
 import cats.effect.{Clock, IO, IOApp, Resource}
 import cats.syntax.all.*
+import io.opentelemetry.api.common.Attributes
 import io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppender
+import io.opentelemetry.sdk.autoconfigure.AutoConfiguredOpenTelemetrySdkBuilder
+import io.opentelemetry.sdk.resources.Resource as OtelResource
 import madrileno.utils.cache.CacheRuntime
 import madrileno.utils.db.Migrations
 import madrileno.utils.db.transactor.{PgConfig, PgTransactor}
@@ -32,7 +35,7 @@ object Main extends IOApp.Simple {
     (for {
       config    <- Resource.eval(IO.delay(ConfigSource.default))
       appConfig <- Resource.eval(IO.delay(config.at("app").loadOrThrow[AppConfig]))
-      otel      <- OtelJava.autoConfigured[IO]()
+      otel      <- OtelJava.autoConfigured[IO](appResourceCustomizer(appConfig))
       given TracerProvider[IO] = otel.tracerProvider
       given Tracer[IO] <- Resource.eval(summon[TracerProvider[IO]].get(appConfig.name))
       given MeterProvider[IO] = otel.meterProvider
@@ -111,4 +114,19 @@ object Main extends IOApp.Simple {
     } yield application).use { _ =>
       IO.never
     }
+
+  private def appResourceCustomizer(appConfig: AppConfig): AutoConfiguredOpenTelemetrySdkBuilder => AutoConfiguredOpenTelemetrySdkBuilder =
+    _.addResourceCustomizer((resource, _) => mergeAppResource(appConfig, resource))
+
+  // The merged Resource wins on key conflicts, so these two override anything in OTEL_RESOURCE_ATTRIBUTES.
+  private[main] def mergeAppResource(appConfig: AppConfig, resource: OtelResource): OtelResource =
+    resource.merge(
+      OtelResource.create(
+        Attributes
+          .builder()
+          .put("deployment.environment", appConfig.environment.toString.toLowerCase)
+          .put("service.version", appConfig.version)
+          .build()
+      )
+    )
 }
