@@ -275,6 +275,8 @@ OTEL_EXPORTER_OTLP_LOGS_ENDPOINT="http://localhost:55080/api/default/v1/logs"
 
 `OtelJava.autoConfigured[IO]()` reads these directly — the app code doesn't parse OTLP config. Set `OTEL_SDK_DISABLED=true` to disable telemetry entirely (useful in load tests where you don't want to measure the exporter).
 
+`OTEL_SERVICE_NAME` does double duty: the autoconfigured SDK uses it for the resource `service.name`, and `application.conf` also feeds it into `app.name`, which names the OTel instrumentation scope. So it's the single knob for the service's identity — set it per deployment and both follow.
+
 `build.sbt` adds `-Dotel.java.global-autoconfigure.enabled=true` so the autoconfigure module activates on startup.
 
 The OpenObserve container in `docker-compose.yml` listens on `localhost:55080`; the unusual signal-specific endpoints are because OpenObserve requires the org segment in the path, which the OTLP SDK only allows when each signal has its own endpoint.
