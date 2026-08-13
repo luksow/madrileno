@@ -277,6 +277,12 @@ OTEL_EXPORTER_OTLP_LOGS_ENDPOINT="http://localhost:55080/api/default/v1/logs"
 
 `OTEL_SERVICE_NAME` does double duty: the autoconfigured SDK uses it for the resource `service.name`, and `application.conf` also feeds it into `app.name`, which names the OTel instrumentation scope. So it's the single knob for the service's identity — set it per deployment and both follow.
 
+### Resource attributes
+
+Two more resource attributes are derived from app config so they can't drift from the running app: `deployment.environment` (from `APP_ENVIRONMENT`) and `service.version` (from `APP_VERSION`). `Main` merges them onto the autoconfigured resource, and the merge makes them authoritative — so set them via `APP_ENVIRONMENT` / `APP_VERSION`, not `OTEL_RESOURCE_ATTRIBUTES`.
+
+For everything else — attributes the app can't know, like `service.namespace` or the per-instance `service.instance.id` (which must be unique per pod/host, typically injected from the deployment platform) — use the standard `OTEL_RESOURCE_ATTRIBUTES` env var (comma-separated `key=value`), which `OtelJava.autoConfigured` reads directly.
+
 `build.sbt` adds `-Dotel.java.global-autoconfigure.enabled=true` so the autoconfigure module activates on startup.
 
 The OpenObserve container in `docker-compose.yml` listens on `localhost:55080`; the unusual signal-specific endpoints are because OpenObserve requires the org segment in the path, which the OTLP SDK only allows when each signal has its own endpoint.
