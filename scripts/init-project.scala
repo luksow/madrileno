@@ -221,7 +221,7 @@ object InitProject {
     // `org.http4s.MediaType`) in shared files like TestData.scala. scalafix's RemoveUnused +
     // OrganizeImports.removeUnused clears them. Two passes because removing one import can
     // make another unused (cascading). One-time cost on init; bundling it here means the user
-    // gets a green `sbt test` on the very next command.
+    // gets a green `sbt testFull` on the very next command.
     println("Running scalafix to clean up auction-leftover imports (this takes a minute on first run)...")
     val scalafix = os.proc("sbt", "scalafixAll", "scalafixAll").call(cwd = root, check = false, stdout = os.Inherit, stderr = os.Inherit)
     if (scalafix.exitCode != 0) {
@@ -233,7 +233,7 @@ object InitProject {
     println()
     println("Next:")
     println("  cp .env.sample .env")
-    println("  sbt test")
+    println("  sbt testFull   # full, uncached run — sbt 2's `test` is incremental/cached")
     if (licenseDeleted) println("  pick a LICENSE for your project        # the template's Apache-2.0 file was removed")
     val mcpDocLink =
       if (docsDeleted) s"$upstreamWeb/blob/$sha/docs/mcp.md"

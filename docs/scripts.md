@@ -35,10 +35,10 @@ After running:
 
 ```bash
 cp .env.sample .env
-sbt test
+sbt testFull
 ```
 
-The init script runs `sbt 'scalafixAll; scalafixAll'` itself before printing the next-steps, because the auction surgery leaves a pile of imports that were used only by the now-deleted methods (e.g. `org.http4s.MediaType`, `madrileno.utils.imaging.*`). Two passes because removing one import can free another. If that step fails (e.g., `sbt` not on PATH), re-run it manually before `sbt test`.
+The init script runs `sbt 'scalafixAll; scalafixAll'` itself before printing the next-steps, because the auction surgery leaves a pile of imports that were used only by the now-deleted methods (e.g. `org.http4s.MediaType`, `madrileno.utils.imaging.*`). Two passes because removing one import can free another. If that step fails (e.g., `sbt` not on PATH), re-run it manually before `sbt testFull`.
 
 If anything's off, `git checkout .` reverts.
 
