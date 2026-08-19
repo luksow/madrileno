@@ -55,7 +55,7 @@ Watch is on Scala/SBT/HOCON files only — not `.env`, not docker-compose state.
 
 The `--` separates sbt args from scalatest args. `-z` is substring match on the test name; `-t` is exact match. Useful when you've broken one test and don't want to wait for the whole suite.
 
-The `Test/test` task triggers Baklava generation as a side effect — the OpenAPI spec at `/swagger` is regenerated from `*RouterSpec` files every time tests run. If `/swagger` looks stale, rerun `test`.
+Baklava generation is a side effect of the test run — the OpenAPI spec at `/swagger` is regenerated from `*RouterSpec` files. **Use `testFull`, not `test`, for a full run or contract regeneration.** Under sbt 2, `test` is *incremental* (testQuick-like) and its results are cached in a global store (`~/.cache/sbt`, so it survives a `target/` wipe and a fresh sbt server); on a warm cache `test` can skip the router specs — or every suite — and still report success, regenerating an **empty** spec that clobbers the real one. `testFull` is the uncached, run-everything task. `testOnly <pattern>` also always runs (it's an input task, not cached). If `/swagger` looks stale, rerun `testFull`.
 
 Tests use Testcontainers for Postgres / Mailpit / MinIO — they spin up their own containers, so the docker-compose dev stack and the test run don't share state. Telemetry is stubbed with noop tracer/meter in tests; there's no OpenObserve container.
 
@@ -161,8 +161,9 @@ Dev login is explicit opt-in, gated on `DEV_AUTH_ENABLED=true` (default `false` 
 ## One-shot recipes
 
 ```bash
-# full clean validation, no warm cache
-sbt --client clean compile test
+# full clean validation — `clean` wipes target/ but NOT sbt 2's global cache (~/.cache/sbt),
+# so use testFull (not test) to actually run everything
+sbt --client clean compile testFull
 
 # run only auction-related specs
 sbt --client "testOnly *Auction*"

@@ -129,7 +129,7 @@ Methods and request headers are allowed wildcard — what a typical SPA wants; l
 
 ## OpenAPI and Swagger UI
 
-baklava generates the OpenAPI spec by observing stir routes during the test suite. Each `RouterSpec` is a baklava DSL spec that describes the routes' inputs, outputs, and example bodies; running `sbt test` produces:
+baklava generates the OpenAPI spec by observing stir routes during the test suite. Each `RouterSpec` is a baklava DSL spec that describes the routes' inputs, outputs, and example bodies; running `sbt testFull` produces:
 
 - `target/baklava/openapi/openapi.yml` — the OpenAPI spec
 - `target/baklava/swagger-ui/` — a static Swagger UI bundle pointing at the spec
@@ -141,7 +141,7 @@ In dev (`app.environment = "dev"` in config), the app serves the same artifacts 
 - `/swagger` — the Swagger UI
 - `/docs` — alias
 
-If the dev URLs return empty, run `sbt test` once to regenerate; the artifacts are checked into `target/`, not committed.
+If the dev URLs return empty, run `sbt testFull` once to regenerate; the artifacts are checked into `target/`, not committed. (Use `testFull`, not `test` — under sbt 2 the cached incremental `test` can regenerate an empty spec; see [dev-workflow.md](dev-workflow.md).)
 
 ## Admin endpoints
 

@@ -183,5 +183,5 @@ semanticdbVersion := scalafixSemanticdb.revision
 
 lazy val verifyAll = taskKey[Unit]("Performs all verifications to assure that the build will pass CI checks.")
 Test / verifyAll := Def.uncached {
-  Def.sequential(Compile / scalafmtSbtCheck, Compile / scalafmtCheckAll, Compile / compile, (Test / test).toTask("")).value
+  Def.sequential(Compile / scalafmtSbtCheck, Compile / scalafmtCheckAll, Compile / compile, Test / testFull).value
 }

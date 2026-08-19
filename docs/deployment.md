@@ -118,7 +118,7 @@ If you need a richer liveness/readiness probe, add an unauthenticated endpoint (
 
 Things you'll likely want and need to add yourself:
 
-- **CI pipeline** — `sbt verifyAll` is the gate locally; wire it (or `compile + test + scalafmtCheckAll`) into GitHub Actions / GitLab CI / whatever you use.
+- **CI pipeline** — `sbt verifyAll` is the gate locally; wire it (or `compile + testFull + scalafmtCheckAll`) into GitHub Actions / GitLab CI / whatever you use. Use `testFull`, not `test` — sbt 2's `test` is cached and can under-run (see [dev-workflow.md](dev-workflow.md)).
 - **Image scanning** — Trivy, Snyk, your registry's own scanner.
 - **Helm chart / k8s manifests / Terraform** — too target-specific to live here.
 - **Secrets management** — assumes you have one (AWS Secrets Manager, k8s secrets, Vault). The app reads env vars; the secrets system is responsible for getting them there.
