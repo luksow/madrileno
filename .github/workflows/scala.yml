@@ -29,9 +29,6 @@ jobs:
         cache: 'sbt'
     - uses: sbt/setup-sbt@v1
     - name: Check formatting, scalafix, compile, test
-      # testFull, not test: sbt 2's `test` is incremental and its results are cached in a
-      # global store (~/.cache/sbt), which `cache: 'sbt'` above restores between runs — so
-      # `test` can under-run. `testFull` is the uncached full run.
       run: sbt "scalafmtCheckAll; scalafixAll --check; compile; testFull; shutdown"
       # Optional: uploads the dependency graph for Dependabot alerts. It's a
       # third-party action that runs its own sbt, so a hiccup there must not fail
