@@ -1,6 +1,6 @@
 # Deployment
 
-Slim by design: a single Docker image built by sbt-native-packager, configured by environment variables, and run wherever you run containers (k8s, ECS, Nomad, plain `docker run`).
+Slim by design: a single Docker image built by sbt-native-packager, configured by environment variables, and run wherever you run containers — a single VM with Docker is enough, and k8s, ECS or Nomad work just as well.
 
 The repo doesn't ship infrastructure-as-code, a Helm chart, or a CI pipeline. Those are deployment-target-specific; you bring them. What's here is the bit *every* deployment needs: a reproducible image and a clear list of what to feed it.
 
@@ -53,8 +53,8 @@ The image is *not* multi-stage; it's whatever `JavaServerAppPackaging` builds pl
 The container needs environment variables for every `${?VAR}` substitution in `application.conf`. See [configuration.md](configuration.md) for the full list; the production-relevant subset is:
 
 - **App identity** — `APP_ENVIRONMENT=prod`, `APP_VERSION=<git sha>`.
-- **HTTP** — `INTERFACE`, `PORT`, `BASE_URL`, `MAX_REQUEST_SIZE`. Bind to `0.0.0.0` inside the container; expose the port via your orchestrator.
-- **Postgres** — `PG_HOST`, `PG_PORT`, `PG_DATABASE`, `PG_USER`, `PG_PASSWORD`. Provision with whatever your platform offers (RDS, Cloud SQL, managed Postgres).
+- **HTTP** — `INTERFACE`, `PORT`, `BASE_URL`, `MAX_REQUEST_SIZE`. Bind to `0.0.0.0` inside the container; expose the port via your load balancer, reverse proxy or orchestrator.
+- **Postgres** — `PG_HOST`, `PG_PORT`, `PG_DATABASE`, `PG_USER`, `PG_PASSWORD`. Self-hosted or managed (RDS, Cloud SQL, …) — the app only needs a connection.
 - **OpenTelemetry** — `OTEL_*` per [observability.md](observability.md). Point at your real OTLP receiver.
 - **Mailer** — `MAILER_HOST`, `MAILER_PORT`, `MAILER_USERNAME`, `MAILER_PASSWORD`, `MAILER_FROM_ADDRESS`, `MAILER_TLS=true`. SES, SendGrid, internal SMTP relay — anything that speaks SMTP.
 - **Auth** — `JWT_SECRET` (real secret; inject from your secrets manager, never bake into the image). `FIREBASE_PROJECT_ID` if you use Firebase login — that's just the project id (not a secret); ID-token verification fetches Google's public certs. Leave it unset to disable Firebase auth.
@@ -68,10 +68,10 @@ The dev-stack `.env` is *not* a production template; it's a local-development co
 The app does **not** auto-migrate on startup. Run them as a discrete deploy step before rolling out the new image:
 
 ```
-build image → push image → run migrations → roll out new pods
+build image → push image → run migrations → roll out the new version
 ```
 
-The Docker image ships a second launcher, `bin/migrate-main`, that runs Flyway against the same `PG_*` env vars the app reads. Same image, same Git SHA, same config — schema and code can't drift apart. Run it as a one-shot container (or whatever your platform's equivalent is) gated before the new pods roll out.
+The Docker image ships a second launcher, `bin/migrate-main`, that runs Flyway against the same `PG_*` env vars the app reads. Same image, same Git SHA, same config — schema and code can't drift apart. Run it as a one-shot container (or whatever your platform's equivalent is) gated before the new version rolls out.
 
 Two reasons this is the right separation:
 
@@ -101,7 +101,7 @@ What happens, in order:
 6. The DB transactor closes the connection pool.
 7. The OpenTelemetry SDK's shutdown is called — this flushes pending exporter batches (traces, metrics, logs).
 
-Configure the drain window with `HTTP_SHUTDOWN_TIMEOUT` (HOCON `http.shutdown-timeout`). Pick something a little longer than your worst-case request — for an app that serves p99 = 5s requests, `30s` is plenty. For long-polling or streaming endpoints, raise it. Whatever the orchestrator's "give the process this long to exit after SIGTERM" knob is, set it to at least the same value — otherwise it'll `SIGKILL` mid-drain.
+Configure the drain window with `HTTP_SHUTDOWN_TIMEOUT` (HOCON `http.shutdown-timeout`). Pick something a little longer than your worst-case request — for an app that serves p99 = 5s requests, `30s` is plenty. For long-polling or streaming endpoints, raise it. Whatever sends the `SIGTERM` has a "give the process this long to exit" knob (`docker stop --time`, systemd `TimeoutStopSec`, k8s `terminationGracePeriodSeconds`); set it to at least the same value — otherwise it'll `SIGKILL` mid-drain.
 
 What's NOT done out of the box:
 
@@ -110,7 +110,7 @@ What's NOT done out of the box:
 
 ## Health checks
 
-The deep `/admin/health-check` endpoint exists (Postgres + SMTP probe) but it's gated by Basic Auth — designed for human ops checks, not orchestrator probes. For Kubernetes-style probes, hit `/v1/health-check` (unauthenticated, lightweight). See [http.md](http.md) and the `HealthCheckModule` for what's wired.
+The deep `/admin/health-check` endpoint exists (Postgres + SMTP probe) but it's gated by Basic Auth — designed for human ops checks, not orchestrator probes. For load balancer or orchestrator probes, hit `/v1/health-check` (unauthenticated, lightweight). See [http.md](http.md) and the `HealthCheckModule` for what's wired.
 
 If you need a richer liveness/readiness probe, add an unauthenticated endpoint (or a separate port) that runs the same checks without the auth gate. Don't expose `/admin/*` to the orchestrator.
 
@@ -120,7 +120,7 @@ Things you'll likely want and need to add yourself:
 
 - **CI pipeline** — `sbt verifyAll` is the gate locally; wire it (or `compile + testFull + scalafmtCheckAll`) into GitHub Actions / GitLab CI / whatever you use. Use `testFull`, not `test` — sbt 2's `test` is cached and can under-run (see [dev-workflow.md](dev-workflow.md)).
 - **Image scanning** — Trivy, Snyk, your registry's own scanner.
-- **Helm chart / k8s manifests / Terraform** — too target-specific to live here.
+- **Deployment manifests** — compose files, Helm charts, Terraform. Too target-specific to live here.
 - **Secrets management** — assumes you have one (AWS Secrets Manager, k8s secrets, Vault). The app reads env vars; the secrets system is responsible for getting them there.
 - **Blue/green or canary tooling** — orchestrator-level concern.
 
