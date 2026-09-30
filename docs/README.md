@@ -12,7 +12,7 @@ Skim the **Start here** path on day one. Reach for the rest by topic.
 
 ## Core
 
-- [`principles.md`](principles.md) — the five principles the codebase is built around; the [manifesto](https://madrileno-dev.github.io/manifesto/) is the why behind them.
+- [`principles.md`](principles.md) — the five principles the codebase is built around; the [manifesto](https://madrileno.dev/manifesto/) is the why behind them.
 - [`architecture.md`](architecture.md) — `Main` → `ApplicationLoader` → modules; what gets wired where.
 - [`module-anatomy.md`](module-anatomy.md) — module shape, providers (`RouteProvider` & friends), cross-module dependencies.
 

@@ -2,7 +2,7 @@
 
 Five ideas this template is built on. Most of the design choices in the rest of these docs are consequences of one of them.
 
-The [manifesto](https://madrileno-dev.github.io/manifesto/) covers the why: what a small team needs from its codebase. These five are what that looks like in Scala.
+The [manifesto](https://madrileno.dev/manifesto/) covers the why: what a small team needs from its codebase. These five are what that looks like in Scala.
 
 ## Domain-first
 
