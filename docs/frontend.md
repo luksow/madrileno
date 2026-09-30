@@ -30,6 +30,11 @@ At a glance — details live in the frontend repo's own README:
 - **oRPC client** over the generated contract, with **typed errors end to end** — the backend's RFC 9457 problem envelope (see [`error-handling.md`](error-handling.md)) is decoded into discriminated errors the UI dispatches on by code, never by matching display text.
 - **TanStack Query** for server state; **react-hook-form + zod** for forms; **Temporal** for time at the wire boundary (JS `Date` is confined to a single mapper module).
 - Auth against this backend's dev login + JWT/refresh flow (see [`auth.md`](auth.md)), with a single-flight 401-refresh at the fetch layer.
+- Optional **OpenObserve RUM** — sessions, replays and browser errors — linked to the backend's traces (below).
+
+## Tracing across the boundary
+
+With RUM enabled (it's opt-in on the client), API calls carry a W3C `traceparent`, so the backend's inbound span (see [`observability.md`](observability.md)) joins the browser's trace: one trace runs from the page through the HTTP call to the Postgres queries. The RUM session is tagged with the signed-in user's id — read from the JWT, the same id the backend puts on its spans as `app.user.id` — so searching one id finds both a user's browser sessions and their backend traces. Only the id is sent, never the email. Nothing here needs configuring: the backend already reads `traceparent` and sets `app.user.id`.
 
 ## Design system
 

@@ -56,6 +56,7 @@ Skim the **Start here** path on day one. Reach for the rest by topic.
 - [`observability.md`](observability.md) — OpenTelemetry traces / metrics / logs; trace-ids in error responses.
 - [`deployment.md`](deployment.md) — sbt-native-packager Docker image; the env-var contract; migrations as a separate step.
 
-## Frontend
+## Clients
 
 - [`frontend.md`](frontend.md) — the reference frontend companion (a separate repo); the generated-contract loop that keeps it type-safe against the router specs.
+- [`mobile.md`](mobile.md) — the reference React Native / Expo app (a separate repo) on the same generated contract; tracing from the app into the backend.
