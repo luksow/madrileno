@@ -113,9 +113,9 @@ def authedRoutes(authContext: AuthContext): Route = {
 
 The internal JWT is short-lived. When it expires, the client `POST /v1/auth/refresh-token` with the refresh-token UUID. `AuthenticationService.authenticateWithRefreshToken` looks up the row, verifies it hasn't been used or revoked, marks it `used`, and issues a fresh JWT + a fresh refresh token.
 
-Refresh tokens are one-time-use — using one invalidates it. This means a stolen refresh token is only useful until the legitimate client refreshes again, at which point the legitimate client's refresh fails and the user has to log in. There's no time-based expiry on a refresh token today; only one-time-use plus revocation. Adding an `expires_at` column and a check in `RefreshToken.isValid` is the natural place to evolve if you want time bounds.
+Refresh tokens are one-time-use — using one invalidates it. This means a stolen refresh token is only useful until the legitimate client refreshes again, at which point the legitimate client's refresh fails and the user has to log in. Time-based expiry is optional. Set `REFRESH_TOKEN_VALID_FOR` (an ISO-8601 duration such as `P30D`) and every token issued from then on carries an `expires_at` that `RefreshToken.isValid` checks; the client gets a 401 and has to log in again. Unset (the default), a refresh token lives until it's used or revoked.
 
-`cleanupExpiredRefreshTokensTask` runs daily at 1 AM to delete rows that have been used or revoked for more than 60 days (tombstone garbage collection — not active-token expiration).
+`cleanupExpiredRefreshTokensTask` runs daily at 1 AM to delete rows that have been used or revoked for more than 60 days (tombstone garbage collection — it also sweeps tokens whose `expires_at` passed more than 60 days ago; it never expires a live token).
 
 ## OIDC providers
 

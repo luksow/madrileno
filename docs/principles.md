@@ -2,6 +2,8 @@
 
 Five ideas this template is built on. Most of the design choices in the rest of these docs are consequences of one of them.
 
+The [manifesto](https://madrileno-dev.github.io/manifesto/) covers the why: what a small team needs from its codebase. These five are what that looks like in Scala.
+
 ## Domain-first
 
 The domain describes what the business does. It does not describe how data moves over the wire, how it's stored, or what serializer is in fashion this year. Domain types live in their own package and depend on nothing infrastructure-shaped.

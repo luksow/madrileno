@@ -84,6 +84,14 @@ For zero-downtime rollouts, follow the standard expand/contract dance:
 2. Deploy new code that uses the new shape.
 3. Cleanup migration in a later deploy (drop old column, etc.).
 
+## Rolling back
+
+Rollback is redeploying the previous image. Nothing more is needed, provided the two rules above were followed: migrations ran as their own step, and the migration that shipped with the new code was backwards-compatible. The old code then runs happily against the new schema, so rolling back is a routine deploy rather than a special procedure.
+
+The cleanup migration (step 3) is the one that burns the bridge: once the old column is gone, the old image can't come back. Ship it in a later deploy, after the new code has been in production long enough that you won't want to roll back past it.
+
+What the template doesn't do is undo a migration. If one fails partway, Flyway records it as failed and `bin/migrate-main` refuses to run until it's repaired (`bin/migrate-main info` shows which one). Fix forward: correct the migration, clear the failed row from `flyway_schema_history` (Flyway's `repair`; `MigrateMain` doesn't expose it, so add a subcommand or do it by hand), and run it again. Undo scripts are a Flyway Teams feature and aren't wired here.
+
 ## Graceful shutdown
 
 On `SIGTERM` the app drains in-flight requests before exiting — rolling deploys don't cut active connections. This is mostly emergent behavior from cats-effect's resource composition; you don't need to do anything to get it.
