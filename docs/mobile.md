@@ -12,16 +12,17 @@ The same loop as the frontend — see [`frontend.md`](frontend.md#the-contract-l
 
 At a glance — details live in the mobile repo's own README:
 
-- **Expo (SDK 57) + React Native + TypeScript (strict)**, file-based routing with **Expo Router** and typed routes. Android is built and tested on the emulator; iOS builds go through EAS.
+- **Expo + React Native + TypeScript (strict)**, file-based routing with **Expo Router** and typed routes. Android is built and tested on the emulator; iOS builds go through EAS.
 - The **same API layer as the web**: oRPC client over the generated contract, typed RFC 9457 errors (see [`error-handling.md`](error-handling.md)), TanStack Query, react-hook-form + zod, Temporal at the wire boundary. `src/api/` is copied from the frontend and kept diffable.
 - **Auth** against the dev login + JWT/refresh flow (see [`auth.md`](auth.md)), tokens in the platform keychain (`expo-secure-store`), with the same single-flight 401 refresh as the web.
 - **UI** on NativeWind with [react-native-reusables](https://reactnativereusables.com) — shadcn's approach for React Native: vendored components, the same token palette as the frontend, light / dark / system theming.
-- **Native concerns the web doesn't have**: deep links (a custom scheme, plus opt-in Universal / App Links), consent-gated **OTA updates** via EAS Update, and optional **OpenObserve RUM**.
+- **Native concerns the web doesn't have**: deep links (a custom scheme, plus opt-in Universal / App Links) and consent-gated **OTA updates** via EAS Update.
+- Optional **OpenObserve RUM** — screens, API calls, JS errors and native crashes — linked to the backend's traces (below).
 - Tests: jest-expo + React Native Testing Library + MSW, and Maestro flows on an emulator in CI.
 
 ## Tracing across the boundary
 
-With RUM enabled, the app sends a W3C `traceparent` on its API calls, so the backend's inbound span (see [`observability.md`](observability.md)) joins the app's trace: one trace runs from the screen view through the HTTP call to the Postgres queries. The app also tags its RUM session with the signed-in user's id — the same id the backend puts on its spans as `app.user.id` — so searching one id finds both a user's app sessions and their backend traces. Only the id is sent, never the email.
+The same as the web — see [`frontend.md`](frontend.md#tracing-across-the-boundary). With RUM enabled, one trace runs from the screen view through the HTTP call to the Postgres queries, and the app's RUM session carries the signed-in user's id.
 
 ## Using it
 
