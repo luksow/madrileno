@@ -110,8 +110,29 @@ class RefreshTokenRepository {
     repository.findOneByFilter(RefreshTokenRowFilter(id = p.equal(id)), Lock.ForUpdate).map(_.map(_.toRefreshToken))
   }
 
+  def findBySecretHash(secretHash: RefreshTokenSecretHash): DB[Option[RefreshToken]] = {
+    repository.findOneByFilter(RefreshTokenRowFilter(secretHash = p.equal(secretHash))).map(_.map(_.toRefreshToken))
+  }
+
   def findForUpdateBySecretHash(secretHash: RefreshTokenSecretHash): DBInTransaction[Option[RefreshToken]] = {
     repository.findOneByFilter(RefreshTokenRowFilter(secretHash = p.equal(secretHash)), Lock.ForUpdate).map(_.map(_.toRefreshToken))
+  }
+
+  def findAndLockFamilyBySecretHash(secretHash: RefreshTokenSecretHash): DBInTransaction[Option[RefreshToken]] = {
+    findBySecretHash(secretHash).flatMap {
+      case None        => IO.pure(None)
+      case Some(token) => lockFamily(token.familyId) *> findForUpdateBySecretHash(secretHash)
+    }
+  }
+
+  def lockFamily(familyId: RefreshTokenFamilyId): DBInTransaction[Unit] = {
+    val session = summon[Session[IO]]
+    session.unique(sql"SELECT 1 FROM (SELECT pg_advisory_xact_lock($int8)) AS family_lock".query(int4))(familyLockKey(familyId)).void
+  }
+
+  private def familyLockKey(familyId: RefreshTokenFamilyId): Long = {
+    val uuid = familyId.unwrap
+    uuid.getMostSignificantBits ^ uuid.getLeastSignificantBits
   }
 
   def update(id: RefreshTokenId, f: RefreshToken => RefreshToken): DB[Unit] = {
@@ -132,11 +153,7 @@ class RefreshTokenRepository {
     val session = summon[Session[IO]]
     val table   = RefreshTokenRowTable
     session
-      .execute(sql"""DELETE FROM ${table.n}
-          WHERE ${table.usedAt.n} < ${table.usedAt.c}
-             OR ${table.deletedAt.n} < ${table.deletedAt.c}
-             OR ${table.expiresAt.n} < ${table.expiresAt.c}
-        """.command)((Some(cutoff), Some(cutoff), cutoff))
+      .execute(sql"DELETE FROM ${table.n} WHERE ${table.expiresAt.n} < ${table.expiresAt.c}".command)(cutoff)
       .void
   }
 

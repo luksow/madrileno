@@ -98,7 +98,7 @@ class AuthenticationService(
     transactor.inTransaction {
       Clock[IO].realTimeInstant.flatMap { now =>
         refreshTokenRepository
-          .findForUpdateBySecretHash(command.refreshToken.hash)
+          .findAndLockFamilyBySecretHash(command.refreshToken.hash)
           .flatMap {
             case Some(refreshToken) if refreshToken.isValid(now) =>
               refreshTokenRepository.update(refreshToken.id, _.usedAt(now)) *>

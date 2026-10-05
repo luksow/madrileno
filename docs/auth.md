@@ -62,7 +62,7 @@ External identity is verified once; from then on the app trusts its own short-li
 | `AuthRouter`                      | `POST /v1/auth/firebase`, `POST /v1/auth/oidc/{provider}`, `POST /v1/auth/dev` (dev only), `POST /v1/auth/refresh-token`, `GET/DELETE /v1/auth/sessions`. |
 | `UserAuthenticator`               | The function passed to `authenticateOrRejectWithChallenge`. Decodes the internal JWT, returns `AuthContext`.  |
 | `RefreshTokenRepository`          | Persists refresh tokens (secret hash only, never the secret); lookup by secret hash, listing by user, revocation by id, user-agent, or family. |
-| `cleanupExpiredRefreshTokensTask` | Recurring task that deletes used/revoked rows older than 60 days (tombstone GC).                              |
+| `cleanupExpiredRefreshTokensTask` | Recurring task that deletes rows 60 days after their `expires_at` (tombstone GC); used rows stay as replay evidence until then. |
 
 ## `AuthContext`
 
@@ -117,9 +117,11 @@ Refresh tokens are one-time-use and every rotation inherits the family of the to
 
 A replay that lands within `refresh-token.reuse-grace` of the original use (default 60 s, `REFRESH_TOKEN_REUSE_GRACE`) is rejected with 401 but does not revoke the family. That window absorbs the honest double-submit — a client retrying after a lost response, or two tabs racing without single-flight — which under Postgres' default read-committed isolation would otherwise be indistinguishable from theft and log the user out of the device that just refreshed successfully. An attacker who waits out the window still kills the family.
 
+Rotation and replay detection on the same family are serialized with a transaction-scoped Postgres advisory lock keyed by `family_id`, taken before any row lock (`RefreshTokenRepository.findAndLockFamilyBySecretHash`: look the token up without a lock, lock its family, then re-select it `FOR UPDATE`). Row locks alone are not enough: a replay's revoking `UPDATE` would wait for an in-flight rotation to commit but, under read-committed snapshots, never see the successor that rotation inserted — the successor would survive the revocation. Taking the family lock first also fixes the lock order, so a replay holding the family lock can never wait on a row the rotation holds while the rotation waits on the family lock.
+
 Each token also expires `refresh-token.valid-for` after it was minted (default 90 days). Because rotation mints a fresh token with a fresh window, this behaves as an inactivity timeout: a client that refreshes at least once per window stays logged in indefinitely.
 
-`cleanupExpiredRefreshTokensTask` runs daily at 1 AM to delete rows that have been used or revoked for more than 60 days (tombstone garbage collection — it also sweeps tokens whose `expires_at` passed more than 60 days ago; it never expires a live token).
+`cleanupExpiredRefreshTokensTask` runs daily at 1 AM to delete rows whose `expires_at` is more than 60 days in the past, whether they were used, revoked, or never presented. Used rows are deliberately kept for their whole validity window: they are the evidence that lets a victim's late replay reveal a hijacked family. Deleting them sooner would turn that replay into "not found" and leave the thief's chain running. Retention is bounded by `valid-for` + 60 days per token rather than by family lifetime, so a long-lived device does not accumulate history forever.
 
 ## OIDC providers
 
