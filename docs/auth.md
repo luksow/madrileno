@@ -117,7 +117,7 @@ Refresh tokens are one-time-use and every rotation inherits the family of the to
 
 Each token also expires `refresh-token.valid-for` after it was minted (default 90 days). Because rotation mints a fresh token with a fresh window, this behaves as an inactivity timeout: a client that refreshes at least once per window stays logged in indefinitely.
 
-`cleanupExpiredRefreshTokensTask` runs daily at 1 AM to delete rows that have been used or revoked for more than 60 days (tombstone garbage collection — not active-token expiration).
+`cleanupExpiredRefreshTokensTask` runs daily at 1 AM to delete rows that have been used or revoked for more than 60 days (tombstone garbage collection — it also sweeps tokens whose `expires_at` passed more than 60 days ago; it never expires a live token).
 
 ## OIDC providers
 

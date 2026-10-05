@@ -12,7 +12,7 @@ Skim the **Start here** path on day one. Reach for the rest by topic.
 
 ## Core
 
-- [`principles.md`](principles.md) — the five principles the codebase is built around.
+- [`principles.md`](principles.md) — the five principles the codebase is built around; the [manifesto](https://madrileno.dev/manifesto/) is the why behind them.
 - [`architecture.md`](architecture.md) — `Main` → `ApplicationLoader` → modules; what gets wired where.
 - [`module-anatomy.md`](module-anatomy.md) — module shape, providers (`RouteProvider` & friends), cross-module dependencies.
 
@@ -56,6 +56,7 @@ Skim the **Start here** path on day one. Reach for the rest by topic.
 - [`observability.md`](observability.md) — OpenTelemetry traces / metrics / logs; trace-ids in error responses.
 - [`deployment.md`](deployment.md) — sbt-native-packager Docker image; the env-var contract; migrations as a separate step.
 
-## Frontend
+## Clients
 
 - [`frontend.md`](frontend.md) — the reference frontend companion (a separate repo); the generated-contract loop that keeps it type-safe against the router specs.
+- [`mobile.md`](mobile.md) — the reference React Native / Expo app (a separate repo) on the same generated contract; tracing from the app into the backend.
