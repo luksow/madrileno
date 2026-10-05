@@ -68,6 +68,40 @@ class RefreshTokenRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Mat
       tokenRepo.findForUpdate(TestData.randomRefreshTokenId()).map(_ shouldBe None)
     }
 
+    "findForUpdateBySecretHash returns the token owning that hash" in withRollback {
+      for {
+        (_, token) <- createUserAndToken()
+        found      <- tokenRepo.findForUpdateBySecretHash(token.secretHash)
+      } yield found.map(_.id) shouldBe Some(token.id)
+    }
+
+    "findForUpdateBySecretHash returns None for an unknown hash" in withRollback {
+      tokenRepo.findForUpdateBySecretHash(TestData.refreshTokenSecret().hash).map(_ shouldBe None)
+    }
+
+    "revokeFamily invalidates every token in the family and nothing else" in withRollback {
+      val now      = Instant.now()
+      val user     = TestData.user()
+      val familyId = TestData.randomRefreshTokenFamilyId()
+      val used     = TestData.refreshToken(userId = user.id, familyId = familyId, usedAt = Some(now))
+      val live     = TestData.refreshToken(userId = user.id, familyId = familyId)
+      val other    = TestData.refreshToken(userId = user.id)
+      for {
+        _         <- userRepo.create(user, now)
+        _         <- tokenRepo.save(used)
+        _         <- tokenRepo.save(live)
+        _         <- tokenRepo.save(other)
+        _         <- tokenRepo.revokeFamily(familyId, now)
+        active    <- tokenRepo.listActive(user.id, now)
+        liveAfter <- tokenRepo.findForUpdate(live.id)
+        usedAfter <- tokenRepo.findForUpdate(used.id)
+      } yield {
+        active.map(_.id) shouldBe List(other.id)
+        liveAfter.flatMap(_.deletedAt) shouldBe defined
+        usedAfter.flatMap(_.deletedAt) shouldBe defined
+      }
+    }
+
     "update marks token as used" in withRollback {
       for {
         (_, token) <- createUserAndToken()
@@ -132,7 +166,7 @@ class RefreshTokenRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Mat
       val cutoff       = Instant.now()
       val oldExpiresAt = cutoff.minus(1, ChronoUnit.DAYS)
       val user         = TestData.user()
-      val token        = TestData.refreshToken(userId = user.id, expiresAt = Some(oldExpiresAt))
+      val token        = TestData.refreshToken(userId = user.id, expiresAt = oldExpiresAt)
       for {
         _     <- userRepo.create(user, Instant.now())
         _     <- tokenRepo.save(token)
@@ -145,7 +179,7 @@ class RefreshTokenRepositorySpec extends AsyncWordSpec with AsyncIOSpec with Mat
       val cutoff          = Instant.now()
       val futureExpiresAt = cutoff.plus(1, ChronoUnit.DAYS)
       val user            = TestData.user()
-      val token           = TestData.refreshToken(userId = user.id, expiresAt = Some(futureExpiresAt))
+      val token           = TestData.refreshToken(userId = user.id, expiresAt = futureExpiresAt)
       for {
         _     <- userRepo.create(user, Instant.now())
         _     <- tokenRepo.save(token)

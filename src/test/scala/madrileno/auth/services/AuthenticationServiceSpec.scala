@@ -42,7 +42,7 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
 
   private def freshVerifiedToken() = TestData.verifiedExternalToken()
 
-  private def serviceWithFreshAuth(validFor: Option[java.time.Duration] = None) = {
+  private def serviceWithFreshAuth(validFor: Duration = Duration.ofDays(90)) = {
     val token     = freshVerifiedToken()
     val verifiers = AuthVerifiers(Map(Provider.Firebase -> new FakeAuthVerifier(token)))
     val svc       = new AuthenticationService(
@@ -64,9 +64,10 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
     "create a new user on first login" in {
       val (service, _) = serviceWithFreshAuth()
       service.authenticateWithProvider(Provider.Firebase, command).map {
-        case AuthenticationResult.UserCreated(jwt, refreshToken) =>
+        case AuthenticationResult.UserCreated(jwt, issued) =>
           jwt.toString should not be empty
-          refreshToken.id.toString should not be empty
+          issued.secret.toString should not be empty
+          issued.token.secretHash shouldBe issued.secret.hash
         case other => fail(s"Expected UserCreated, got $other")
       }
     }
@@ -125,60 +126,81 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
     }
   }
 
+  private def issuedOf(result: AuthenticationResult): IssuedRefreshToken = result match {
+    case AuthenticationResult.UserCreated(_, issued)   => issued
+    case AuthenticationResult.Authenticated(_, issued) => issued
+    case other                                         => fail(s"Expected tokens, got $other")
+  }
+
+  private def refreshWith(secret: RefreshTokenSecret) =
+    AuthenticateWithRefreshTokenCommand(secret, UserAgent("test-agent"), TestData.defaultIpAddress)
+
   "authenticateWithRefreshToken" should {
-    "authenticate with a valid refresh token" in {
+    "authenticate with a valid refresh token and rotate within the same family" in {
       val (service, _) = serviceWithFreshAuth()
       for {
         created <- service.authenticateWithProvider(Provider.Firebase, command)
-        refreshTokenId = created match {
-                           case AuthenticationResult.UserCreated(_, rt) => rt.id
-                           case other                                   => fail(s"Expected UserCreated, got $other")
-                         }
-        result <- service.authenticateWithRefreshToken(
-                    AuthenticateWithRefreshTokenCommand(refreshTokenId, UserAgent("test-agent"), TestData.defaultIpAddress)
-                  )
-      } yield result shouldBe a[AuthenticationResult.Authenticated]
+        first = issuedOf(created)
+        result <- service.authenticateWithRefreshToken(refreshWith(first.secret))
+      } yield {
+        result shouldBe a[AuthenticationResult.Authenticated]
+        val second = issuedOf(result)
+        second.token.familyId shouldBe first.token.familyId
+        second.secret should not be first.secret
+      }
     }
 
-    "reject an already-used refresh token" in {
+    "not accept the row id as a refresh token" in {
       val (service, _) = serviceWithFreshAuth()
       for {
         created <- service.authenticateWithProvider(Provider.Firebase, command)
-        refreshTokenId = created match {
-                           case AuthenticationResult.UserCreated(_, rt)   => rt.id
-                           case AuthenticationResult.Authenticated(_, rt) => rt.id
-                           case other                                     => fail(s"Unexpected: $other")
-                         }
-        _ <- service.authenticateWithRefreshToken(
-               AuthenticateWithRefreshTokenCommand(refreshTokenId, UserAgent("test-agent"), TestData.defaultIpAddress)
-             )
-        result <- service.authenticateWithRefreshToken(
-                    AuthenticateWithRefreshTokenCommand(refreshTokenId, UserAgent("test-agent"), TestData.defaultIpAddress)
-                  )
+        issued = issuedOf(created)
+        result <- service.authenticateWithRefreshToken(refreshWith(RefreshTokenSecret(issued.token.id.toString)))
       } yield result shouldBe AuthenticationResult.InvalidToken
+    }
+
+    "reject an already-used refresh token and revoke its whole family" in {
+      val (service, _) = serviceWithFreshAuth()
+      for {
+        login <- service.authenticateWithProvider(Provider.Firebase, command)
+        first = issuedOf(login)
+        rotated <- service.authenticateWithRefreshToken(refreshWith(first.secret))
+        second = issuedOf(rotated)
+        replay    <- service.authenticateWithRefreshToken(refreshWith(first.secret))
+        afterward <- service.authenticateWithRefreshToken(refreshWith(second.secret))
+      } yield {
+        replay shouldBe AuthenticationResult.InvalidToken
+        afterward shouldBe AuthenticationResult.InvalidToken
+      }
+    }
+
+    "leave other families untouched when one family is revoked by replay" in {
+      val (service, _) = serviceWithFreshAuth()
+      for {
+        loginA <- service.authenticateWithProvider(Provider.Firebase, command)
+        loginB <- service.authenticateWithProvider(Provider.Firebase, command)
+        issuedA = issuedOf(loginA)
+        issuedB = issuedOf(loginB)
+        _       <- service.authenticateWithRefreshToken(refreshWith(issuedA.secret))
+        _       <- service.authenticateWithRefreshToken(refreshWith(issuedA.secret))
+        bResult <- service.authenticateWithRefreshToken(refreshWith(issuedB.secret))
+      } yield bResult shouldBe a[AuthenticationResult.Authenticated]
     }
 
     "reject an unknown refresh token" in {
       val (service, _) = serviceWithFreshAuth()
       service
-        .authenticateWithRefreshToken(
-          AuthenticateWithRefreshTokenCommand(TestData.randomRefreshTokenId(), UserAgent("test-agent"), TestData.defaultIpAddress)
-        )
+        .authenticateWithRefreshToken(refreshWith(TestData.refreshTokenSecret()))
         .map(_ shouldBe AuthenticationResult.InvalidToken)
     }
 
-    "reject an expired refresh token when validFor is configured" in {
-      val (service, _) = serviceWithFreshAuth(validFor = Some(Duration.ofMinutes(5)))
+    "reject an expired refresh token" in {
+      val (service, _) = serviceWithFreshAuth(validFor = Duration.ofMinutes(5))
       for {
         created <- service.authenticateWithProvider(Provider.Firebase, command)
-        refreshTokenId = created match {
-                           case AuthenticationResult.UserCreated(_, rt) => rt.id
-                           case other                                   => fail(s"Expected UserCreated, got $other")
-                         }
-        _ = testClock.advance(Duration.ofMinutes(10).toMillis)
-        result <- service.authenticateWithRefreshToken(
-                    AuthenticateWithRefreshTokenCommand(refreshTokenId, UserAgent("test-agent"), TestData.defaultIpAddress)
-                  )
+        issued = issuedOf(created)
+        _      = testClock.advance(Duration.ofMinutes(10).toMillis)
+        result <- service.authenticateWithRefreshToken(refreshWith(issued.secret))
       } yield result shouldBe AuthenticationResult.InvalidToken
     }
   }

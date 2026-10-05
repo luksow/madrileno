@@ -29,7 +29,7 @@ client → POST /v1/auth/firebase {firebaseJwtToken}
                           └──────────────────────────┘
                                        │
                                        ▼
-client ◄─── 200 {jwt, refreshTokenId}
+client ◄─── 200 {jwt, refreshToken}
 
 later requests:
 client → Authorization: Bearer <internal jwt>
@@ -61,7 +61,7 @@ External identity is verified once; from then on the app trusts its own short-li
 | `AuthenticationService`           | `authenticateWithProvider(provider, cmd)`: verify external → upsert `User` + `UserAuth` → mint internal JWT + refresh token. |
 | `AuthRouter`                      | `POST /v1/auth/firebase`, `POST /v1/auth/oidc/{provider}`, `POST /v1/auth/dev` (dev only), `POST /v1/auth/refresh-token`, `GET/DELETE /v1/auth/sessions`. |
 | `UserAuthenticator`               | The function passed to `authenticateOrRejectWithChallenge`. Decodes the internal JWT, returns `AuthContext`.  |
-| `RefreshTokenRepository`          | Persists refresh tokens; supports listing by user, revocation by id or user-agent.                            |
+| `RefreshTokenRepository`          | Persists refresh tokens (secret hash only, never the secret); lookup by secret hash, listing by user, revocation by id, user-agent, or family. |
 | `cleanupExpiredRefreshTokensTask` | Recurring task that deletes used/revoked rows older than 60 days (tombstone GC).                              |
 
 ## `AuthContext`
@@ -105,15 +105,17 @@ def authedRoutes(authContext: AuthContext): Route = {
 
 4. **Server upserts the User and UserAuth.** `User` is the application's user record; `UserAuth` records the link to a Firebase identity. First-time logins create both; returning users update them with whatever Firebase reported (e.g. updated avatar).
 
-5. **Server mints the internal JWT and a refresh token.** The JWT signs an `AuthContext` with `jwt.secret`, valid for `jwt.valid-for` (default 5 minutes). The refresh token is a row in `refresh_token` keyed by a UUID; the client gets back the row's UUID, the server keeps the rest (user-agent, IP, created-at, used-at).
+5. **Server mints the internal JWT and a refresh token.** The JWT signs an `AuthContext` with `jwt.secret`, valid for `jwt.valid-for` (default 5 minutes). The refresh token is a 256-bit random secret (base64url, 43 chars) that the client receives exactly once; the server stores only its SHA-256 in `refresh_token.secret_hash`, alongside a public row `id`, a `family_id` shared by every rotation of the same login, user-agent, IP, created-at, used-at, and `expires_at` (`refresh-token.valid-for`, default 90 days, `REFRESH_TOKEN_VALID_FOR`). The row `id` is what `GET /v1/auth/sessions` lists and `DELETE /v1/auth/sessions/{id}` revokes — it is a handle, not a credential, so holding a JWT never yields a refresh token.
 
 6. **Result:** `200 { jwt, refreshToken, userCreated }`. `userCreated` is `true` when this call provisioned a new `User` account (first-time login), `false` for a returning user — clients use it to branch their UX (show onboarding vs. just log in). The status code is `200` either way; the "was a user created" signal lives in the body so a typed client (oRPC, OpenAPI codegen) sees one response shape, not two keyed on status. Subsequent requests carry `Authorization: Bearer <jwt>`.
 
 ## Refreshing
 
-The internal JWT is short-lived. When it expires, the client `POST /v1/auth/refresh-token` with the refresh-token UUID. `AuthenticationService.authenticateWithRefreshToken` looks up the row, verifies it hasn't been used or revoked, marks it `used`, and issues a fresh JWT + a fresh refresh token.
+The internal JWT is short-lived. When it expires, the client `POST /v1/auth/refresh-token` with the refresh-token secret. `AuthenticationService.authenticateWithRefreshToken` hashes it, looks up the row by hash, verifies it hasn't been used, revoked, or expired, marks it `used`, and issues a fresh JWT + a fresh refresh token in the same family.
 
-Refresh tokens are one-time-use — using one invalidates it. This means a stolen refresh token is only useful until the legitimate client refreshes again, at which point the legitimate client's refresh fails and the user has to log in. There's no time-based expiry on a refresh token today; only one-time-use plus revocation. Adding an `expires_at` column and a check in `RefreshToken.isValid` is the natural place to evolve if you want time bounds.
+Refresh tokens are one-time-use and every rotation inherits the family of the token it replaced. Replaying a token that was already used is treated as evidence of theft: the whole family is revoked (OAuth 2.0 Security BCP "refresh token rotation with reuse detection"), so whichever of the attacker or the legitimate client refreshes second kills the chain for both, and the user logs in again. Other devices' families are untouched. A token that is merely expired or already revoked is rejected without side effects.
+
+Each token also expires `refresh-token.valid-for` after it was minted (default 90 days). Because rotation mints a fresh token with a fresh window, this behaves as an inactivity timeout: a client that refreshes at least once per window stays logged in indefinitely.
 
 `cleanupExpiredRefreshTokensTask` runs daily at 1 AM to delete rows that have been used or revoked for more than 60 days (tombstone garbage collection — not active-token expiration).
 

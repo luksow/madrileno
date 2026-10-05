@@ -36,8 +36,8 @@ class AuthRouter(authenticationService: AuthenticationService, override protecte
           authenticationService
             .authenticateWithProvider(Provider.Firebase, command)
             .map[ToResponseMarshallable] {
-              case AuthenticationResult.Authenticated(jwt, rt) => Ok -> AuthenticatedResponse(jwt, rt.id, userCreated = false)
-              case AuthenticationResult.UserCreated(jwt, rt)   => Ok -> AuthenticatedResponse(jwt, rt.id, userCreated = true)
+              case AuthenticationResult.Authenticated(jwt, rt) => Ok -> AuthenticatedResponse(jwt, rt.secret, userCreated = false)
+              case AuthenticationResult.UserCreated(jwt, rt)   => Ok -> AuthenticatedResponse(jwt, rt.secret, userCreated = true)
               case AuthenticationResult.UserBlocked            => error(Locked, "user-blocked", "User is blocked")
               case AuthenticationResult.InvalidToken           => error(Unauthorized, "invalid-token", "Invalid Firebase token")
               case AuthenticationResult.ProviderUnavailable    =>
@@ -63,8 +63,8 @@ class AuthRouter(authenticationService: AuthenticationService, override protecte
             authenticationService
               .authenticateWithRefreshToken(command)
               .map[ToResponseMarshallable] {
-                case AuthenticationResult.Authenticated(jwt, rt) => Ok -> AuthenticatedResponse(jwt, rt.id, userCreated = false)
-                case AuthenticationResult.UserCreated(jwt, rt)   => Ok -> AuthenticatedResponse(jwt, rt.id, userCreated = true)
+                case AuthenticationResult.Authenticated(jwt, rt) => Ok -> AuthenticatedResponse(jwt, rt.secret, userCreated = false)
+                case AuthenticationResult.UserCreated(jwt, rt)   => Ok -> AuthenticatedResponse(jwt, rt.secret, userCreated = true)
                 case AuthenticationResult.UserBlocked            => error(Locked, "user-blocked", "User is blocked")
                 case AuthenticationResult.InvalidToken           => error(Unauthorized, "invalid-token", "Invalid refresh token")
                 case AuthenticationResult.ProviderUnavailable => error(ServiceUnavailable, "provider-unavailable", "Authentication is not available")
@@ -90,8 +90,8 @@ class AuthRouter(authenticationService: AuthenticationService, override protecte
             authenticationService
               .authenticateWithProvider(provider, command)
               .map[ToResponseMarshallable] {
-                case AuthenticationResult.Authenticated(jwt, rt) => Ok -> AuthenticatedResponse(jwt, rt.id, userCreated = false)
-                case AuthenticationResult.UserCreated(jwt, rt)   => Ok -> AuthenticatedResponse(jwt, rt.id, userCreated = true)
+                case AuthenticationResult.Authenticated(jwt, rt) => Ok -> AuthenticatedResponse(jwt, rt.secret, userCreated = false)
+                case AuthenticationResult.UserCreated(jwt, rt)   => Ok -> AuthenticatedResponse(jwt, rt.secret, userCreated = true)
                 case AuthenticationResult.UserBlocked            => error(Locked, "user-blocked", "User is blocked")
                 case AuthenticationResult.InvalidToken           => error(Unauthorized, "invalid-token", "Invalid ID token")
                 case AuthenticationResult.ProviderUnavailable    => error(NotFound, "unknown-provider", s"No auth provider '$provider'")
@@ -116,8 +116,8 @@ class AuthRouter(authenticationService: AuthenticationService, override protecte
             authenticationService
               .authenticateWithProvider(Provider.Dev, command)
               .map[ToResponseMarshallable] {
-                case AuthenticationResult.Authenticated(jwt, rt) => Ok -> AuthenticatedResponse(jwt, rt.id, userCreated = false)
-                case AuthenticationResult.UserCreated(jwt, rt)   => Ok -> AuthenticatedResponse(jwt, rt.id, userCreated = true)
+                case AuthenticationResult.Authenticated(jwt, rt) => Ok -> AuthenticatedResponse(jwt, rt.secret, userCreated = false)
+                case AuthenticationResult.UserCreated(jwt, rt)   => Ok -> AuthenticatedResponse(jwt, rt.secret, userCreated = true)
                 case AuthenticationResult.UserBlocked            => error(Locked, "user-blocked", "User is blocked")
                 case AuthenticationResult.InvalidToken           => error(Unauthorized, "invalid-token", "dev auth requires an email address")
                 case AuthenticationResult.ProviderUnavailable    => error(NotFound, "unknown-provider", "dev auth is not enabled")

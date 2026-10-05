@@ -1,7 +1,7 @@
 package madrileno.auth.routers
 
 import cats.effect.IO
-import madrileno.auth.domain.{AuthContext, Credential, FirebaseJwt, Provider, ProviderUserId, RefreshTokenId, UserAgent, UserAuth}
+import madrileno.auth.domain.{AuthContext, Credential, FirebaseJwt, Provider, ProviderUserId, RefreshTokenSecret, UserAgent, UserAuth}
 import madrileno.auth.repositories.{RefreshTokenRepository, UserAuthRepository}
 import madrileno.auth.routers.dto.{
   AuthWithEmailRequest,
@@ -69,16 +69,16 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
     email
   }
 
-  private def seedRefreshToken(): RefreshTokenId = {
-    val user         = TestData.user()
-    val refreshToken = TestData.refreshToken(userId = user.id)
-    val _            = application.transactor
+  private def seedRefreshToken(): RefreshTokenSecret = {
+    val user   = TestData.user()
+    val issued = TestData.issuedRefreshToken(userId = user.id)
+    val _      = application.transactor
       .inTransaction {
         application.userRepository.create(user, Instant.now()) *>
-          new RefreshTokenRepository().save(refreshToken)
+          new RefreshTokenRepository().save(issued.token)
       }
       .unsafeRunSync()
-    refreshToken.id
+    issued.secret
   }
 
   path("/v1/auth/firebase")(
@@ -138,7 +138,7 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
       tags = Seq("Auth")
     )(
       withSetup(seedRefreshToken())
-        .request(tokenId => onRequest(body = AuthWithRefreshTokenRequest(tokenId)))
+        .request(secret => onRequest(body = AuthWithRefreshTokenRequest(secret)))
         .respondsWith[AuthenticatedResponse](Ok, description = "Authenticated with refresh token")
         .assert { case (ctx, _) =>
           val response = ctx.performRequest(allRoutes)
@@ -146,7 +146,7 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
           response.body.refreshToken.toString should not be empty
           response.body.userCreated shouldBe false
         },
-      onRequest(body = AuthWithRefreshTokenRequest(TestData.randomRefreshTokenId()))
+      onRequest(body = AuthWithRefreshTokenRequest(TestData.refreshTokenSecret()))
         .respondsWith[Error[Unit]](Unauthorized, description = "Invalid or expired refresh token")
         .assert { ctx =>
           val response = ctx.performRequest(allRoutes)

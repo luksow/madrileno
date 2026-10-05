@@ -72,7 +72,7 @@ class AuthenticationService(
     val userUpdater: User => User = _.withUpdatedProfile(verifiedToken.profile)
     userAuthRepository.updateMetadata(userAuth.id, verifiedToken.metadata) *>
       userRepository.update(userAuth.userId, userUpdater, now) *>
-      generateTokens(userAuth.userId, command.userAgent, command.ipAddress, now, AuthenticationResult.Authenticated.apply)
+      generateTokensInNewFamily(userAuth.userId, command.userAgent, command.ipAddress, now, AuthenticationResult.Authenticated.apply)
   }
 
   private def createNewUser(
@@ -89,7 +89,7 @@ class AuthenticationService(
       _        <- user.emailAddress.fold(IO.unit) { email =>
              mailer.sendTransactionally(to = List(email.toString), template = WelcomeEmailTemplate(user.fullName), lang = Language.En).void
            }
-      tokens <- generateTokens(user.id, command.userAgent, command.ipAddress, now, AuthenticationResult.UserCreated.apply)
+      tokens <- generateTokensInNewFamily(user.id, command.userAgent, command.ipAddress, now, AuthenticationResult.UserCreated.apply)
     } yield tokens
   }
 
@@ -97,15 +97,27 @@ class AuthenticationService(
     transactor.inTransaction {
       Clock[IO].realTimeInstant.flatMap { now =>
         refreshTokenRepository
-          .findForUpdate(command.refreshToken)
+          .findForUpdateBySecretHash(command.refreshToken.hash)
           .flatMap {
             case Some(refreshToken) if refreshToken.isValid(now) =>
               refreshTokenRepository.update(refreshToken.id, _.usedAt(now)) *>
-                generateTokens(refreshToken.userId, command.userAgent, command.ipAddress, now, AuthenticationResult.Authenticated.apply)
+                generateTokens(
+                  refreshToken.userId,
+                  refreshToken.familyId,
+                  command.userAgent,
+                  command.ipAddress,
+                  now,
+                  AuthenticationResult.Authenticated.apply
+                )
+            case Some(refreshToken) if refreshToken.isUsed =>
+              refreshTokenRepository.revokeFamily(refreshToken.familyId, now) *>
+                logger
+                  .warn(s"Refresh token ${refreshToken.id} was replayed; revoked family ${refreshToken.familyId} for user ${refreshToken.userId}")
+                  .as(AuthenticationResult.InvalidToken)
             case Some(refreshToken) =>
-              logger.warn(s"Refresh token $refreshToken is already used, deleted, or expired").as(AuthenticationResult.InvalidToken)
+              logger.warn(s"Refresh token ${refreshToken.id} is deleted or expired").as(AuthenticationResult.InvalidToken)
             case None =>
-              logger.warn(s"Refresh token ${command.refreshToken} not found").as(AuthenticationResult.InvalidToken)
+              logger.warn("Refresh token not found").as(AuthenticationResult.InvalidToken)
           }
       }
     }
@@ -172,26 +184,38 @@ class AuthenticationService(
       }
     }
 
-  private def generateTokens(
+  private def generateTokensInNewFamily(
     userId: UserId,
     userAgent: UserAgent,
     ipAddress: IpAddress,
     now: Instant,
-    success: (InternalJwt, RefreshToken) => AuthenticationResult
+    success: (InternalJwt, IssuedRefreshToken) => AuthenticationResult
+  ): DB[AuthenticationResult] = {
+    IdGenerator.generateId(RefreshTokenFamilyId).flatMap { familyId =>
+      generateTokens(userId, familyId, userAgent, ipAddress, now, success)
+    }
+  }
+
+  private def generateTokens(
+    userId: UserId,
+    familyId: RefreshTokenFamilyId,
+    userAgent: UserAgent,
+    ipAddress: IpAddress,
+    now: Instant,
+    success: (InternalJwt, IssuedRefreshToken) => AuthenticationResult
   ): DB[AuthenticationResult] = {
     (for {
       user <- userRepository
                 .get(userId)
                 .ensure(_.isActive, AuthenticationResult.UserBlocked)
       jwt = jwtService.encode(AuthContext(user), now)
-      refreshToken <- IdGenerator
-                        .generateId(RefreshTokenId)
-                        .map(id => RefreshToken.mint(id, now, user.id, userAgent, ipAddress, config.validFor))
-                        .seal
+      id     <- IdGenerator.generateId(RefreshTokenId).seal
+      secret <- RefreshTokenSecret.generate.seal
+      refreshToken = RefreshToken.mint(id, familyId, secret.hash, now, user.id, userAgent, ipAddress, config.validFor)
       _ <- refreshTokenRepository.save(refreshToken).seal
-      _ <- logger.debug(s"Generated JWT: $jwt and RefreshToken: $refreshToken for user: $userId").seal
+      _ <- logger.debug(s"Issued refresh token ${refreshToken.id} in family $familyId for user: $userId").seal
     } yield {
-      success(jwt, refreshToken)
+      success(jwt, IssuedRefreshToken(refreshToken, secret))
     }).run
   }
 }
@@ -202,13 +226,13 @@ final case class AuthenticateWithExternalTokenCommand(
   ipAddress: IpAddress)
 
 final case class AuthenticateWithRefreshTokenCommand(
-  refreshToken: RefreshTokenId,
+  refreshToken: RefreshTokenSecret,
   userAgent: UserAgent,
   ipAddress: IpAddress)
 
 enum AuthenticationResult {
-  case Authenticated(jwt: InternalJwt, refreshToken: RefreshToken)
-  case UserCreated(jwt: InternalJwt, refreshToken: RefreshToken)
+  case Authenticated(jwt: InternalJwt, refreshToken: IssuedRefreshToken)
+  case UserCreated(jwt: InternalJwt, refreshToken: IssuedRefreshToken)
   case UserBlocked
   case InvalidToken
   case ProviderUnavailable
@@ -221,5 +245,5 @@ final case class RevokeRefreshTokenCommand(userId: UserId, refreshTokenId: Refre
 final case class RevokeRefreshTokensCommand(userId: UserId, userAgent: UserAgent)
 
 object AuthenticationService {
-  final case class Config(validFor: Option[Duration]) derives ConfigReader
+  final case class Config(validFor: Duration) derives ConfigReader
 }

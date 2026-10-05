@@ -11,7 +11,7 @@ final case class RefreshTokenDto(
   userAgent: UserAgent,
   ipAddress: String,
   createdAt: Instant,
-  expiresAt: Option[Instant])
+  expiresAt: Instant)
     derives Encoder.AsObject,
       Decoder
 
