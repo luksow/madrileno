@@ -1,9 +1,9 @@
 package madrileno.auth.domain
 
-import cats.effect.IO
 import com.comcast.ip4s.IpAddress
 import madrileno.user.domain.UserId
-import madrileno.utils.crypto.{RandomSecret, Sha256}
+import madrileno.utils.crypto.Sha256
+import pl.iterators.kebs.core.macros.ValueClassLike
 import pl.iterators.kebs.opaque.Opaque
 
 import java.time.{Duration, Instant}
@@ -15,20 +15,27 @@ object RefreshTokenId extends Opaque[RefreshTokenId, UUID]
 opaque type RefreshTokenFamilyId = UUID
 object RefreshTokenFamilyId extends Opaque[RefreshTokenFamilyId, UUID]
 
-opaque type RefreshTokenSecret = String
-object RefreshTokenSecret extends Opaque[RefreshTokenSecret, String] {
-  private val secretBytes = 32
+final case class RefreshTokenSecret private (value: String) {
+  def hash: RefreshTokenSecretHash = RefreshTokenSecretHash(Sha256.base64Url(value))
 
-  override def validate(value: String): Either[String, RefreshTokenSecret] = {
-    if (value.nonEmpty) Right(value)
+  override def toString: String = "RefreshTokenSecret(redacted)"
+}
+
+object RefreshTokenSecret {
+  val byteLength: Int = 32
+
+  private val encodedPattern = "[A-Za-z0-9_-]{43}".r
+
+  def from(value: String): Either[String, RefreshTokenSecret] = {
+    if (encodedPattern.matches(value)) Right(new RefreshTokenSecret(value))
     else Left("Invalid refresh token")
   }
 
-  def generate: IO[RefreshTokenSecret] = RandomSecret.generate(secretBytes).map(RefreshTokenSecret.apply)
-
-  extension (secret: RefreshTokenSecret) {
-    def hash: RefreshTokenSecretHash = RefreshTokenSecretHash(Sha256.base64Url(secret))
+  def apply(value: String): RefreshTokenSecret = {
+    from(value).fold(reason => throw new IllegalArgumentException(reason), identity)
   }
+
+  given ValueClassLike[RefreshTokenSecret, String] = ValueClassLike(apply, _.value)
 }
 
 opaque type RefreshTokenSecretHash = String
@@ -58,6 +65,12 @@ final case class RefreshToken(
   }
 
   def isUsed: Boolean = usedAt.isDefined
+
+  def isRevoked: Boolean = deletedAt.isDefined
+
+  def wasUsedWithin(grace: Duration, now: Instant): Boolean = {
+    usedAt.exists(used => now.isBefore(used.plus(grace)))
+  }
 
   def usedAt(instant: Instant): RefreshToken = {
     this.copy(usedAt = Some(instant))

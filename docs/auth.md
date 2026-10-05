@@ -115,6 +115,8 @@ The internal JWT is short-lived. When it expires, the client `POST /v1/auth/refr
 
 Refresh tokens are one-time-use and every rotation inherits the family of the token it replaced. Replaying a token that was already used is treated as evidence of theft: the whole family is revoked (OAuth 2.0 Security BCP "refresh token rotation with reuse detection"), so whichever of the attacker or the legitimate client refreshes second kills the chain for both, and the user logs in again. Other devices' families are untouched. A token that is merely expired or already revoked is rejected without side effects.
 
+A replay that lands within `refresh-token.reuse-grace` of the original use (default 60 s, `REFRESH_TOKEN_REUSE_GRACE`) is rejected with 401 but does not revoke the family. That window absorbs the honest double-submit — a client retrying after a lost response, or two tabs racing without single-flight — which under Postgres' default read-committed isolation would otherwise be indistinguishable from theft and log the user out of the device that just refreshed successfully. An attacker who waits out the window still kills the family.
+
 Each token also expires `refresh-token.valid-for` after it was minted (default 90 days). Because rotation mints a fresh token with a fresh window, this behaves as an inactivity timeout: a client that refreshes at least once per window stays logged in indefinitely.
 
 `cleanupExpiredRefreshTokensTask` runs daily at 1 AM to delete rows that have been used or revoked for more than 60 days (tombstone garbage collection — it also sweeps tokens whose `expires_at` passed more than 60 days ago; it never expires a live token).

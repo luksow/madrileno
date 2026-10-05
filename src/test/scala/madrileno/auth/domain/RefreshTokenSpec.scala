@@ -1,6 +1,5 @@
 package madrileno.auth.domain
 
-import cats.effect.unsafe.implicits.global
 import madrileno.support.TestData
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
@@ -55,6 +54,21 @@ class RefreshTokenSpec extends AnyWordSpec with Matchers {
     }
   }
 
+  "RefreshToken.wasUsedWithin" should {
+    val grace = Duration.ofSeconds(60)
+
+    "be false for an unused token" in {
+      TestData.refreshToken().wasUsedWithin(grace, now) shouldBe false
+    }
+
+    "be true until the grace window has elapsed" in {
+      val token = TestData.refreshToken().usedAt(now)
+      token.wasUsedWithin(grace, now) shouldBe true
+      token.wasUsedWithin(grace, now.plusSeconds(59)) shouldBe true
+      token.wasUsedWithin(grace, now.plusSeconds(60)) shouldBe false
+    }
+  }
+
   "RefreshToken.mint" should {
     "create a valid token expiring at now + validFor" in {
       val id        = TestData.randomRefreshTokenId()
@@ -81,21 +95,33 @@ class RefreshTokenSpec extends AnyWordSpec with Matchers {
 
   "RefreshTokenSecret" should {
     "generate distinct, url-safe secrets of 256 bits" in {
-      val a = RefreshTokenSecret.generate.unsafeRunSync()
-      val b = RefreshTokenSecret.generate.unsafeRunSync()
+      val a = TestData.refreshTokenSecret()
+      val b = TestData.refreshTokenSecret()
       a should not be b
-      a.toString should have length 43
-      a.toString should fullyMatch regex "[A-Za-z0-9_-]+"
+      a.value should have length 43
+      a.value should fullyMatch regex "[A-Za-z0-9_-]+"
     }
 
     "hash deterministically and never equal the secret itself" in {
-      val secret = RefreshTokenSecret.generate.unsafeRunSync()
+      val secret = TestData.refreshTokenSecret()
       secret.hash shouldBe secret.hash
-      secret.hash.toString should not be secret.toString
-      RefreshTokenSecret("other").hash should not be secret.hash
+      secret.hash.toString should not be secret.value
+      TestData.refreshTokenSecret().hash should not be secret.hash
     }
 
-    "reject empty strings" in {
+    "redact the secret from toString" in {
+      val secret = TestData.refreshTokenSecret()
+      secret.toString should not include secret.value
+      IssuedRefreshToken(TestData.refreshToken(), secret).toString should not include secret.value
+    }
+
+    "reject anything that is not 43 base64url characters, including a row id" in {
+      RefreshTokenSecret.from("") shouldBe a[Left[?, ?]]
+      RefreshTokenSecret.from(TestData.randomRefreshTokenId().toString) shouldBe a[Left[?, ?]]
+      RefreshTokenSecret.from("a" * 42) shouldBe a[Left[?, ?]]
+      RefreshTokenSecret.from("a" * 44) shouldBe a[Left[?, ?]]
+      RefreshTokenSecret.from("a" * 42 + "=") shouldBe a[Left[?, ?]]
+      RefreshTokenSecret.from("a" * 43) shouldBe a[Right[?, ?]]
       assertThrows[IllegalArgumentException] {
         RefreshTokenSecret("")
       }

@@ -1,6 +1,6 @@
 package madrileno.main
 
-import cats.effect.std.Supervisor
+import cats.effect.std.{SecureRandom, Supervisor}
 import cats.effect.unsafe.IORuntime
 import cats.effect.unsafe.implicits.global
 import cats.effect.{Clock, IO, Resource}
@@ -37,10 +37,11 @@ object ConsoleApplication {
     val storageConfig   = config.at("storage").loadOrThrow[StorageConfig]
 
     val program: Resource[IO, ApplicationLoader] = for {
-      httpClient           <- HttpClientFs2Backend.resource[IO]()
-      transactor           <- PgTransactor.resource(pgConfig)
-      objectStoreRuntime   <- ObjectStoreRuntime.s3(storageConfig)
-      given Supervisor[IO] <- Supervisor[IO]
+      httpClient             <- HttpClientFs2Backend.resource[IO]()
+      transactor             <- PgTransactor.resource(pgConfig)
+      objectStoreRuntime     <- ObjectStoreRuntime.s3(storageConfig)
+      given Supervisor[IO]   <- Supervisor[IO]
+      given SecureRandom[IO] <- Resource.eval(SecureRandom.javaSecuritySecureRandom[IO])
       application = {
         val scheduler             = Scheduler(transactor, schedulerConfig)
         val cacheRuntime          = CacheRuntime.scaffeine

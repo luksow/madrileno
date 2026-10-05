@@ -1,6 +1,7 @@
 package madrileno.auth
 
 import cats.effect.IO
+import cats.effect.std.SecureRandom
 import com.softwaremill.macwire.*
 import madrileno.auth.domain.{AuthContext, Provider}
 import madrileno.auth.emails.WelcomeEmailTemplate
@@ -27,6 +28,7 @@ trait AuthModule extends RouteProvider with AuthRouteProvider with RecurringTask
     config.at("refresh-token").loadOrThrow[AuthenticationService.Config]
   private val jwtService = wire[JwtService]
   given telemetryContext: TelemetryContext
+  given secureRandom: SecureRandom[IO]
   val transactor: Transactor
   val cacheRuntime: CacheRuntime
   val rateLimiterRuntime: RateLimiterRuntime

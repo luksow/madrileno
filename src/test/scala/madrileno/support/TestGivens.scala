@@ -1,6 +1,7 @@
 package madrileno.support
 
-import cats.effect.std.UUIDGen
+import cats.effect.std.{SecureRandom, UUIDGen}
+import cats.effect.unsafe.implicits.global
 import cats.effect.{Clock, IO}
 
 import java.time.Instant
@@ -40,6 +41,8 @@ class TestUUIDGen(uuids: UUID*) extends UUIDGen[IO] {
 }
 
 object TestGivens {
+  val secureRandom: SecureRandom[IO] = SecureRandom.javaSecuritySecureRandom[IO].unsafeRunSync()
+
   def fixedClock(at: Instant = Instant.now()): TestClock = new TestClock(at)
   def deterministicUUIDs(uuids: UUID*): TestUUIDGen      = new TestUUIDGen(uuids*)
 }

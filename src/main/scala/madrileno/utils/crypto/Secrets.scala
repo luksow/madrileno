@@ -1,18 +1,17 @@
 package madrileno.utils.crypto
 
 import cats.effect.IO
+import cats.effect.std.SecureRandom
 
 import java.nio.charset.StandardCharsets
-import java.security.{MessageDigest, SecureRandom}
+import java.security.MessageDigest
 import java.util.Base64
 
 object RandomSecret {
   private val encoder = Base64.getUrlEncoder.withoutPadding
 
-  def generate(bytes: Int): IO[String] = IO {
-    val buffer = new Array[Byte](bytes)
-    new SecureRandom().nextBytes(buffer)
-    encoder.encodeToString(buffer)
+  def generate(bytes: Int)(using SecureRandom[IO]): IO[String] = {
+    SecureRandom[IO].nextBytes(bytes).map(encoder.encodeToString)
   }
 }
 

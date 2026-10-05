@@ -1,6 +1,6 @@
 package madrileno.auth.services
 
-import cats.effect.std.UUIDGen
+import cats.effect.std.{SecureRandom, UUIDGen}
 import cats.effect.testing.scalatest.AsyncIOSpec
 import cats.effect.{Clock, IO}
 import madrileno.auth.domain.*
@@ -26,6 +26,7 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
   private val testUUIDGen = TestGivens.deterministicUUIDs()
   given Clock[IO]         = testClock
   given UUIDGen[IO]       = testUUIDGen
+  given SecureRandom[IO]  = TestGivens.secureRandom
   given TelemetryContext  = TelemetryContext(Meter.noop[IO], Tracer.noop[IO], io.opentelemetry.api.OpenTelemetry.noop())
 
   private val jwtConfig  = JwtService.Config(secret = "test-secret-at-least-256-bits-long-for-hs256!!", validFor = Duration.ofMinutes(5))
@@ -42,6 +43,8 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
 
   private def freshVerifiedToken() = TestData.verifiedExternalToken()
 
+  private val reuseGrace = Duration.ofSeconds(60)
+
   private def serviceWithFreshAuth(validFor: Duration = Duration.ofDays(90)) = {
     val token     = freshVerifiedToken()
     val verifiers = AuthVerifiers(Map(Provider.Firebase -> new FakeAuthVerifier(token)))
@@ -53,7 +56,7 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
       jwtService,
       transactor,
       mailer,
-      AuthenticationService.Config(validFor)
+      AuthenticationService.Config(validFor, reuseGrace)
     )
     (svc, token)
   }
@@ -150,22 +153,30 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
       }
     }
 
-    "not accept the row id as a refresh token" in {
-      val (service, _) = serviceWithFreshAuth()
-      for {
-        created <- service.authenticateWithProvider(Provider.Firebase, command)
-        issued = issuedOf(created)
-        result <- service.authenticateWithRefreshToken(refreshWith(RefreshTokenSecret(issued.token.id.toString)))
-      } yield result shouldBe AuthenticationResult.InvalidToken
-    }
-
-    "reject an already-used refresh token and revoke its whole family" in {
+    "reject a replay within the reuse grace window without revoking the family" in {
       val (service, _) = serviceWithFreshAuth()
       for {
         login <- service.authenticateWithProvider(Provider.Firebase, command)
         first = issuedOf(login)
         rotated <- service.authenticateWithRefreshToken(refreshWith(first.secret))
         second = issuedOf(rotated)
+        _      = testClock.advance(reuseGrace.minusSeconds(1).toMillis)
+        replay    <- service.authenticateWithRefreshToken(refreshWith(first.secret))
+        afterward <- service.authenticateWithRefreshToken(refreshWith(second.secret))
+      } yield {
+        replay shouldBe AuthenticationResult.InvalidToken
+        afterward shouldBe a[AuthenticationResult.Authenticated]
+      }
+    }
+
+    "reject a replay after the grace window and revoke its whole family" in {
+      val (service, _) = serviceWithFreshAuth()
+      for {
+        login <- service.authenticateWithProvider(Provider.Firebase, command)
+        first = issuedOf(login)
+        rotated <- service.authenticateWithRefreshToken(refreshWith(first.secret))
+        second = issuedOf(rotated)
+        _      = testClock.advance(reuseGrace.plusSeconds(1).toMillis)
         replay    <- service.authenticateWithRefreshToken(refreshWith(first.secret))
         afterward <- service.authenticateWithRefreshToken(refreshWith(second.secret))
       } yield {
@@ -181,7 +192,8 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
         loginB <- service.authenticateWithProvider(Provider.Firebase, command)
         issuedA = issuedOf(loginA)
         issuedB = issuedOf(loginB)
-        _       <- service.authenticateWithRefreshToken(refreshWith(issuedA.secret))
+        _ <- service.authenticateWithRefreshToken(refreshWith(issuedA.secret))
+        _ = testClock.advance(reuseGrace.plusSeconds(1).toMillis)
         _       <- service.authenticateWithRefreshToken(refreshWith(issuedA.secret))
         bResult <- service.authenticateWithRefreshToken(refreshWith(issuedB.secret))
       } yield bResult shouldBe a[AuthenticationResult.Authenticated]

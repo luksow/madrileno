@@ -1,6 +1,6 @@
 package madrileno.auth.services
 
-import cats.effect.std.UUIDGen
+import cats.effect.std.{SecureRandom, UUIDGen}
 import cats.effect.{Clock, IO}
 import cats.syntax.all.*
 import com.comcast.ip4s.IpAddress
@@ -9,7 +9,7 @@ import madrileno.auth.emails.WelcomeEmailTemplate
 import madrileno.auth.repositories.*
 import madrileno.user.domain.*
 import madrileno.user.repositories.*
-import madrileno.utils.crypto.IdGenerator
+import madrileno.utils.crypto.{IdGenerator, RandomSecret}
 import madrileno.utils.db.transactor.*
 import madrileno.utils.mailer.{Language, Mailer}
 import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
@@ -31,7 +31,8 @@ class AuthenticationService(
 )(using
   TelemetryContext,
   UUIDGen[IO],
-  Clock[IO])
+  Clock[IO],
+  SecureRandom[IO])
     extends LoggingSupport {
   def authenticateWithProvider(provider: Provider, command: AuthenticateWithExternalTokenCommand): IO[AuthenticationResult] = {
     verifiers.get(provider) match {
@@ -109,13 +110,17 @@ class AuthenticationService(
                   now,
                   AuthenticationResult.Authenticated.apply
                 )
-            case Some(refreshToken) if refreshToken.isUsed =>
+            case Some(refreshToken) if refreshToken.isUsed && !refreshToken.isRevoked && refreshToken.wasUsedWithin(config.reuseGrace, now) =>
+              logger
+                .warn(s"Refresh token ${refreshToken.id} was replayed within the reuse grace window; family ${refreshToken.familyId} kept")
+                .as(AuthenticationResult.InvalidToken)
+            case Some(refreshToken) if refreshToken.isUsed && !refreshToken.isRevoked =>
               refreshTokenRepository.revokeFamily(refreshToken.familyId, now) *>
                 logger
                   .warn(s"Refresh token ${refreshToken.id} was replayed; revoked family ${refreshToken.familyId} for user ${refreshToken.userId}")
                   .as(AuthenticationResult.InvalidToken)
             case Some(refreshToken) =>
-              logger.warn(s"Refresh token ${refreshToken.id} is deleted or expired").as(AuthenticationResult.InvalidToken)
+              logger.warn(s"Refresh token ${refreshToken.id} is revoked or expired").as(AuthenticationResult.InvalidToken)
             case None =>
               logger.warn("Refresh token not found").as(AuthenticationResult.InvalidToken)
           }
@@ -210,7 +215,7 @@ class AuthenticationService(
                 .ensure(_.isActive, AuthenticationResult.UserBlocked)
       jwt = jwtService.encode(AuthContext(user), now)
       id     <- IdGenerator.generateId(RefreshTokenId).seal
-      secret <- RefreshTokenSecret.generate.seal
+      secret <- RandomSecret.generate(RefreshTokenSecret.byteLength).map(RefreshTokenSecret.apply).seal
       refreshToken = RefreshToken.mint(id, familyId, secret.hash, now, user.id, userAgent, ipAddress, config.validFor)
       _ <- refreshTokenRepository.save(refreshToken).seal
       _ <- logger.debug(s"Issued refresh token ${refreshToken.id} in family $familyId for user: $userId").seal
@@ -245,5 +250,5 @@ final case class RevokeRefreshTokenCommand(userId: UserId, refreshTokenId: Refre
 final case class RevokeRefreshTokensCommand(userId: UserId, userAgent: UserAgent)
 
 object AuthenticationService {
-  final case class Config(validFor: Duration) derives ConfigReader
+  final case class Config(validFor: Duration, reuseGrace: Duration) derives ConfigReader
 }

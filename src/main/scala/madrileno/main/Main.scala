@@ -1,6 +1,6 @@
 package madrileno.main
 
-import cats.effect.std.Supervisor
+import cats.effect.std.{SecureRandom, Supervisor}
 import cats.effect.{Clock, IO, IOApp, Resource}
 import cats.syntax.all.*
 import io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppender
@@ -49,9 +49,10 @@ object Main extends IOApp.Simple {
       cacheRuntime = CacheRuntime.scaffeine
       trustedProxies <- Resource.eval(IO.delay(RateLimiterRuntime.parseTrustedProxies(config.at("rate-limit.trusted-proxies").loadOrThrow[String])))
       rateLimiterRuntime = RateLimiterRuntime.scaffeine(trustedProxies = trustedProxies)
-      storageConfig        <- Resource.eval(IO.delay(config.at("storage").loadOrThrow[StorageConfig]))
-      objectStoreRuntime   <- ObjectStoreRuntime.s3(storageConfig)
-      given Supervisor[IO] <- Supervisor[IO]
+      storageConfig          <- Resource.eval(IO.delay(config.at("storage").loadOrThrow[StorageConfig]))
+      objectStoreRuntime     <- ObjectStoreRuntime.s3(storageConfig)
+      given Supervisor[IO]   <- Supervisor[IO]
+      given SecureRandom[IO] <- Resource.eval(SecureRandom.javaSecuritySecureRandom[IO])
       eventBusRuntime       = EventBusRuntime.postgres(transactor)
       circuitBreakerRuntime = CircuitBreakerRuntime.default
       application           =

@@ -7,7 +7,7 @@ import io.circe.Json
 import madrileno.auction.domain.*
 import madrileno.auth.domain.{AuthContext, *}
 import madrileno.user.domain.*
-import madrileno.utils.crypto.UuidV7
+import madrileno.utils.crypto.{RandomSecret, UuidV7}
 import madrileno.utils.featureflag.domain.*
 import madrileno.utils.imaging.{Height, ImageFormat, Width}
 import madrileno.utils.storage.StorageKey
@@ -25,11 +25,12 @@ object TestData {
   def randomUserId(): UserId                             = UserId(randomUuid())
   def randomRefreshTokenId(): RefreshTokenId             = RefreshTokenId(randomUuid())
   def randomRefreshTokenFamilyId(): RefreshTokenFamilyId = RefreshTokenFamilyId(randomUuid())
-  def refreshTokenSecret(): RefreshTokenSecret           = RefreshTokenSecret.generate.unsafeRunSync()
-  def randomUserAuthId(): UserAuthId                     = UserAuthId(randomUuid())
-  def randomFlagId(): FlagId                             = FlagId(randomUuid())
-  def randomRuleId(): RuleId                             = RuleId(randomUuid())
-  def randomSegmentId(): SegmentId                       = SegmentId(randomUuid())
+  def refreshTokenSecret(): RefreshTokenSecret           =
+    RandomSecret.generate(RefreshTokenSecret.byteLength)(using TestGivens.secureRandom).map(RefreshTokenSecret.apply).unsafeRunSync()
+  def randomUserAuthId(): UserAuthId = UserAuthId(randomUuid())
+  def randomFlagId(): FlagId         = FlagId(randomUuid())
+  def randomRuleId(): RuleId         = RuleId(randomUuid())
+  def randomSegmentId(): SegmentId   = SegmentId(randomUuid())
   // scripts:scaffold-id-factories (scaffold-module.scala inserts random<Aggregate>Id() factories above this line)
   // scripts:auction-block-start
   def randomAuctionId(): AuctionId                         = AuctionId(randomUuid())
