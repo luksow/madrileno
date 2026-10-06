@@ -7,7 +7,7 @@ import madrileno.utils.json.JsonProtocol.*
 import madrileno.utils.observability.Fingerprint
 import org.http4s.headers.{Authorization, `Content-Type`}
 import org.http4s.implicits.*
-import org.http4s.{AuthScheme, Credentials, MediaType, Method, Request, Response, Status}
+import org.http4s.{AuthScheme, Credentials, EntityEncoder, MediaType, Method, Request, Response, Status}
 import org.scalatest.funspec.AnyFunSpec
 import org.scalatest.matchers.should.Matchers
 import pl.iterators.stir.server.{Directives, Route, ToHttpRoutes}
@@ -22,6 +22,9 @@ class RedactedLoggingDirectivesSpec extends AnyFunSpec with Matchers with Direct
       complete(Status.Ok -> json)
     }
   }
+
+  // `JsonProtocol.*` puts circe's encoder in lexical scope, which would otherwise turn these strings into JSON string bodies.
+  private val text: EntityEncoder[IO, String] = EntityEncoder.stringEncoder[IO]
 
   private val ignoreBody: Route = complete(Status.NoContent)
 
@@ -38,9 +41,9 @@ class RedactedLoggingDirectivesSpec extends AnyFunSpec with Matchers with Direct
     maxBodyBytes: Int = RedactedLoggingDirectives.DefaultMaxBodyBytes
   ): (Response[IO], String, List[String]) = {
     (for {
-      lines    <- IO.ref(List.empty[String])
-      log       = (line: String) => lines.update(_ :+ line)
-      routes    = logRedactedRequest(log, maxBodyBytes)(logRedactedResult(log, maxBodyBytes)(route)).toHttpRoutes
+      lines <- IO.ref(List.empty[String])
+      log    = (line: String) => lines.update(_ :+ line)
+      routes = logRedactedRequest(log, maxBodyBytes)(logRedactedResult(log, maxBodyBytes)(route)).toHttpRoutes
       response <- routes.orNotFound.run(request)
       body     <- response.bodyText.compile.string
       logged   <- lines.get
@@ -67,14 +70,14 @@ class RedactedLoggingDirectivesSpec extends AnyFunSpec with Matchers with Direct
     }
 
     it("logs non-JSON bodies as content type and size only") {
-      val (_, _, logged) = run(drainBody, Request[IO](Method.POST, uri"/").withEntity("hello"))
+      val (_, _, logged) = run(drainBody, Request[IO](Method.POST, uri"/").withEntity("hello")(using text))
 
       logged.head should include("<text/plain, 5 bytes>")
       logged.head should not include "hello"
     }
 
     it("logs malformed JSON as its size only") {
-      val request = Request[IO](Method.POST, uri"/").withEntity("{oops").withContentType(`Content-Type`(MediaType.application.json))
+      val request = Request[IO](Method.POST, uri"/").withEntity("{oops")(using text).withContentType(`Content-Type`(MediaType.application.json))
 
       val (response, _, logged) = run(echoJson, request)
 

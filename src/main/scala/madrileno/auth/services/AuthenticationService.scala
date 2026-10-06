@@ -130,7 +130,9 @@ class AuthenticationService(
               )
               .as(None)
           case Some(refreshToken) if !refreshToken.isValid(now) =>
-            logger.warn(s"Refresh token ${command.refreshTokenId.fingerprint} for user ${command.userId} is already deleted, used, or expired").as(None)
+            logger
+              .warn(s"Refresh token ${command.refreshTokenId.fingerprint} for user ${command.userId} is already deleted, used, or expired")
+              .as(None)
           case Some(refreshToken) =>
             val deleted = refreshToken.deletedAt(now)
             refreshTokenRepository.update(deleted) *>

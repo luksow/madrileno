@@ -11,14 +11,14 @@ import java.nio.charset.StandardCharsets.UTF_8
 
 /** Request and response logging whose bodies are safe to ship to logs and telemetry.
   *
-  * http4s-stir's `logRequest` / `logResult` can only switch body logging on or off for a whole subtree, which forces a choice
-  * between leaking credentials on auth routes and losing bodies everywhere. These variants always log bodies, but never raw:
+  * http4s-stir's `logRequest` / `logResult` can only switch body logging on or off for a whole subtree, which forces a choice between leaking
+  * credentials on auth routes and losing bodies everywhere. These variants always log bodies, but never raw:
   *   - JSON bodies are logged with sensitive fields replaced by fingerprints (see [[SensitiveJson]]),
   *   - every other body is logged as its content type and size,
   *   - sensitive headers are redacted the way http4s does it.
   *
-  * The streaming shape mirrors the upstream directives: the request line is logged when the route first reads the body (or
-  * without a body if it never does), the response line while the response body is being written out.
+  * The streaming shape mirrors the upstream directives: the request line is logged when the route first reads the body (or without a body if it never
+  * does), the response line while the response body is being written out.
   */
 trait RedactedLoggingDirectives {
   import RedactedLoggingDirectives.*
@@ -88,7 +88,11 @@ object RedactedLoggingDirectives {
   val DefaultMaxBodyBytes: Int = 4096
 
   private[http] object LoggedBody {
-    def render(message: Message[IO], head: Chunk[Byte], maxBodyBytes: Int): String = {
+    def render(
+      message: Message[IO],
+      head: Chunk[Byte],
+      maxBodyBytes: Int
+    ): String = {
       val declaredLength = message.contentLength
       val size           = declaredLength.fold(s"${head.size}+")(_.toString)
       // Without a declared length we cannot tell a body of exactly maxBodyBytes from a longer one, so err on the safe side.

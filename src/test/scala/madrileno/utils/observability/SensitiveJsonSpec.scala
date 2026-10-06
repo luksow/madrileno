@@ -1,6 +1,6 @@
 package madrileno.utils.observability
 
-import io.circe.{parser, Json}
+import io.circe.{Json, parser}
 import org.scalatest.funspec.AnyFunSpec
 import org.scalatest.matchers.should.Matchers
 

@@ -5,9 +5,9 @@ import java.security.MessageDigest
 
 /** A short, stable, non-reversible handle for a secret, meant for log lines and telemetry.
   *
-  * Two log lines that mention the same JWT or refresh token carry the same fingerprint, so an operator can still follow a
-  * credential through a trace, but the fingerprint reveals nothing about the credential itself: it is the first 32 bits of a
-  * SHA-256, and every credential we fingerprint has far more entropy than that.
+  * Two log lines that mention the same JWT or refresh token carry the same fingerprint, so an operator can still follow a credential through a trace,
+  * but the fingerprint reveals nothing about the credential itself: it is the first 32 bits of a SHA-256, and every credential we fingerprint has far
+  * more entropy than that.
   */
 opaque type Fingerprint = String
 

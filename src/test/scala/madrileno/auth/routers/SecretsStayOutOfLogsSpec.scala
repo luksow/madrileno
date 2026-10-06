@@ -19,8 +19,8 @@ import pl.iterators.stir.server.ToHttpRoutes
 
 import scala.jdk.CollectionConverters.*
 
-/** The leak test: whatever the logging implementation does, credentials issued or presented on the auth routes must not appear in
-  * any log line. Runs the real route tree at debug level with body logging on, which is the dev configuration.
+/** The leak test: whatever the logging implementation does, credentials issued or presented on the auth routes must not appear in any log line. Runs
+  * the real route tree at debug level with body logging on, which is the dev configuration.
   */
 class SecretsStayOutOfLogsSpec extends AnyFunSpec with Matchers with TestApplicationLoader {
 
