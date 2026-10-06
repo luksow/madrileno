@@ -1,7 +1,7 @@
 package madrileno.auth.routers
 
 import cats.effect.IO
-import madrileno.auth.domain.{AuthContext, Credential, FirebaseJwt, Provider, ProviderUserId, RefreshTokenSecret, UserAgent, UserAuth}
+import madrileno.auth.domain.{AuthContext, Credential, FirebaseJwt, Provider, ProviderUserId, UserAgent, UserAuth}
 import madrileno.auth.repositories.{RefreshTokenRepository, UserAuthRepository}
 import madrileno.auth.routers.dto.{
   AuthWithEmailRequest,
@@ -9,7 +9,7 @@ import madrileno.auth.routers.dto.{
   AuthWithOidcRequest,
   AuthWithRefreshTokenRequest,
   AuthenticatedResponse,
-  RefreshTokenDto
+  SessionDto
 }
 import madrileno.support.{BaseRouteSpec, TestApplicationLoader, TestData}
 import madrileno.user.domain.{EmailAddress, User, UserId}
@@ -69,7 +69,7 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
     email
   }
 
-  private def seedRefreshToken(): RefreshTokenSecret = {
+  private def seedRefreshToken(): String = {
     val user   = TestData.user()
     val issued = TestData.issuedRefreshToken(userId = user.id)
     val _      = application.transactor
@@ -78,7 +78,7 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
           new RefreshTokenRepository().save(issued.token)
       }
       .unsafeRunSync()
-    issued.secret
+    issued.secret.value
   }
 
   path("/v1/auth/firebase")(
@@ -93,7 +93,7 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
         .assert { ctx =>
           val response = ctx.performRequest(allRoutes)
           response.body.jwt.toString should not be empty
-          response.body.refreshToken.toString should not be empty
+          response.body.refreshToken.value should have length 43
           response.body.userCreated shouldBe true
         },
       withSetup {
@@ -103,7 +103,7 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
         .assert { case (ctx, _) =>
           val response = ctx.performRequest(allRoutes)
           response.body.jwt.toString should not be empty
-          response.body.refreshToken.toString should not be empty
+          response.body.refreshToken.value should have length 43
           response.body.userCreated shouldBe false
         },
       withSetup {
@@ -143,11 +143,21 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
         .assert { case (ctx, _) =>
           val response = ctx.performRequest(allRoutes)
           response.body.jwt.toString should not be empty
-          response.body.refreshToken.toString should not be empty
+          response.body.refreshToken.value should have length 43
           response.body.userCreated shouldBe false
+          response.headers.find(_.name.equalsIgnoreCase("Cache-Control")).map(_.value) shouldBe Some("no-store")
         },
-      onRequest(body = AuthWithRefreshTokenRequest(TestData.refreshTokenSecret()))
-        .respondsWith[Error[Unit]](Unauthorized, description = "Invalid or expired refresh token")
+      onRequest(body = AuthWithRefreshTokenRequest(TestData.refreshTokenSecret().value))
+        .respondsWith[Error[Unit]](Unauthorized, description = "Unknown, used, revoked, expired, or malformed refresh token")
+        .assert { ctx =>
+          val response = ctx.performRequest(allRoutes)
+          response.body.title shouldBe Some("Invalid refresh token")
+        },
+      onRequest(body = AuthWithRefreshTokenRequest(TestData.randomUuid().toString))
+        .respondsWith[Error[Unit]](
+          Unauthorized,
+          description = "A pre-rotation UUID or any other malformed value is treated as an invalid token, not a bad request"
+        )
         .assert { ctx =>
           val response = ctx.performRequest(allRoutes)
           response.body.title shouldBe Some("Invalid refresh token")
@@ -168,7 +178,7 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
         .assert { ctx =>
           val response = ctx.performRequest(allRoutes)
           response.body.jwt.toString should not be empty
-          response.body.refreshToken.toString should not be empty
+          response.body.refreshToken.value should have length 43
           response.body.userCreated shouldBe true
         },
       withSetup {
@@ -203,7 +213,7 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
         .assert { ctx =>
           val response = ctx.performRequest(allRoutes)
           response.body.jwt.toString should not be empty
-          response.body.refreshToken.toString should not be empty
+          response.body.refreshToken.value should have length 43
           response.body.userCreated shouldBe true
         },
       onRequest(pathParameters = "unknown-provider", body = AuthWithOidcRequest("any-token"))
@@ -225,31 +235,37 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
     supports(
       GET,
       description =
-        "List active sessions. Each entry's `createdAt` is when that refresh token was issued — login time, or the timestamp of the last JWT refresh that rotated it (refresh tokens are single-use, so the live one is always the newest in its chain).",
-      summary = "Returns active refresh tokens for the authenticated user",
+        "List active sessions. A session is a refresh-token family: one login and every rotation descended from it. `id` is the family id and stays stable across rotations; `createdAt` is the login time, `refreshedAt` the last rotation, `expiresAt` when the live token lapses if never refreshed.",
+      summary = "Returns active sessions for the authenticated user",
       securitySchemes = Seq(bearerScheme),
       tags = Seq("Auth")
     )(
       withSetup {
         val user  = TestData.user()
-        val token = TestData.refreshToken(userId = user.id, userAgent = UserAgent("Firefox/142"), createdAt = Instant.parse("2026-05-01T10:00:00Z"))
-        val _     = application.transactor
+        val token = TestData.refreshToken(
+          userId = user.id,
+          userAgent = UserAgent("Firefox/142"),
+          familyCreatedAt = Instant.parse("2026-05-01T10:00:00Z"),
+          createdAt = Instant.parse("2026-05-02T10:00:00Z")
+        )
+        val _ = application.transactor
           .inTransaction(application.userRepository.create(user, Instant.now()) *> new RefreshTokenRepository().save(token))
           .unsafeRunSync()
         (user, token)
       }.request { case (user, _) => onRequest(security = bearer.apply(validJwt(AuthContext(user)))) }
-        .respondsWith[List[RefreshTokenDto]](Ok, description = "Active (unused, unrevoked) refresh tokens for the authenticated user")
+        .respondsWith[List[SessionDto]](Ok, description = "Active sessions (families with a live refresh token) for the authenticated user")
         .assert { case (ctx, (_, token)) =>
           val response = ctx.performRequest(allRoutes)
-          response.body.map(_.id) shouldBe List(token.id)
+          response.body.map(_.id) shouldBe List(token.familyId)
           response.body.map(_.userAgent) shouldBe List(UserAgent("Firefox/142"))
           response.body.map(_.createdAt) shouldBe List(Instant.parse("2026-05-01T10:00:00Z"))
+          response.body.map(_.refreshedAt) shouldBe List(Instant.parse("2026-05-02T10:00:00Z"))
         }
     ),
     supports(
       DELETE,
-      description = "Revoke sessions by user agent",
-      summary = "Revoke all refresh tokens for a given user agent",
+      description = "Revoke every session (refresh-token family) of the authenticated user whose live token carries the given user agent",
+      summary = "Revoke all sessions for a given user agent",
       securitySchemes = Seq(bearerScheme),
       queryParameters = q[UserAgent]("user-agent"),
       tags = Seq("Auth")
@@ -265,8 +281,8 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
   path("/v1/auth/sessions/{sessionId}")(
     supports(
       DELETE,
-      description = "Revoke a specific session",
-      summary = "Revoke a refresh token by its ID",
+      description = "Revoke a specific session: the whole refresh-token family behind the given id, including any rotation that lands concurrently",
+      summary = "Revoke a session by its id",
       securitySchemes = Seq(bearerScheme),
       pathParameters = p[UUID]("sessionId"),
       tags = Seq("Auth")

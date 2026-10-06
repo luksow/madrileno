@@ -78,10 +78,14 @@ class RefreshTokenSpec extends AnyWordSpec with Matchers {
       val userAgent = UserAgent("test-browser")
       val ip        = TestData.defaultIpAddress
 
-      val token = RefreshToken.mint(id, familyId, secret.hash, now, userId, userAgent, ip, validFor = Duration.ofDays(30))
+      val family = RefreshTokenFamily(familyId, now.minusSeconds(3600))
+
+      val token = RefreshToken.mint(id, family, secret.hash, now, userId, userAgent, ip, validFor = Duration.ofDays(30))
 
       token.id shouldBe id
       token.familyId shouldBe familyId
+      token.familyCreatedAt shouldBe family.createdAt
+      token.family shouldBe family
       token.secretHash shouldBe secret.hash
       token.userId shouldBe userId
       token.userAgent shouldBe userAgent
@@ -90,6 +94,17 @@ class RefreshTokenSpec extends AnyWordSpec with Matchers {
       token.expiresAt shouldBe now.plus(Duration.ofDays(30))
       token.isValid(now) shouldBe true
       token.isValid(now.plus(Duration.ofDays(31))) shouldBe false
+    }
+  }
+
+  "RefreshTokenFamily.olderThan" should {
+    val maxAge = Duration.ofDays(365)
+    val family = RefreshTokenFamily(TestData.randomRefreshTokenFamilyId(), now)
+
+    "be false until the maximum age is reached and true from then on" in {
+      family.olderThan(maxAge, now) shouldBe false
+      family.olderThan(maxAge, now.plus(maxAge).minusSeconds(1)) shouldBe false
+      family.olderThan(maxAge, now.plus(maxAge)) shouldBe true
     }
   }
 

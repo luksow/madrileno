@@ -15,6 +15,10 @@ object RefreshTokenId extends Opaque[RefreshTokenId, UUID]
 opaque type RefreshTokenFamilyId = UUID
 object RefreshTokenFamilyId extends Opaque[RefreshTokenFamilyId, UUID]
 
+final case class RefreshTokenFamily(id: RefreshTokenFamilyId, createdAt: Instant) {
+  def olderThan(maxAge: Duration, now: Instant): Boolean = !now.isBefore(createdAt.plus(maxAge))
+}
+
 final case class RefreshTokenSecret private (value: String) {
   def hash: RefreshTokenSecretHash = RefreshTokenSecretHash(Sha256.base64Url(value))
 
@@ -52,6 +56,7 @@ object UserAgent extends Opaque[UserAgent, String] {
 final case class RefreshToken(
   id: RefreshTokenId,
   familyId: RefreshTokenFamilyId,
+  familyCreatedAt: Instant,
   secretHash: RefreshTokenSecretHash,
   userId: UserId,
   userAgent: UserAgent,
@@ -60,6 +65,8 @@ final case class RefreshToken(
   usedAt: Option[Instant],
   deletedAt: Option[Instant],
   expiresAt: Instant) {
+  def family: RefreshTokenFamily = RefreshTokenFamily(familyId, familyCreatedAt)
+
   def isValid(now: Instant): Boolean = {
     deletedAt.isEmpty && usedAt.isEmpty && now.isBefore(expiresAt)
   }
@@ -84,7 +91,7 @@ final case class RefreshToken(
 object RefreshToken {
   def mint(
     id: RefreshTokenId,
-    familyId: RefreshTokenFamilyId,
+    family: RefreshTokenFamily,
     secretHash: RefreshTokenSecretHash,
     now: Instant,
     userId: UserId,
@@ -94,7 +101,8 @@ object RefreshToken {
   ): RefreshToken =
     RefreshToken(
       id = id,
-      familyId = familyId,
+      familyId = family.id,
+      familyCreatedAt = family.createdAt,
       secretHash = secretHash,
       userId = userId,
       userAgent = userAgent,

@@ -18,11 +18,11 @@ class UserAuthenticator(jwtService: JwtService)(using TelemetryContext)
         jwtService.decode[AuthContext](credentials.token) match {
           case DecodingResult.Decoded(authContext) => IO.pure(Right(authContext))
           case DecodingResult.InvalidToken(t)      =>
-            logger.warn(t)(s"Invalid token: $credentials").as(AppChallenge)
+            logger.warn(t)("Invalid bearer token").as(AppChallenge)
           case DecodingResult.ParsingFailure(t) =>
-            logger.warn(t)(s"Token parsing failure: $credentials").as(AppChallenge)
+            logger.warn(t)("Bearer token parsing failure").as(AppChallenge)
           case DecodingResult.Expired(_) =>
-            logger.warn(s"Expired token: $credentials").as(AppChallenge)
+            logger.warn("Expired bearer token").as(AppChallenge)
         }
       case _ => AppChallengeIO
     }

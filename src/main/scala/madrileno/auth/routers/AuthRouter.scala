@@ -1,11 +1,13 @@
 package madrileno.auth.routers
 
 import com.comcast.ip4s.*
-import madrileno.auth.domain.{AuthContext, ExternalAuthToken, Provider, RefreshTokenId, UserAgent}
+import madrileno.auth.domain.{AuthContext, ExternalAuthToken, Provider, RefreshTokenFamilyId, UserAgent}
 import madrileno.auth.routers.dto.*
-import madrileno.auth.services.*
+import madrileno.auth.services.{AuthenticationResult as AuthOutcome, *}
 import madrileno.utils.http.{BaseRouter, RateLimitDirectives, RateLimiterRuntime}
 import madrileno.utils.observability.TelemetryContext
+import org.http4s.Header
+import org.typelevel.ci.*
 import pl.iterators.stir.marshalling.ToResponseMarshallable
 import pl.iterators.stir.server.Route
 
@@ -17,7 +19,17 @@ class AuthRouter(authenticationService: AuthenticationService, override protecte
 
   private val unknownIpAddress: IpAddress = ipv4"0.0.0.0"
 
-  val routes: Route = {
+  private val noStore = respondWithHeaders(Header.Raw(ci"Cache-Control", "no-store"), Header.Raw(ci"Pragma", "no-cache"))
+
+  private def tokenResponse(invalidToken: String, providerUnavailable: => ToResponseMarshallable): AuthOutcome => ToResponseMarshallable = {
+    case AuthOutcome.Authenticated(jwt, rt) => Ok -> AuthenticatedResponse(jwt, rt.secret, userCreated = false)
+    case AuthOutcome.UserCreated(jwt, rt)   => Ok -> AuthenticatedResponse(jwt, rt.secret, userCreated = true)
+    case AuthOutcome.UserBlocked            => error(Locked, "user-blocked", "User is blocked")
+    case AuthOutcome.InvalidToken           => error(Unauthorized, "invalid-token", invalidToken)
+    case AuthOutcome.ProviderUnavailable    => providerUnavailable
+  }
+
+  val routes: Route = noStore {
     (post & path("auth" / "firebase") & rateLimited("auth.firebase", to = 10, within = 1.minute) & entity(
       as[AuthWithFirebaseRequest]
     ) & pathEndOrSingleSlash & optionalHeaderValueByName("User-Agent") & extractClientIP) {
@@ -35,14 +47,12 @@ class AuthRouter(authenticationService: AuthenticationService, override protecte
             )
           authenticationService
             .authenticateWithProvider(Provider.Firebase, command)
-            .map[ToResponseMarshallable] {
-              case AuthenticationResult.Authenticated(jwt, rt) => Ok -> AuthenticatedResponse(jwt, rt.secret, userCreated = false)
-              case AuthenticationResult.UserCreated(jwt, rt)   => Ok -> AuthenticatedResponse(jwt, rt.secret, userCreated = true)
-              case AuthenticationResult.UserBlocked            => error(Locked, "user-blocked", "User is blocked")
-              case AuthenticationResult.InvalidToken           => error(Unauthorized, "invalid-token", "Invalid Firebase token")
-              case AuthenticationResult.ProviderUnavailable    =>
-                error(ServiceUnavailable, "provider-unavailable", "Firebase authentication is not configured")
-            }
+            .map(
+              tokenResponse(
+                invalidToken = "Invalid Firebase token",
+                providerUnavailable = error(ServiceUnavailable, "provider-unavailable", "Firebase authentication is not configured")
+              )
+            )
         }
     } ~
       (post & path("auth" / "refresh-token") & rateLimited("auth.refresh", to = 30, within = 1.minute) & entity(
@@ -62,13 +72,12 @@ class AuthRouter(authenticationService: AuthenticationService, override protecte
               )
             authenticationService
               .authenticateWithRefreshToken(command)
-              .map[ToResponseMarshallable] {
-                case AuthenticationResult.Authenticated(jwt, rt) => Ok -> AuthenticatedResponse(jwt, rt.secret, userCreated = false)
-                case AuthenticationResult.UserCreated(jwt, rt)   => Ok -> AuthenticatedResponse(jwt, rt.secret, userCreated = true)
-                case AuthenticationResult.UserBlocked            => error(Locked, "user-blocked", "User is blocked")
-                case AuthenticationResult.InvalidToken           => error(Unauthorized, "invalid-token", "Invalid refresh token")
-                case AuthenticationResult.ProviderUnavailable => error(ServiceUnavailable, "provider-unavailable", "Authentication is not available")
-              }
+              .map(
+                tokenResponse(
+                  invalidToken = "Invalid refresh token",
+                  providerUnavailable = error(ServiceUnavailable, "provider-unavailable", "Authentication is not available")
+                )
+              )
           }
       } ~
       (post & path("auth" / "oidc" / Segment.as[Provider]) & rateLimited("auth.oidc", to = 10, within = 1.minute) & entity(
@@ -89,13 +98,12 @@ class AuthRouter(authenticationService: AuthenticationService, override protecte
               )
             authenticationService
               .authenticateWithProvider(provider, command)
-              .map[ToResponseMarshallable] {
-                case AuthenticationResult.Authenticated(jwt, rt) => Ok -> AuthenticatedResponse(jwt, rt.secret, userCreated = false)
-                case AuthenticationResult.UserCreated(jwt, rt)   => Ok -> AuthenticatedResponse(jwt, rt.secret, userCreated = true)
-                case AuthenticationResult.UserBlocked            => error(Locked, "user-blocked", "User is blocked")
-                case AuthenticationResult.InvalidToken           => error(Unauthorized, "invalid-token", "Invalid ID token")
-                case AuthenticationResult.ProviderUnavailable    => error(NotFound, "unknown-provider", s"No auth provider '$provider'")
-              }
+              .map(
+                tokenResponse(
+                  invalidToken = "Invalid ID token",
+                  providerUnavailable = error(NotFound, "unknown-provider", s"No auth provider '$provider'")
+                )
+              )
           }
       } ~
       (post & path("auth" / "dev") & rateLimited("auth.dev", to = 10, within = 1.minute) & entity(
@@ -115,13 +123,12 @@ class AuthRouter(authenticationService: AuthenticationService, override protecte
               )
             authenticationService
               .authenticateWithProvider(Provider.Dev, command)
-              .map[ToResponseMarshallable] {
-                case AuthenticationResult.Authenticated(jwt, rt) => Ok -> AuthenticatedResponse(jwt, rt.secret, userCreated = false)
-                case AuthenticationResult.UserCreated(jwt, rt)   => Ok -> AuthenticatedResponse(jwt, rt.secret, userCreated = true)
-                case AuthenticationResult.UserBlocked            => error(Locked, "user-blocked", "User is blocked")
-                case AuthenticationResult.InvalidToken           => error(Unauthorized, "invalid-token", "dev auth requires an email address")
-                case AuthenticationResult.ProviderUnavailable    => error(NotFound, "unknown-provider", "dev auth is not enabled")
-              }
+              .map(
+                tokenResponse(
+                  invalidToken = "dev auth requires an email address",
+                  providerUnavailable = error(NotFound, "unknown-provider", "dev auth is not enabled")
+                )
+              )
           }
       }
   }
@@ -129,24 +136,24 @@ class AuthRouter(authenticationService: AuthenticationService, override protecte
   def authedRoutes(authContext: AuthContext): Route = {
     (get & path("auth" / "sessions") & pathEndOrSingleSlash) {
       complete {
-        val command = ListRefreshTokensCommand(authContext.userId)
+        val command = ListSessionsCommand(authContext.userId)
         authenticationService
-          .listRefreshTokens(command)
-          .map[ToResponseMarshallable] { rts => Ok -> rts.map(RefreshTokenDto(_)) }
+          .listSessions(command)
+          .map[ToResponseMarshallable] { tokens => Ok -> tokens.map(SessionDto(_)) }
       }
     } ~
-      (delete & path("auth" / "sessions" / JavaUUID.as[RefreshTokenId]) & pathEndOrSingleSlash) { refreshTokenId =>
+      (delete & path("auth" / "sessions" / JavaUUID.as[RefreshTokenFamilyId]) & pathEndOrSingleSlash) { familyId =>
         complete {
-          val command = RevokeRefreshTokenCommand(authContext.userId, refreshTokenId)
+          val command = RevokeSessionCommand(authContext.userId, familyId)
           authenticationService
-            .revokeRefreshToken(command)
+            .revokeSession(command)
             .map[ToResponseMarshallable] { _ => NoContent }
         }
       } ~ (delete & path("auth" / "sessions") & parameters("user-agent".as[UserAgent]) & pathEndOrSingleSlash) { userAgent =>
         complete {
-          val command = RevokeRefreshTokensCommand(authContext.userId, userAgent)
+          val command = RevokeSessionsByUserAgentCommand(authContext.userId, userAgent)
           authenticationService
-            .revokeRefreshTokens(command)
+            .revokeSessionsByUserAgent(command)
             .map[ToResponseMarshallable] { _ => NoContent }
         }
       }

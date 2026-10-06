@@ -95,40 +95,55 @@ class AuthenticationService(
   }
 
   def authenticateWithRefreshToken(command: AuthenticateWithRefreshTokenCommand): IO[AuthenticationResult] = {
-    transactor.inTransaction {
-      Clock[IO].realTimeInstant.flatMap { now =>
-        refreshTokenRepository
-          .findAndLockFamilyBySecretHash(command.refreshToken.hash)
-          .flatMap {
-            case Some(refreshToken) if refreshToken.isValid(now) =>
-              refreshTokenRepository.update(refreshToken.id, _.usedAt(now)) *>
-                generateTokens(
-                  refreshToken.userId,
-                  refreshToken.familyId,
-                  command.userAgent,
-                  command.ipAddress,
-                  now,
-                  AuthenticationResult.Authenticated.apply
-                )
-            case Some(refreshToken) if refreshToken.isUsed && !refreshToken.isRevoked && refreshToken.wasUsedWithin(config.reuseGrace, now) =>
-              logger
-                .warn(s"Refresh token ${refreshToken.id} was replayed within the reuse grace window; family ${refreshToken.familyId} kept")
-                .as(AuthenticationResult.InvalidToken)
-            case Some(refreshToken) if refreshToken.isUsed && !refreshToken.isRevoked =>
-              refreshTokenRepository.revokeFamily(refreshToken.familyId, now) *>
-                logger
-                  .warn(s"Refresh token ${refreshToken.id} was replayed; revoked family ${refreshToken.familyId} for user ${refreshToken.userId}")
-                  .as(AuthenticationResult.InvalidToken)
-            case Some(refreshToken) =>
-              logger.warn(s"Refresh token ${refreshToken.id} is revoked or expired").as(AuthenticationResult.InvalidToken)
-            case None =>
-              logger.warn("Refresh token not found").as(AuthenticationResult.InvalidToken)
+    val client = s"${command.ipAddress} (${command.userAgent})"
+    RefreshTokenSecret.from(command.refreshToken) match {
+      case Left(_) =>
+        logger.warn(s"Malformed refresh token from $client").as(AuthenticationResult.InvalidToken)
+      case Right(secret) =>
+        transactor.inTransaction {
+          Clock[IO].realTimeInstant.flatMap { now =>
+            refreshTokenRepository
+              .findAndLockFamilyBySecretHash(secret.hash)
+              .flatMap {
+                case Some(refreshToken) if refreshToken.isValid(now) && refreshToken.family.olderThan(config.maxFamilyAge, now) =>
+                  refreshTokenRepository.revokeFamily(refreshToken.familyId, now) *>
+                    logger
+                      .info(s"Refresh token family ${refreshToken.familyId} for user ${refreshToken.userId} reached its maximum age; revoked")
+                      .as(AuthenticationResult.InvalidToken)
+                case Some(refreshToken) if refreshToken.isValid(now) =>
+                  refreshTokenRepository.update(refreshToken.usedAt(now)) *>
+                    generateTokens(
+                      refreshToken.userId,
+                      refreshToken.family,
+                      command.userAgent,
+                      command.ipAddress,
+                      now,
+                      AuthenticationResult.Authenticated.apply
+                    )
+                case Some(refreshToken) if refreshToken.isUsed && !refreshToken.isRevoked && refreshToken.wasUsedWithin(config.reuseGrace, now) =>
+                  logger
+                    .warn(
+                      s"Refresh token ${refreshToken.id} was replayed within the reuse grace window from $client; family ${refreshToken.familyId} kept"
+                    )
+                    .as(AuthenticationResult.InvalidToken)
+                case Some(refreshToken) if refreshToken.isUsed && !refreshToken.isRevoked =>
+                  refreshTokenRepository.revokeFamily(refreshToken.familyId, now) *>
+                    logger
+                      .warn(
+                        s"Refresh token ${refreshToken.id} was replayed from $client; revoked family ${refreshToken.familyId} for user ${refreshToken.userId}"
+                      )
+                      .as(AuthenticationResult.InvalidToken)
+                case Some(refreshToken) =>
+                  logger.warn(s"Refresh token ${refreshToken.id} presented from $client is revoked or expired").as(AuthenticationResult.InvalidToken)
+                case None =>
+                  logger.warn(s"Unknown refresh token presented from $client").as(AuthenticationResult.InvalidToken)
+              }
           }
-      }
+        }
     }
   }
 
-  def listRefreshTokens(command: ListRefreshTokensCommand): IO[List[RefreshToken]] = {
+  def listSessions(command: ListSessionsCommand): IO[List[RefreshToken]] = {
     Clock[IO].realTimeInstant.flatMap { now =>
       transactor.inSession {
         refreshTokenRepository.listActive(command.userId, now)
@@ -136,44 +151,33 @@ class AuthenticationService(
     }
   }
 
-  def revokeRefreshToken(command: RevokeRefreshTokenCommand): IO[Option[RefreshToken]] = {
+  def revokeSession(command: RevokeSessionCommand): IO[Boolean] = {
     Clock[IO].realTimeInstant.flatMap { now =>
       transactor.inTransaction {
-        refreshTokenRepository.findForUpdate(command.refreshTokenId).flatMap {
-          case Some(refreshToken) if refreshToken.userId != command.userId =>
-            logger
-              .warn(
-                s"Attempt to revoke refresh token ${command.refreshTokenId} for user ${command.userId} which belongs to another user ${refreshToken.userId}"
-              )
-              .as(None)
-          case Some(refreshToken) if !refreshToken.isValid(now) =>
-            logger.warn(s"Refresh token ${command.refreshTokenId} for user ${command.userId} is already deleted, used, or expired").as(None)
-          case Some(refreshToken) =>
-            val deleted = refreshToken.deletedAt(now)
-            refreshTokenRepository.update(deleted) *>
-              logger.info(s"Revoked refresh token ${command.refreshTokenId} for user ${command.userId}").as(Some(deleted))
-          case _ =>
-            logger.warn(s"Refresh token ${command.refreshTokenId} for user ${command.userId} not found").as(None)
-        }
+        refreshTokenRepository.lockFamily(command.familyId) *>
+          refreshTokenRepository.listActiveByFamily(command.familyId, now).flatMap {
+            case Nil =>
+              logger.warn(s"Session ${command.familyId} for user ${command.userId} not found or already inactive").as(false)
+            case tokens if tokens.exists(_.userId != command.userId) =>
+              logger.warn(s"Attempt to revoke session ${command.familyId} by user ${command.userId} who does not own it").as(false)
+            case _ =>
+              refreshTokenRepository.revokeFamily(command.familyId, now) *>
+                logger.info(s"Revoked session ${command.familyId} for user ${command.userId}").as(true)
+          }
       }
     }
   }
 
-  def revokeRefreshTokens(command: RevokeRefreshTokensCommand): IO[List[RefreshToken]] = {
+  def revokeSessionsByUserAgent(command: RevokeSessionsByUserAgentCommand): IO[Int] = {
     Clock[IO].realTimeInstant.flatMap { now =>
       transactor.inTransaction {
         refreshTokenRepository
-          .listActiveForUpdate(command.userId, command.userAgent, now)
-          .flatMap { tokens =>
-            val updatedTokens = tokens.map(_.deletedAt(now))
-            updatedTokens.map(refreshTokenRepository.update).sequence.flatMap { updateResults =>
-              if (updateResults.isEmpty)
-                logger.warn(s"Refresh token for ${command.userId} and ${command.userAgent} were not found").as(updatedTokens)
-              else
-                logger
-                  .info(s"Revoked ${updatedTokens.size} refresh tokens for user ${command.userId} and user agent ${command.userAgent}")
-                  .as(updatedTokens)
-            }
+          .listActiveByUserAgent(command.userId, command.userAgent, now)
+          .map(_.map(_.familyId).distinct)
+          .flatMap { families =>
+            refreshTokenRepository.lockFamilies(families) *>
+              families.traverse_(refreshTokenRepository.revokeFamily(_, now)) *>
+              logger.info(s"Revoked ${families.size} sessions for user ${command.userId} and user agent ${command.userAgent}").as(families.size)
           }
       }
     }
@@ -197,13 +201,13 @@ class AuthenticationService(
     success: (InternalJwt, IssuedRefreshToken) => AuthenticationResult
   ): DB[AuthenticationResult] = {
     IdGenerator.generateId(RefreshTokenFamilyId).flatMap { familyId =>
-      generateTokens(userId, familyId, userAgent, ipAddress, now, success)
+      generateTokens(userId, RefreshTokenFamily(familyId, now), userAgent, ipAddress, now, success)
     }
   }
 
   private def generateTokens(
     userId: UserId,
-    familyId: RefreshTokenFamilyId,
+    family: RefreshTokenFamily,
     userAgent: UserAgent,
     ipAddress: IpAddress,
     now: Instant,
@@ -216,9 +220,9 @@ class AuthenticationService(
       jwt = jwtService.encode(AuthContext(user), now)
       id     <- IdGenerator.generateId(RefreshTokenId).seal
       secret <- RandomSecret.generate(RefreshTokenSecret.byteLength).map(RefreshTokenSecret.apply).seal
-      refreshToken = RefreshToken.mint(id, familyId, secret.hash, now, user.id, userAgent, ipAddress, config.validFor)
+      refreshToken = RefreshToken.mint(id, family, secret.hash, now, user.id, userAgent, ipAddress, config.validFor)
       _ <- refreshTokenRepository.save(refreshToken).seal
-      _ <- logger.debug(s"Issued refresh token ${refreshToken.id} in family $familyId for user: $userId").seal
+      _ <- logger.debug(s"Issued refresh token ${refreshToken.id} in family ${family.id} for user: $userId").seal
     } yield {
       success(jwt, IssuedRefreshToken(refreshToken, secret))
     }).run
@@ -231,7 +235,7 @@ final case class AuthenticateWithExternalTokenCommand(
   ipAddress: IpAddress)
 
 final case class AuthenticateWithRefreshTokenCommand(
-  refreshToken: RefreshTokenSecret,
+  refreshToken: String,
   userAgent: UserAgent,
   ipAddress: IpAddress)
 
@@ -243,12 +247,16 @@ enum AuthenticationResult {
   case ProviderUnavailable
 }
 
-final case class ListRefreshTokensCommand(userId: UserId)
+final case class ListSessionsCommand(userId: UserId)
 
-final case class RevokeRefreshTokenCommand(userId: UserId, refreshTokenId: RefreshTokenId)
+final case class RevokeSessionCommand(userId: UserId, familyId: RefreshTokenFamilyId)
 
-final case class RevokeRefreshTokensCommand(userId: UserId, userAgent: UserAgent)
+final case class RevokeSessionsByUserAgentCommand(userId: UserId, userAgent: UserAgent)
 
 object AuthenticationService {
-  final case class Config(validFor: Duration, reuseGrace: Duration) derives ConfigReader
+  final case class Config(
+    validFor: Duration,
+    reuseGrace: Duration,
+    maxFamilyAge: Duration)
+      derives ConfigReader
 }

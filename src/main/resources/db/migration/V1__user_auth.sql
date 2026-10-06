@@ -28,6 +28,7 @@ create unique index user_auth_provider_user_id_active_uniq
 create table refresh_token(
     id UUID PRIMARY KEY,
     family_id UUID NOT NULL,
+    family_created_at TIMESTAMPTZ NOT NULL,
     secret_hash TEXT NOT NULL,
     user_id UUID NOT NULL REFERENCES "user" (id),
     user_agent TEXT NOT NULL,
@@ -41,3 +42,5 @@ create table refresh_token(
 create unique index refresh_token_secret_hash_uniq on refresh_token (secret_hash);
 
 create index refresh_token_family_id_idx on refresh_token (family_id);
+
+create index refresh_token_live_user_id_idx on refresh_token (user_id) WHERE used_at IS NULL AND deleted_at IS NULL;

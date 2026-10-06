@@ -43,9 +43,14 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
 
   private def freshVerifiedToken() = TestData.verifiedExternalToken()
 
-  private val reuseGrace = Duration.ofSeconds(60)
+  private val reuseGrace   = Duration.ofSeconds(60)
+  private val maxFamilyAge = Duration.ofDays(365)
 
-  private def serviceWithFreshAuth(validFor: Duration = Duration.ofDays(90)) = {
+  private def serviceWithFreshAuth(
+    validFor: Duration = Duration.ofDays(90),
+    reuseGrace: Duration = reuseGrace,
+    maxFamilyAge: Duration = maxFamilyAge
+  ) = {
     val token     = freshVerifiedToken()
     val verifiers = AuthVerifiers(Map(Provider.Firebase -> new FakeAuthVerifier(token)))
     val svc       = new AuthenticationService(
@@ -56,7 +61,7 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
       jwtService,
       transactor,
       mailer,
-      AuthenticationService.Config(validFor, reuseGrace)
+      AuthenticationService.Config(validFor, reuseGrace, maxFamilyAge)
     )
     (svc, token)
   }
@@ -135,8 +140,10 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
     case other                                         => fail(s"Expected tokens, got $other")
   }
 
-  private def refreshWith(secret: RefreshTokenSecret) =
-    AuthenticateWithRefreshTokenCommand(secret, UserAgent("test-agent"), TestData.defaultIpAddress)
+  private def refreshWithRaw(secret: String, userAgent: String = "test-agent") =
+    AuthenticateWithRefreshTokenCommand(secret, UserAgent(userAgent), TestData.defaultIpAddress)
+
+  private def refreshWith(secret: RefreshTokenSecret) = refreshWithRaw(secret.value)
 
   "authenticateWithRefreshToken" should {
     "authenticate with a valid refresh token and rotate within the same family" in {
@@ -150,6 +157,46 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
         val second = issuedOf(result)
         second.token.familyId shouldBe first.token.familyId
         second.secret should not be first.secret
+      }
+    }
+
+    "reject a malformed refresh token, including a row id, as invalid without touching the database" in {
+      val (service, _) = serviceWithFreshAuth()
+      for {
+        malformed <- service.authenticateWithRefreshToken(refreshWithRaw("not-a-token"))
+        rowId     <- service.authenticateWithRefreshToken(refreshWithRaw(TestData.randomRefreshTokenId().toString))
+      } yield {
+        malformed shouldBe AuthenticationResult.InvalidToken
+        rowId shouldBe AuthenticationResult.InvalidToken
+      }
+    }
+
+    "revoke the family on an immediate replay when the reuse grace is zero" in {
+      val (service, _) = serviceWithFreshAuth(reuseGrace = Duration.ZERO)
+      for {
+        login <- service.authenticateWithProvider(Provider.Firebase, command)
+        first = issuedOf(login)
+        rotated <- service.authenticateWithRefreshToken(refreshWith(first.secret))
+        second = issuedOf(rotated)
+        replay    <- service.authenticateWithRefreshToken(refreshWith(first.secret))
+        afterward <- service.authenticateWithRefreshToken(refreshWith(second.secret))
+      } yield {
+        replay shouldBe AuthenticationResult.InvalidToken
+        afterward shouldBe AuthenticationResult.InvalidToken
+      }
+    }
+
+    "revoke a family that has reached its maximum age even when the token itself is still valid" in {
+      val (service, _) = serviceWithFreshAuth(validFor = Duration.ofDays(3650), maxFamilyAge = Duration.ofDays(1))
+      for {
+        login <- service.authenticateWithProvider(Provider.Firebase, command)
+        issued = issuedOf(login)
+        _      = testClock.advance(Duration.ofDays(2).toMillis)
+        result   <- service.authenticateWithRefreshToken(refreshWith(issued.secret))
+        sessions <- service.listSessions(ListSessionsCommand(issued.token.userId))
+      } yield {
+        result shouldBe AuthenticationResult.InvalidToken
+        sessions.map(_.familyId) should not contain issued.token.familyId
       }
     }
 
@@ -214,6 +261,75 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
         _      = testClock.advance(Duration.ofMinutes(10).toMillis)
         result <- service.authenticateWithRefreshToken(refreshWith(issued.secret))
       } yield result shouldBe AuthenticationResult.InvalidToken
+    }
+  }
+
+  "sessions" should {
+    "list one live entry per family and keep the family id stable across rotations" in {
+      val (service, _) = serviceWithFreshAuth()
+      for {
+        login <- service.authenticateWithProvider(Provider.Firebase, command)
+        first = issuedOf(login)
+        rotated <- service.authenticateWithRefreshToken(refreshWith(first.secret))
+        second = issuedOf(rotated)
+        sessions <- service.listSessions(ListSessionsCommand(first.token.userId))
+      } yield {
+        sessions.map(_.familyId) shouldBe List(first.token.familyId)
+        sessions.map(_.id) shouldBe List(second.token.id)
+      }
+    }
+
+    "revokeSession revokes the whole family so its live successor stops working" in {
+      val (service, _) = serviceWithFreshAuth()
+      for {
+        login <- service.authenticateWithProvider(Provider.Firebase, command)
+        first = issuedOf(login)
+        rotated <- service.authenticateWithRefreshToken(refreshWith(first.secret))
+        second = issuedOf(rotated)
+        revoked   <- service.revokeSession(RevokeSessionCommand(first.token.userId, first.token.familyId))
+        afterward <- service.authenticateWithRefreshToken(refreshWith(second.secret))
+        sessions  <- service.listSessions(ListSessionsCommand(first.token.userId))
+      } yield {
+        revoked shouldBe true
+        afterward shouldBe AuthenticationResult.InvalidToken
+        sessions shouldBe empty
+      }
+    }
+
+    "revokeSession refuses a family owned by another user" in {
+      val (service, _) = serviceWithFreshAuth()
+      for {
+        login <- service.authenticateWithProvider(Provider.Firebase, command)
+        issued = issuedOf(login)
+        revoked   <- service.revokeSession(RevokeSessionCommand(TestData.randomUserId(), issued.token.familyId))
+        afterward <- service.authenticateWithRefreshToken(refreshWith(issued.secret))
+      } yield {
+        revoked shouldBe false
+        afterward shouldBe a[AuthenticationResult.Authenticated]
+      }
+    }
+
+    "revokeSessionsByUserAgent revokes every family of that user agent and leaves the others" in {
+      val (service, _) = serviceWithFreshAuth()
+      val firefox      = command.copy(userAgent = UserAgent("Firefox"))
+      val chrome       = command.copy(userAgent = UserAgent("Chrome"))
+      for {
+        loginA <- service.authenticateWithProvider(Provider.Firebase, firefox)
+        loginB <- service.authenticateWithProvider(Provider.Firebase, firefox)
+        loginC <- service.authenticateWithProvider(Provider.Firebase, chrome)
+        issuedA = issuedOf(loginA)
+        issuedB = issuedOf(loginB)
+        issuedC = issuedOf(loginC)
+        count  <- service.revokeSessionsByUserAgent(RevokeSessionsByUserAgentCommand(issuedA.token.userId, UserAgent("Firefox")))
+        aAfter <- service.authenticateWithRefreshToken(refreshWith(issuedA.secret))
+        bAfter <- service.authenticateWithRefreshToken(refreshWith(issuedB.secret))
+        cAfter <- service.authenticateWithRefreshToken(refreshWith(issuedC.secret))
+      } yield {
+        count shouldBe 2
+        aAfter shouldBe AuthenticationResult.InvalidToken
+        bAfter shouldBe AuthenticationResult.InvalidToken
+        cAfter shouldBe a[AuthenticationResult.Authenticated]
+      }
     }
   }
 }

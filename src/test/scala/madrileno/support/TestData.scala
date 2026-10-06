@@ -53,6 +53,7 @@ object TestData {
   def refreshToken(
     id: RefreshTokenId = randomRefreshTokenId(),
     familyId: RefreshTokenFamilyId = randomRefreshTokenFamilyId(),
+    familyCreatedAt: Instant = Instant.now(),
     secretHash: RefreshTokenSecretHash = refreshTokenSecret().hash,
     userId: UserId = randomUserId(),
     userAgent: UserAgent = UserAgent("test-agent"),
@@ -61,18 +62,27 @@ object TestData {
     usedAt: Option[Instant] = None,
     deletedAt: Option[Instant] = None,
     expiresAt: Instant = Instant.now().plus(Duration.ofDays(90))
-  ): RefreshToken = RefreshToken(id, familyId, secretHash, userId, userAgent, ipAddress, createdAt, usedAt, deletedAt, expiresAt)
+  ): RefreshToken = RefreshToken(id, familyId, familyCreatedAt, secretHash, userId, userAgent, ipAddress, createdAt, usedAt, deletedAt, expiresAt)
 
   def issuedRefreshToken(
     userId: UserId = randomUserId(),
     familyId: RefreshTokenFamilyId = randomRefreshTokenFamilyId(),
+    familyCreatedAt: Instant = Instant.now(),
     userAgent: UserAgent = UserAgent("test-agent"),
     createdAt: Instant = Instant.now(),
     usedAt: Option[Instant] = None
   ): IssuedRefreshToken = {
     val secret = refreshTokenSecret()
     IssuedRefreshToken(
-      refreshToken(familyId = familyId, secretHash = secret.hash, userId = userId, userAgent = userAgent, createdAt = createdAt, usedAt = usedAt),
+      refreshToken(
+        familyId = familyId,
+        familyCreatedAt = familyCreatedAt,
+        secretHash = secret.hash,
+        userId = userId,
+        userAgent = userAgent,
+        createdAt = createdAt,
+        usedAt = usedAt
+      ),
       secret
     )
   }
