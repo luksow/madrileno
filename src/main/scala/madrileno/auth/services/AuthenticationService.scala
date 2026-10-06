@@ -103,9 +103,9 @@ class AuthenticationService(
               refreshTokenRepository.update(refreshToken.id, _.usedAt(now)) *>
                 generateTokens(refreshToken.userId, command.userAgent, command.ipAddress, now, AuthenticationResult.Authenticated.apply)
             case Some(refreshToken) =>
-              logger.warn(s"Refresh token $refreshToken is already used, deleted, or expired").as(AuthenticationResult.InvalidToken)
+              logger.warn(s"Refresh token ${refreshToken.id.fingerprint} is already used, deleted, or expired").as(AuthenticationResult.InvalidToken)
             case None =>
-              logger.warn(s"Refresh token ${command.refreshToken} not found").as(AuthenticationResult.InvalidToken)
+              logger.warn(s"Refresh token ${command.refreshToken.fingerprint} not found").as(AuthenticationResult.InvalidToken)
           }
       }
     }
@@ -126,17 +126,17 @@ class AuthenticationService(
           case Some(refreshToken) if refreshToken.userId != command.userId =>
             logger
               .warn(
-                s"Attempt to revoke refresh token ${command.refreshTokenId} for user ${command.userId} which belongs to another user ${refreshToken.userId}"
+                s"Attempt to revoke refresh token ${command.refreshTokenId.fingerprint} for user ${command.userId} which belongs to another user ${refreshToken.userId}"
               )
               .as(None)
           case Some(refreshToken) if !refreshToken.isValid(now) =>
-            logger.warn(s"Refresh token ${command.refreshTokenId} for user ${command.userId} is already deleted, used, or expired").as(None)
+            logger.warn(s"Refresh token ${command.refreshTokenId.fingerprint} for user ${command.userId} is already deleted, used, or expired").as(None)
           case Some(refreshToken) =>
             val deleted = refreshToken.deletedAt(now)
             refreshTokenRepository.update(deleted) *>
-              logger.info(s"Revoked refresh token ${command.refreshTokenId} for user ${command.userId}").as(Some(deleted))
+              logger.info(s"Revoked refresh token ${command.refreshTokenId.fingerprint} for user ${command.userId}").as(Some(deleted))
           case _ =>
-            logger.warn(s"Refresh token ${command.refreshTokenId} for user ${command.userId} not found").as(None)
+            logger.warn(s"Refresh token ${command.refreshTokenId.fingerprint} for user ${command.userId} not found").as(None)
         }
       }
     }
@@ -189,7 +189,7 @@ class AuthenticationService(
                         .map(id => RefreshToken.mint(id, now, user.id, userAgent, ipAddress, config.validFor))
                         .seal
       _ <- refreshTokenRepository.save(refreshToken).seal
-      _ <- logger.debug(s"Generated JWT: $jwt and RefreshToken: $refreshToken for user: $userId").seal
+      _ <- logger.debug(s"Generated JWT ${jwt.fingerprint} and refresh token ${refreshToken.id.fingerprint} for user $userId").seal
     } yield {
       success(jwt, refreshToken)
     }).run

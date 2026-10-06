@@ -2,13 +2,18 @@ package madrileno.auth.domain
 
 import com.comcast.ip4s.IpAddress
 import madrileno.user.domain.UserId
+import madrileno.utils.observability.Fingerprint
 import pl.iterators.kebs.opaque.Opaque
 
 import java.time.{Duration, Instant}
 import java.util.UUID
 
 opaque type RefreshTokenId = UUID
-object RefreshTokenId extends Opaque[RefreshTokenId, UUID]
+object RefreshTokenId extends Opaque[RefreshTokenId, UUID] {
+  extension (id: RefreshTokenId) {
+    def fingerprint: Fingerprint = Fingerprint(id.toString)
+  }
+}
 
 opaque type UserAgent = String
 object UserAgent extends Opaque[UserAgent, String] {

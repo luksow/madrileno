@@ -3,7 +3,7 @@ package madrileno.auth.routers
 import cats.effect.IO
 import madrileno.auth.domain.AuthContext
 import madrileno.auth.services.{DecodingResult, JwtService}
-import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
+import madrileno.utils.observability.{Fingerprint, LoggingSupport, TelemetryContext}
 import org.http4s
 import org.http4s.*
 import pl.iterators.stir.server.directives.SecurityDirectives.AuthenticationResult
@@ -18,11 +18,11 @@ class UserAuthenticator(jwtService: JwtService)(using TelemetryContext)
         jwtService.decode[AuthContext](credentials.token) match {
           case DecodingResult.Decoded(authContext) => IO.pure(Right(authContext))
           case DecodingResult.InvalidToken(t)      =>
-            logger.warn(t)(s"Invalid token: $credentials").as(AppChallenge)
+            logger.warn(t)(s"Invalid token ${Fingerprint(credentials.token)}").as(AppChallenge)
           case DecodingResult.ParsingFailure(t) =>
-            logger.warn(t)(s"Token parsing failure: $credentials").as(AppChallenge)
+            logger.warn(t)(s"Token parsing failure ${Fingerprint(credentials.token)}").as(AppChallenge)
           case DecodingResult.Expired(_) =>
-            logger.warn(s"Expired token: $credentials").as(AppChallenge)
+            logger.warn(s"Expired token ${Fingerprint(credentials.token)}").as(AppChallenge)
         }
       case _ => AppChallengeIO
     }

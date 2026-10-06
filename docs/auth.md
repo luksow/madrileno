@@ -205,6 +205,10 @@ Industry-standard companions that are deliberately **not** pre-built, in the spi
 - **Grace period / undo.** Common practice is a 14–30 day window where the account is deactivated but recoverable. Here deletion is immediate and final; a grace period means deferring the anonymize+event behind a scheduled task that a re-login cancels.
 - **Pre-deletion data export.** GDPR-adjacent flows usually offer "download your data" first; there's no export endpoint.
 
+## Credentials in logs
+
+Request and response bodies are logged at `DEBUG`, but the login and refresh bodies never reach the logs raw: `jwt`, `refreshToken`, `idToken` and `firebaseJwtToken` are replaced by fingerprints, and the service and authenticator log the same fingerprints (`InternalJwt.fingerprint`, `RefreshTokenId.fingerprint`, ...) instead of values. `SecretsStayOutOfLogsSpec` fails the build if an issued or presented credential shows up in any log line. See [observability.md](observability.md#inbound-requestresponse-logging) for the mechanism and the one known gap (`GET`/`DELETE /v1/auth/sessions`).
+
 ## What you can't do
 
 - **Change the internal JWT's signing scheme to RS256/asymmetric.** `JwtService` uses HMAC. Easy to extend — provide a key pair and switch the algorithm — but not done out of the box.

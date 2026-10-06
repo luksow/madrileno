@@ -2,12 +2,17 @@ package madrileno.auth.domain
 
 import io.circe.{Decoder, Encoder, Json}
 import madrileno.user.domain.*
+import madrileno.utils.observability.Fingerprint
 import pl.iterators.kebs.opaque.Opaque
 
 import java.net.URI
 
 opaque type InternalJwt = String
-object InternalJwt extends Opaque[InternalJwt, String]
+object InternalJwt extends Opaque[InternalJwt, String] {
+  extension (jwt: InternalJwt) {
+    def fingerprint: Fingerprint = Fingerprint(jwt)
+  }
+}
 
 final case class AuthContext(
   userId: UserId,

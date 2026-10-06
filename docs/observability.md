@@ -157,7 +157,7 @@ ServerSpanDataProvider
   .optIntoHttpResponseHeaders(HeaderRedactor.default)
 ```
 
-`HeaderRedactor.default` ships with a sensible deny-list (Authorization, Cookie, Set-Cookie, etc.). The query/path redactor is `NeverRedact` — fine for an internal API where paths don't carry secrets. If you start putting tokens in URLs (don't, but if you must), implement a custom `QueryRedactor`.
+`HeaderRedactor.default` ships with a sensible deny-list (Authorization, Cookie, Set-Cookie, etc.). The query/path redactor is `NeverRedact` — fine for an internal API where paths don't carry secrets. The one exception today is `DELETE /v1/auth/sessions/{id}` (see [Inbound request/response logging](#inbound-requestresponse-logging)). If you start putting tokens in URLs (don't, but if you must), implement a custom `QueryRedactor`.
 
 ## Logback config
 
@@ -254,6 +254,21 @@ Errors:
 - **500 `heapdump-write-failed`** — out of disk, permission denied, etc. Message carries the underlying `IOException`.
 
 Cost: writing the hprof is `IO.blocking` (synchronous JNI write that streams the whole heap to disk). A few hundred ms for a small heap, tens of seconds for a multi-GB heap. The HTTP request holds the connection open for the duration — for very large heaps the client may time out; `scp` and inspect `/tmp` directly if that happens.
+
+## Inbound request/response logging
+
+Every request and response is logged once, at the level set by `logging.loglevel-request-response` (default 4 = `DEBUG`), by `logRedactedRequest` / `logRedactedResult` in `ApplicationLoader.routes`. They are the project's replacement for http4s-stir's `logRequest` / `logResult`, which can only switch body logging on or off for a whole subtree. Ours always log bodies, but never raw:
+
+- **JSON bodies are logged with sensitive fields fingerprinted.** `SensitiveJson.redact` walks the document and replaces the values of fields such as `jwt`, `refreshToken`, `idToken`, `firebaseJwtToken` or `password` (matched case-insensitively, ignoring `_` and `-`, at any depth) with a `Fingerprint`. The rest of the document is left intact, so a login still logs as `{"jwt":"fp:3f9a1c2b","refreshToken":"fp:8c01d7e4","userCreated":true}`.
+- **Other bodies are logged as content type and size.** `<image/jpeg, 184233 bytes>` is all you learn about an upload, and all you need.
+- **Sensitive headers are redacted** the way http4s does it (`Authorization: <REDACTED>`).
+- A JSON body over `maxBodyBytes` (4096) or one that fails to parse is logged as its size only; a truncated or malformed document could still carry a credential.
+
+A `Fingerprint` is `fp:` plus the first 32 bits of a SHA-256 of the secret. It is the same wherever the secret shows up: the domain types `InternalJwt`, `FirebaseJwt`, `ExternalAuthToken` and `RefreshTokenId` expose `.fingerprint`, and `AuthenticationService` / `UserAuthenticator` log that instead of the value. So when a refresh fails you can follow `fp:8c01d7e4` from the request body line to the service's `Refresh token fp:8c01d7e4 is already used` warning to the 401, in logs or in OpenObserve, without the refresh token ever leaving the process. The prefix is far too short to brute-force against credentials with 122+ bits of entropy.
+
+The guard is `SecretsStayOutOfLogsSpec`: it logs in, refreshes, replays the used token and presents a bogus bearer through the real route tree at `DEBUG`, captures every log event, and asserts that none of the issued or presented credentials appears in any line. It checks values, not field names, so a new DTO field carrying a secret under a name `SensitiveJson.SensitiveFields` does not know fails the build until the name is added. When you add such a field, add the name and extend the spec with the route.
+
+Known gap: refresh-token ids are also returned by `GET /v1/auth/sessions` under `id` and taken by `DELETE /v1/auth/sessions/{id}` in the path, where field-level redaction cannot tell them from any other id. Those appear raw in the request line and in the sessions response body. Closing that needs a separate, non-secret session identifier in the API; until then keep it in mind when reading those two lines.
 
 ## Outbound-HTTP request/response logging
 

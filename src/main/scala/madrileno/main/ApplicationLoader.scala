@@ -15,7 +15,7 @@ import madrileno.utils.events.bus.EventBusRuntime
 import madrileno.utils.events.outbox.{OutboxConfig, OutboxModule}
 import madrileno.utils.featureflag.FeatureFlagModule
 import madrileno.utils.featureflag.routers.FeatureFlagAdminRouter
-import madrileno.utils.http.{ApplicationRouteProvider, Handlers, RateLimiterRuntime}
+import madrileno.utils.http.{ApplicationRouteProvider, Handlers, RateLimiterRuntime, RedactedLoggingDirectives}
 import madrileno.utils.lifecycle.LifecycleProvider
 import madrileno.utils.mailer.{MailContext, MailPreviewProvider, MailPreviewRouter, Mailer, MailerConfig, SmtpSender}
 import madrileno.utils.observability.*
@@ -90,6 +90,7 @@ class ApplicationLoader(
     with MailPreviewProvider
     with LoggingSupport
     with Handlers
+    with RedactedLoggingDirectives
     with AuthModule
     with UserModule
     with AuctionModule
@@ -199,15 +200,15 @@ class ApplicationLoader(
     )
     onSuccess(traceFields) { initialCtx =>
       val logAction = logActionFor(initialCtx)
-      logRequest(logAction = Some(logAction)) {
-        handleExceptions(exceptionHandler(logResult(logAction = Some(logAction)))) {
-          handleRejections(rejectionHandler(logResult(logAction = Some(logAction)))) {
+      logRedactedRequest(logAction) {
+        handleExceptions(exceptionHandler(logRedactedResult(logAction))) {
+          handleRejections(rejectionHandler(logRedactedResult(logAction))) {
             apiVersionPrefix {
               authenticateOrRejectWithChallenge(userAuthenticator) { auth =>
-                handleExceptions(exceptionHandler(logResult(logAction = Some(logAction)))) {
-                  handleRejections(rejectionHandler(logResult(logAction = Some(logAction)))) {
+                handleExceptions(exceptionHandler(logRedactedResult(logAction))) {
+                  handleRejections(rejectionHandler(logRedactedResult(logAction))) {
                     onSuccess(telemetryContext.tracer.currentSpanOrNoop.flatMap(_.addAttribute(Attribute("app.user.id", auth.userId.toString)))) {
-                      logResult(logAction = Some(logAction)) {
+                      logRedactedResult(logAction) {
                         onSuccess(telemetryContext.tracer.propagate(Headers.empty)) { newHeaders =>
                           mapResponseHeaders(_ ++ newHeaders) {
                             route(auth) ~ route ~ wsRoutes(auth, ws) ~ wsRoutes(ws)
@@ -218,7 +219,7 @@ class ApplicationLoader(
                   }
                 }
               } ~
-                logResult(logAction = Some(logAction)) {
+                logRedactedResult(logAction) {
                   onSuccess(telemetryContext.tracer.propagate(Headers.empty)) { newHeaders =>
                     mapResponseHeaders(_ ++ newHeaders) {
                       route ~ wsRoutes(ws)

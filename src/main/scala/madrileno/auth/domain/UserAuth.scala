@@ -2,6 +2,7 @@ package madrileno.auth.domain
 
 import io.circe.Json
 import madrileno.user.domain.*
+import madrileno.utils.observability.Fingerprint
 import pl.iterators.kebs.opaque.Opaque
 
 import java.net.URI
@@ -17,7 +18,11 @@ object Provider extends Opaque[Provider, String] {
 }
 
 opaque type ExternalAuthToken <: String = String
-object ExternalAuthToken extends Opaque[ExternalAuthToken, String]
+object ExternalAuthToken extends Opaque[ExternalAuthToken, String] {
+  extension (token: ExternalAuthToken) {
+    def fingerprint: Fingerprint = Fingerprint(token)
+  }
+}
 
 opaque type ProviderUserId = String
 object ProviderUserId extends Opaque[ProviderUserId, String]
