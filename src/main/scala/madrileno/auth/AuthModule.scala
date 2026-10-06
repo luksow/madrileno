@@ -14,7 +14,7 @@ import madrileno.utils.db.transactor.Transactor
 import madrileno.utils.events.outbox.Outbox
 import madrileno.utils.http.{AuthRouteProvider, RateLimiterRuntime, RouteProvider}
 import madrileno.utils.mailer.{MailPreview, MailPreviewProvider, Mailer}
-import madrileno.utils.observability.TelemetryContext
+import madrileno.utils.observability.{Fingerprinter, TelemetryContext}
 import madrileno.utils.task.{RecurringTaskProvider, Task}
 import pl.iterators.stir.server.Route
 import pureconfig.*
@@ -26,7 +26,8 @@ trait AuthModule extends RouteProvider with AuthRouteProvider with RecurringTask
   val jwtConfig: JwtService.Config                              = config.at("jwt").loadOrThrow[JwtService.Config]
   val authenticationServiceConfig: AuthenticationService.Config =
     config.at("refresh-token").loadOrThrow[AuthenticationService.Config]
-  private val jwtService = wire[JwtService]
+  private val jwtService                   = wire[JwtService]
+  private val fingerprinter: Fingerprinter = new Fingerprinter(config.at("logging").loadOrThrow[Fingerprinter.Config])
   given telemetryContext: TelemetryContext
   given secureRandom: SecureRandom[IO]
   val transactor: Transactor

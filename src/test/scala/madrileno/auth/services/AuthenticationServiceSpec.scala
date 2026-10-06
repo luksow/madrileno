@@ -3,6 +3,9 @@ package madrileno.auth.services
 import cats.effect.std.{SecureRandom, UUIDGen}
 import cats.effect.testing.scalatest.AsyncIOSpec
 import cats.effect.{Clock, IO}
+import ch.qos.logback.classic.LoggerContext
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.core.read.ListAppender
 import madrileno.auth.domain.*
 import madrileno.auth.repositories.*
 import madrileno.support.{FakeAuthVerifier, TestData, TestGivens, TestMailpit, TestTransactor}
@@ -13,12 +16,14 @@ import madrileno.utils.observability.TelemetryContext
 import madrileno.utils.task.*
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AsyncWordSpec
+import org.slf4j.{Logger, LoggerFactory}
 import org.typelevel.otel4s.metrics.Meter
 import org.typelevel.otel4s.trace.Tracer
 
 import java.net.URI
 import java.time.Duration
 import scala.concurrent.duration.*
+import scala.jdk.CollectionConverters.*
 
 class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers with TestTransactor with TestMailpit {
 
@@ -61,6 +66,7 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
       jwtService,
       transactor,
       mailer,
+      TestGivens.fingerprinter,
       AuthenticationService.Config(validFor, reuseGrace, maxFamilyAge)
     )
     (svc, token)
@@ -331,5 +337,61 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
         cAfter shouldBe a[AuthenticationResult.Authenticated]
       }
     }
+  }
+
+  "logging" should {
+    "carry fingerprints of credentials, never the credentials themselves" in {
+      val (service, _) = serviceWithFreshAuth(reuseGrace = Duration.ZERO)
+      capturingLogs {
+        for {
+          login <- service.authenticateWithProvider(Provider.Firebase, command)
+          first = issuedOf(login)
+          rotated <- service.authenticateWithRefreshToken(refreshWith(first.secret))
+          second = issuedOf(rotated)
+          _ <- service.authenticateWithRefreshToken(refreshWith(first.secret))
+          _ <- service.authenticateWithRefreshToken(refreshWithRaw("garbage-token"))
+          _ <- service.authenticateWithProvider(Provider.Firebase, command.copy(token = ExternalAuthToken("invalid-token")))
+        } yield (List(first.secret.value, second.secret.value, jwtOf(login), jwtOf(rotated), "garbage-token", "invalid-token"), first.secret.value)
+      }.map { case ((secrets, replayed), logged) =>
+        logged should not be empty
+        secrets.foreach { secret =>
+          withClue(s"log lines containing a credential:\n${logged.filter(_.contains(secret)).mkString("\n")}\n") {
+            logged.exists(_.contains(secret)) shouldBe false
+          }
+        }
+        logged.count(_.contains(TestGivens.fingerprinter(replayed).value)) should be >= 1
+        logged.exists(_.contains(TestGivens.fingerprinter("garbage-token").value)) shouldBe true
+        logged.exists(_.contains(TestGivens.fingerprinter("invalid-token").value)) shouldBe true
+      }
+    }
+  }
+
+  private def jwtOf(result: AuthenticationResult): String = result match {
+    case AuthenticationResult.UserCreated(jwt, _)   => jwt.unwrap
+    case AuthenticationResult.Authenticated(jwt, _) => jwt.unwrap
+    case other                                      => fail(s"Expected tokens, got $other")
+  }
+
+  private def capturingLogs[A](io: IO[A]): IO[(A, List[String])] = {
+    val attach = IO {
+      LoggerFactory.getILoggerFactory match {
+        case context: LoggerContext =>
+          val root     = context.getLogger(Logger.ROOT_LOGGER_NAME)
+          val appender = new ListAppender[ILoggingEvent]
+          appender.start()
+          root.addAppender(appender)
+          (root, appender)
+        case other => fail(s"expected logback, found ${other.getClass.getName}")
+      }
+    }
+    attach.bracket { case (_, appender) =>
+      io.map { result =>
+        val lines = appender.list.asScala.toList.map { event =>
+          val cause = Option(event.getThrowableProxy).map(proxy => s" ${proxy.getClassName}: ${proxy.getMessage}").getOrElse("")
+          s"${event.getFormattedMessage}$cause"
+        }
+        (result, lines)
+      }
+    } { case (root, appender) => IO { root.detachAppender(appender); appender.stop() } }
   }
 }

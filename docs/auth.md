@@ -213,6 +213,10 @@ Industry-standard companions that are deliberately **not** pre-built, in the spi
 - **Grace period / undo.** Common practice is a 14–30 day window where the account is deactivated but recoverable. Here deletion is immediate and final; a grace period means deferring the anonymize+event behind a scheduled task that a re-login cancels.
 - **Pre-deletion data export.** GDPR-adjacent flows usually offer "download your data" first; there's no export endpoint.
 
+## Credentials in logs
+
+The service and the bearer authenticator never write a credential to a log line. Where a line needs to say *which* token it is about, it carries a `Fingerprint` instead: `fp:` plus the first 32 bits of an HMAC-SHA256 of the value under `logging.fingerprint-secret` (`FINGERPRINT_SECRET`). The same token yields the same fingerprint everywhere in a deployment, so an unknown-token warning, a replay warning and the issue line can be joined on it, while the fingerprint itself is useless without the key: being keyed, it is safe even for low-entropy inputs such as a dev-login email or a malformed value a client sent by mistake. Refresh-token row ids and family ids appear raw; they are handles, not credentials. The HTTP request/response debug logger still logs bodies verbatim, so login and refresh bodies are the remaining place credentials reach the log; redacting those fields is a separate change.
+
 ## What you can't do
 
 - **Change the internal JWT's signing scheme to RS256/asymmetric.** `JwtService` uses HMAC. Easy to extend — provide a key pair and switch the algorithm — but not done out of the box.

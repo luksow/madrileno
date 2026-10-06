@@ -12,7 +12,7 @@ import madrileno.user.repositories.*
 import madrileno.utils.crypto.{IdGenerator, RandomSecret}
 import madrileno.utils.db.transactor.*
 import madrileno.utils.mailer.{Language, Mailer}
-import madrileno.utils.observability.{LoggingSupport, TelemetryContext}
+import madrileno.utils.observability.{Fingerprinter, LoggingSupport, TelemetryContext}
 import madrileno.utils.task.{CronExpression, Schedule, Task}
 import pl.iterators.sealedmonad.syntax.*
 import pureconfig.*
@@ -27,6 +27,7 @@ class AuthenticationService(
   jwtService: JwtService,
   transactor: Transactor,
   mailer: Mailer,
+  fingerprinter: Fingerprinter,
   config: AuthenticationService.Config
 )(using
   TelemetryContext,
@@ -42,7 +43,9 @@ class AuthenticationService(
         verifier.verifyToken(command.token).flatMap {
           case Left(t) =>
             logger
-              .error(s"Failed to authenticate with $provider: ${t.getMessage} ${t.getStackTrace.toList.mkString("\n")}")
+              .error(
+                s"Failed to authenticate with $provider (token ${fingerprinter(command.token)}): ${t.getMessage} ${t.getStackTrace.toList.mkString("\n")}"
+              )
               .as(AuthenticationResult.InvalidToken)
           case Right(verifiedToken) if verifiedToken.provider != provider =>
             logger
@@ -98,8 +101,9 @@ class AuthenticationService(
     val client = s"${command.ipAddress} (${command.userAgent})"
     RefreshTokenSecret.from(command.refreshToken) match {
       case Left(_) =>
-        logger.warn(s"Malformed refresh token from $client").as(AuthenticationResult.InvalidToken)
+        logger.warn(s"Malformed refresh token ${fingerprinter(command.refreshToken)} from $client").as(AuthenticationResult.InvalidToken)
       case Right(secret) =>
+        val presented = fingerprinter(secret.value)
         transactor.inTransaction {
           Clock[IO].realTimeInstant.flatMap { now =>
             refreshTokenRepository
@@ -123,20 +127,22 @@ class AuthenticationService(
                 case Some(refreshToken) if refreshToken.isUsed && !refreshToken.isRevoked && refreshToken.wasUsedWithin(config.reuseGrace, now) =>
                   logger
                     .warn(
-                      s"Refresh token ${refreshToken.id} was replayed within the reuse grace window from $client; family ${refreshToken.familyId} kept"
+                      s"Refresh token ${refreshToken.id} ($presented) was replayed within the reuse grace window from $client; family ${refreshToken.familyId} kept"
                     )
                     .as(AuthenticationResult.InvalidToken)
                 case Some(refreshToken) if refreshToken.isUsed && !refreshToken.isRevoked =>
                   refreshTokenRepository.revokeFamily(refreshToken.familyId, now) *>
                     logger
                       .warn(
-                        s"Refresh token ${refreshToken.id} was replayed from $client; revoked family ${refreshToken.familyId} for user ${refreshToken.userId}"
+                        s"Refresh token ${refreshToken.id} ($presented) was replayed from $client; revoked family ${refreshToken.familyId} for user ${refreshToken.userId}"
                       )
                       .as(AuthenticationResult.InvalidToken)
                 case Some(refreshToken) =>
-                  logger.warn(s"Refresh token ${refreshToken.id} presented from $client is revoked or expired").as(AuthenticationResult.InvalidToken)
+                  logger
+                    .warn(s"Refresh token ${refreshToken.id} ($presented) presented from $client is revoked or expired")
+                    .as(AuthenticationResult.InvalidToken)
                 case None =>
-                  logger.warn(s"Unknown refresh token presented from $client").as(AuthenticationResult.InvalidToken)
+                  logger.warn(s"Unknown refresh token $presented presented from $client").as(AuthenticationResult.InvalidToken)
               }
           }
         }
@@ -222,7 +228,12 @@ class AuthenticationService(
       secret <- RandomSecret.generate(RefreshTokenSecret.byteLength).map(RefreshTokenSecret.apply).seal
       refreshToken = RefreshToken.mint(id, family, secret.hash, now, user.id, userAgent, ipAddress, config.validFor)
       _ <- refreshTokenRepository.save(refreshToken).seal
-      _ <- logger.debug(s"Issued refresh token ${refreshToken.id} in family ${family.id} for user: $userId").seal
+      _ <-
+        logger
+          .debug(
+            s"Issued JWT ${fingerprinter(jwt.unwrap)} and refresh token ${refreshToken.id} (${fingerprinter(secret.value)}) in family ${family.id} for user: $userId"
+          )
+          .seal
     } yield {
       success(jwt, IssuedRefreshToken(refreshToken, secret))
     }).run

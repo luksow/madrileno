@@ -3,6 +3,7 @@ package madrileno.support
 import cats.effect.std.{SecureRandom, UUIDGen}
 import cats.effect.unsafe.implicits.global
 import cats.effect.{Clock, IO}
+import madrileno.utils.observability.Fingerprinter
 
 import java.time.Instant
 import java.util.UUID
@@ -41,6 +42,7 @@ class TestUUIDGen(uuids: UUID*) extends UUIDGen[IO] {
 }
 
 object TestGivens {
+  val fingerprinter: Fingerprinter   = new Fingerprinter(Fingerprinter.Config("test-fingerprint-secret"))
   val secureRandom: SecureRandom[IO] = SecureRandom.javaSecuritySecureRandom[IO].unsafeRunSync()
 
   def fixedClock(at: Instant = Instant.now()): TestClock = new TestClock(at)
