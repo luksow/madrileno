@@ -186,7 +186,6 @@ class ApplicationLoader(
     )
 
   private lazy val logActionLevel: Int = config.at("logging.loglevel-request-response").loadOrThrow[Int]
-  private lazy val logBodies: Boolean  = config.at("logging.log-bodies").loadOrThrow[Boolean]
 
   private def logActionFor(ctx: Map[String, String]): String => IO[Unit] = logActionLevel match {
     case 4 => logger.debug(ctx)(_)
@@ -202,15 +201,15 @@ class ApplicationLoader(
     )
     onSuccess(traceFields) { initialCtx =>
       val logAction = logActionFor(initialCtx)
-      logRequest(logBody = logBodies, logAction = Some(logAction)) {
-        handleExceptions(exceptionHandler(logResult(logBody = logBodies, logAction = Some(logAction)))) {
-          handleRejections(rejectionHandler(logResult(logBody = logBodies, logAction = Some(logAction)))) {
+      logRequest(logAction = Some(logAction)) {
+        handleExceptions(exceptionHandler(logResult(logAction = Some(logAction)))) {
+          handleRejections(rejectionHandler(logResult(logAction = Some(logAction)))) {
             apiVersionPrefix {
               authenticateOrRejectWithChallenge(userAuthenticator) { auth =>
-                handleExceptions(exceptionHandler(logResult(logBody = logBodies, logAction = Some(logAction)))) {
-                  handleRejections(rejectionHandler(logResult(logBody = logBodies, logAction = Some(logAction)))) {
+                handleExceptions(exceptionHandler(logResult(logAction = Some(logAction)))) {
+                  handleRejections(rejectionHandler(logResult(logAction = Some(logAction)))) {
                     onSuccess(telemetryContext.tracer.currentSpanOrNoop.flatMap(_.addAttribute(Attribute("app.user.id", auth.userId.toString)))) {
-                      logResult(logBody = logBodies, logAction = Some(logAction)) {
+                      logResult(logAction = Some(logAction)) {
                         onSuccess(telemetryContext.tracer.propagate(Headers.empty)) { newHeaders =>
                           mapResponseHeaders(_ ++ newHeaders) {
                             route(auth) ~ route ~ wsRoutes(auth, ws) ~ wsRoutes(ws)
@@ -221,7 +220,7 @@ class ApplicationLoader(
                   }
                 }
               } ~
-                logResult(logBody = logBodies, logAction = Some(logAction)) {
+                logResult(logAction = Some(logAction)) {
                   onSuccess(telemetryContext.tracer.propagate(Headers.empty)) { newHeaders =>
                     mapResponseHeaders(_ ++ newHeaders) {
                       route ~ wsRoutes(ws)
