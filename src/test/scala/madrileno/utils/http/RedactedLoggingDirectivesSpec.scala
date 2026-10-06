@@ -85,7 +85,7 @@ class RedactedLoggingDirectivesSpec extends AnyFunSpec with Matchers with Direct
     }
 
     it("logs a JSON body over the size limit without content") {
-      val payload = Json.obj("refreshToken" -> Json.fromString(refreshToken), "padding" -> Json.fromString("x" * 100))
+      val payload = Json.obj("refreshToken" -> Json.fromString(refreshToken), "padding" -> Json.fromString("x".repeat(100)))
 
       val (_, _, logged) = run(echoJson, Request[IO](Method.POST, uri"/").withEntity(payload), maxBodyBytes = 64)
 
