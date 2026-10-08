@@ -1,8 +1,11 @@
 package madrileno.auth.services
 
-import cats.effect.std.UUIDGen
+import cats.effect.std.{SecureRandom, UUIDGen}
 import cats.effect.testing.scalatest.AsyncIOSpec
 import cats.effect.{Clock, IO}
+import ch.qos.logback.classic.LoggerContext
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.core.read.ListAppender
 import madrileno.auth.domain.*
 import madrileno.auth.repositories.*
 import madrileno.support.{FakeAuthVerifier, TestData, TestGivens, TestMailpit, TestTransactor}
@@ -13,12 +16,14 @@ import madrileno.utils.observability.TelemetryContext
 import madrileno.utils.task.*
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AsyncWordSpec
+import org.slf4j.{Logger, LoggerFactory}
 import org.typelevel.otel4s.metrics.Meter
 import org.typelevel.otel4s.trace.Tracer
 
 import java.net.URI
 import java.time.Duration
 import scala.concurrent.duration.*
+import scala.jdk.CollectionConverters.*
 
 class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matchers with TestTransactor with TestMailpit {
 
@@ -26,6 +31,7 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
   private val testUUIDGen = TestGivens.deterministicUUIDs()
   given Clock[IO]         = testClock
   given UUIDGen[IO]       = testUUIDGen
+  given SecureRandom[IO]  = TestGivens.secureRandom
   given TelemetryContext  = TelemetryContext(Meter.noop[IO], Tracer.noop[IO], io.opentelemetry.api.OpenTelemetry.noop())
 
   private val jwtConfig  = JwtService.Config(secret = "test-secret-at-least-256-bits-long-for-hs256!!", validFor = Duration.ofMinutes(5))
@@ -42,7 +48,14 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
 
   private def freshVerifiedToken() = TestData.verifiedExternalToken()
 
-  private def serviceWithFreshAuth(validFor: Option[java.time.Duration] = None) = {
+  private val reuseGrace   = Duration.ofSeconds(60)
+  private val maxFamilyAge = Duration.ofDays(365)
+
+  private def serviceWithFreshAuth(
+    validFor: Duration = Duration.ofDays(90),
+    reuseGrace: Duration = reuseGrace,
+    maxFamilyAge: Duration = maxFamilyAge
+  ) = {
     val token     = freshVerifiedToken()
     val verifiers = AuthVerifiers(Map(Provider.Firebase -> new FakeAuthVerifier(token)))
     val svc       = new AuthenticationService(
@@ -53,7 +66,8 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
       jwtService,
       transactor,
       mailer,
-      AuthenticationService.Config(validFor)
+      TestGivens.fingerprinter,
+      AuthenticationService.Config(validFor, reuseGrace, maxFamilyAge)
     )
     (svc, token)
   }
@@ -64,9 +78,10 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
     "create a new user on first login" in {
       val (service, _) = serviceWithFreshAuth()
       service.authenticateWithProvider(Provider.Firebase, command).map {
-        case AuthenticationResult.UserCreated(jwt, refreshToken) =>
+        case AuthenticationResult.UserCreated(jwt, issued) =>
           jwt.toString should not be empty
-          refreshToken.id.toString should not be empty
+          issued.secret.toString should not be empty
+          issued.token.secretHash shouldBe issued.secret.hash
         case other => fail(s"Expected UserCreated, got $other")
       }
     }
@@ -125,61 +140,261 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
     }
   }
 
+  private def issuedOf(result: AuthenticationResult): IssuedRefreshToken = result match {
+    case AuthenticationResult.UserCreated(_, issued)   => issued
+    case AuthenticationResult.Authenticated(_, issued) => issued
+    case other                                         => fail(s"Expected tokens, got $other")
+  }
+
+  private def refreshWith(secret: RefreshTokenSecret) =
+    AuthenticateWithRefreshTokenCommand(secret, UserAgent("test-agent"), TestData.defaultIpAddress)
+
   "authenticateWithRefreshToken" should {
-    "authenticate with a valid refresh token" in {
+    "authenticate with a valid refresh token and rotate within the same family" in {
       val (service, _) = serviceWithFreshAuth()
       for {
         created <- service.authenticateWithProvider(Provider.Firebase, command)
-        refreshTokenId = created match {
-                           case AuthenticationResult.UserCreated(_, rt) => rt.id
-                           case other                                   => fail(s"Expected UserCreated, got $other")
-                         }
-        result <- service.authenticateWithRefreshToken(
-                    AuthenticateWithRefreshTokenCommand(refreshTokenId, UserAgent("test-agent"), TestData.defaultIpAddress)
-                  )
-      } yield result shouldBe a[AuthenticationResult.Authenticated]
+        first = issuedOf(created)
+        result <- service.authenticateWithRefreshToken(refreshWith(first.secret))
+      } yield {
+        result shouldBe a[AuthenticationResult.Authenticated]
+        val second = issuedOf(result)
+        second.token.familyId shouldBe first.token.familyId
+        second.secret should not be first.secret
+      }
     }
 
-    "reject an already-used refresh token" in {
+    "treat a row id or any other string that matches no stored secret as an unknown token" in {
       val (service, _) = serviceWithFreshAuth()
       for {
         created <- service.authenticateWithProvider(Provider.Firebase, command)
-        refreshTokenId = created match {
-                           case AuthenticationResult.UserCreated(_, rt)   => rt.id
-                           case AuthenticationResult.Authenticated(_, rt) => rt.id
-                           case other                                     => fail(s"Unexpected: $other")
-                         }
-        _ <- service.authenticateWithRefreshToken(
-               AuthenticateWithRefreshTokenCommand(refreshTokenId, UserAgent("test-agent"), TestData.defaultIpAddress)
-             )
-        result <- service.authenticateWithRefreshToken(
-                    AuthenticateWithRefreshTokenCommand(refreshTokenId, UserAgent("test-agent"), TestData.defaultIpAddress)
-                  )
-      } yield result shouldBe AuthenticationResult.InvalidToken
+        issued = issuedOf(created)
+        garbage <- service.authenticateWithRefreshToken(refreshWith(RefreshTokenSecret("not-a-token")))
+        rowId   <- service.authenticateWithRefreshToken(refreshWith(RefreshTokenSecret(issued.token.id.toString)))
+        still   <- service.authenticateWithRefreshToken(refreshWith(issued.secret))
+      } yield {
+        garbage shouldBe AuthenticationResult.InvalidToken
+        rowId shouldBe AuthenticationResult.InvalidToken
+        still shouldBe a[AuthenticationResult.Authenticated]
+      }
+    }
+
+    "revoke the family on an immediate replay when the reuse grace is zero" in {
+      val (service, _) = serviceWithFreshAuth(reuseGrace = Duration.ZERO)
+      for {
+        login <- service.authenticateWithProvider(Provider.Firebase, command)
+        first = issuedOf(login)
+        rotated <- service.authenticateWithRefreshToken(refreshWith(first.secret))
+        second = issuedOf(rotated)
+        replay    <- service.authenticateWithRefreshToken(refreshWith(first.secret))
+        afterward <- service.authenticateWithRefreshToken(refreshWith(second.secret))
+      } yield {
+        replay shouldBe AuthenticationResult.InvalidToken
+        afterward shouldBe AuthenticationResult.InvalidToken
+      }
+    }
+
+    "revoke a family that has reached its maximum age even when the token itself is still valid" in {
+      val (service, _) = serviceWithFreshAuth(validFor = Duration.ofDays(3650), maxFamilyAge = Duration.ofDays(1))
+      for {
+        login <- service.authenticateWithProvider(Provider.Firebase, command)
+        issued = issuedOf(login)
+        _      = testClock.advance(Duration.ofDays(2).toMillis)
+        result   <- service.authenticateWithRefreshToken(refreshWith(issued.secret))
+        sessions <- service.listSessions(ListSessionsCommand(issued.token.userId))
+      } yield {
+        result shouldBe AuthenticationResult.InvalidToken
+        sessions.map(_.familyId) should not contain issued.token.familyId
+      }
+    }
+
+    "reject a replay within the reuse grace window without revoking the family" in {
+      val (service, _) = serviceWithFreshAuth()
+      for {
+        login <- service.authenticateWithProvider(Provider.Firebase, command)
+        first = issuedOf(login)
+        rotated <- service.authenticateWithRefreshToken(refreshWith(first.secret))
+        second = issuedOf(rotated)
+        _      = testClock.advance(reuseGrace.minusSeconds(1).toMillis)
+        replay    <- service.authenticateWithRefreshToken(refreshWith(first.secret))
+        afterward <- service.authenticateWithRefreshToken(refreshWith(second.secret))
+      } yield {
+        replay shouldBe AuthenticationResult.InvalidToken
+        afterward shouldBe a[AuthenticationResult.Authenticated]
+      }
+    }
+
+    "reject a replay after the grace window and revoke its whole family" in {
+      val (service, _) = serviceWithFreshAuth()
+      for {
+        login <- service.authenticateWithProvider(Provider.Firebase, command)
+        first = issuedOf(login)
+        rotated <- service.authenticateWithRefreshToken(refreshWith(first.secret))
+        second = issuedOf(rotated)
+        _      = testClock.advance(reuseGrace.plusSeconds(1).toMillis)
+        replay    <- service.authenticateWithRefreshToken(refreshWith(first.secret))
+        afterward <- service.authenticateWithRefreshToken(refreshWith(second.secret))
+      } yield {
+        replay shouldBe AuthenticationResult.InvalidToken
+        afterward shouldBe AuthenticationResult.InvalidToken
+      }
+    }
+
+    "leave other families untouched when one family is revoked by replay" in {
+      val (service, _) = serviceWithFreshAuth()
+      for {
+        loginA <- service.authenticateWithProvider(Provider.Firebase, command)
+        loginB <- service.authenticateWithProvider(Provider.Firebase, command)
+        issuedA = issuedOf(loginA)
+        issuedB = issuedOf(loginB)
+        _ <- service.authenticateWithRefreshToken(refreshWith(issuedA.secret))
+        _ = testClock.advance(reuseGrace.plusSeconds(1).toMillis)
+        _       <- service.authenticateWithRefreshToken(refreshWith(issuedA.secret))
+        bResult <- service.authenticateWithRefreshToken(refreshWith(issuedB.secret))
+      } yield bResult shouldBe a[AuthenticationResult.Authenticated]
     }
 
     "reject an unknown refresh token" in {
       val (service, _) = serviceWithFreshAuth()
       service
-        .authenticateWithRefreshToken(
-          AuthenticateWithRefreshTokenCommand(TestData.randomRefreshTokenId(), UserAgent("test-agent"), TestData.defaultIpAddress)
-        )
+        .authenticateWithRefreshToken(refreshWith(TestData.refreshTokenSecret()))
         .map(_ shouldBe AuthenticationResult.InvalidToken)
     }
 
-    "reject an expired refresh token when validFor is configured" in {
-      val (service, _) = serviceWithFreshAuth(validFor = Some(Duration.ofMinutes(5)))
+    "reject an expired refresh token" in {
+      val (service, _) = serviceWithFreshAuth(validFor = Duration.ofMinutes(5))
       for {
         created <- service.authenticateWithProvider(Provider.Firebase, command)
-        refreshTokenId = created match {
-                           case AuthenticationResult.UserCreated(_, rt) => rt.id
-                           case other                                   => fail(s"Expected UserCreated, got $other")
-                         }
-        _ = testClock.advance(Duration.ofMinutes(10).toMillis)
-        result <- service.authenticateWithRefreshToken(
-                    AuthenticateWithRefreshTokenCommand(refreshTokenId, UserAgent("test-agent"), TestData.defaultIpAddress)
-                  )
+        issued = issuedOf(created)
+        _      = testClock.advance(Duration.ofMinutes(10).toMillis)
+        result <- service.authenticateWithRefreshToken(refreshWith(issued.secret))
       } yield result shouldBe AuthenticationResult.InvalidToken
     }
+  }
+
+  "sessions" should {
+    "list one live entry per family and keep the family id stable across rotations" in {
+      val (service, _) = serviceWithFreshAuth()
+      for {
+        login <- service.authenticateWithProvider(Provider.Firebase, command)
+        first = issuedOf(login)
+        rotated <- service.authenticateWithRefreshToken(refreshWith(first.secret))
+        second = issuedOf(rotated)
+        sessions <- service.listSessions(ListSessionsCommand(first.token.userId))
+      } yield {
+        sessions.map(_.familyId) shouldBe List(first.token.familyId)
+        sessions.map(_.id) shouldBe List(second.token.id)
+      }
+    }
+
+    "revokeSession revokes the whole family so its live successor stops working" in {
+      val (service, _) = serviceWithFreshAuth()
+      for {
+        login <- service.authenticateWithProvider(Provider.Firebase, command)
+        first = issuedOf(login)
+        rotated <- service.authenticateWithRefreshToken(refreshWith(first.secret))
+        second = issuedOf(rotated)
+        revoked   <- service.revokeSession(RevokeSessionCommand(first.token.userId, first.token.familyId))
+        afterward <- service.authenticateWithRefreshToken(refreshWith(second.secret))
+        sessions  <- service.listSessions(ListSessionsCommand(first.token.userId))
+      } yield {
+        revoked shouldBe true
+        afterward shouldBe AuthenticationResult.InvalidToken
+        sessions shouldBe empty
+      }
+    }
+
+    "revokeSession refuses a family owned by another user" in {
+      val (service, _) = serviceWithFreshAuth()
+      for {
+        login <- service.authenticateWithProvider(Provider.Firebase, command)
+        issued = issuedOf(login)
+        revoked   <- service.revokeSession(RevokeSessionCommand(TestData.randomUserId(), issued.token.familyId))
+        afterward <- service.authenticateWithRefreshToken(refreshWith(issued.secret))
+      } yield {
+        revoked shouldBe false
+        afterward shouldBe a[AuthenticationResult.Authenticated]
+      }
+    }
+
+    "revokeSessionsByUserAgent revokes every family of that user agent and leaves the others" in {
+      val (service, _) = serviceWithFreshAuth()
+      val firefox      = command.copy(userAgent = UserAgent("Firefox"))
+      val chrome       = command.copy(userAgent = UserAgent("Chrome"))
+      for {
+        loginA <- service.authenticateWithProvider(Provider.Firebase, firefox)
+        loginB <- service.authenticateWithProvider(Provider.Firebase, firefox)
+        loginC <- service.authenticateWithProvider(Provider.Firebase, chrome)
+        issuedA = issuedOf(loginA)
+        issuedB = issuedOf(loginB)
+        issuedC = issuedOf(loginC)
+        count  <- service.revokeSessionsByUserAgent(RevokeSessionsByUserAgentCommand(issuedA.token.userId, UserAgent("Firefox")))
+        aAfter <- service.authenticateWithRefreshToken(refreshWith(issuedA.secret))
+        bAfter <- service.authenticateWithRefreshToken(refreshWith(issuedB.secret))
+        cAfter <- service.authenticateWithRefreshToken(refreshWith(issuedC.secret))
+      } yield {
+        count shouldBe 2
+        aAfter shouldBe AuthenticationResult.InvalidToken
+        bAfter shouldBe AuthenticationResult.InvalidToken
+        cAfter shouldBe a[AuthenticationResult.Authenticated]
+      }
+    }
+  }
+
+  "logging" should {
+    "carry fingerprints of credentials, never the credentials themselves" in {
+      val (service, _) = serviceWithFreshAuth(reuseGrace = Duration.ZERO)
+      capturingLogs {
+        for {
+          login <- service.authenticateWithProvider(Provider.Firebase, command)
+          first = issuedOf(login)
+          rotated <- service.authenticateWithRefreshToken(refreshWith(first.secret))
+          second = issuedOf(rotated)
+          _ <- service.authenticateWithRefreshToken(refreshWith(first.secret))
+          _ <- service.authenticateWithRefreshToken(refreshWith(RefreshTokenSecret("garbage-token")))
+          _ <- service.authenticateWithProvider(Provider.Firebase, command.copy(token = ExternalAuthToken("invalid-token")))
+        } yield (List(first.secret.unwrap, second.secret.unwrap, jwtOf(login), jwtOf(rotated), "garbage-token", "invalid-token"), first.secret.unwrap)
+      }.map { case ((secrets, replayed), logged) =>
+        logged should not be empty
+        secrets.foreach { secret =>
+          withClue(s"log lines containing a credential:\n${logged.filter(_.contains(secret)).mkString("\n")}\n") {
+            logged.exists(_.contains(secret)) shouldBe false
+          }
+        }
+        logged.count(_.contains(TestGivens.fingerprinter(replayed).value)) should be >= 1
+        logged.count(_.contains(TestGivens.fingerprinter(RefreshTokenSecret(replayed)).value)) should be >= 1
+        logged.exists(_.contains(TestGivens.fingerprinter("garbage-token").value)) shouldBe true
+        logged.exists(_.contains(TestGivens.fingerprinter("invalid-token").value)) shouldBe true
+      }
+    }
+  }
+
+  private def jwtOf(result: AuthenticationResult): String = result match {
+    case AuthenticationResult.UserCreated(jwt, _)   => jwt.unwrap
+    case AuthenticationResult.Authenticated(jwt, _) => jwt.unwrap
+    case other                                      => fail(s"Expected tokens, got $other")
+  }
+
+  private def capturingLogs[A](io: IO[A]): IO[(A, List[String])] = {
+    val attach = IO {
+      LoggerFactory.getILoggerFactory match {
+        case context: LoggerContext =>
+          val root     = context.getLogger(Logger.ROOT_LOGGER_NAME)
+          val appender = new ListAppender[ILoggingEvent]
+          appender.start()
+          root.addAppender(appender)
+          (root, appender)
+        case other => fail(s"expected logback, found ${other.getClass.getName}")
+      }
+    }
+    attach.bracket { case (_, appender) =>
+      io.map { result =>
+        val lines = appender.list.asScala.toList.map { event =>
+          val cause = Option(event.getThrowableProxy).map(proxy => s" ${proxy.getClassName}: ${proxy.getMessage}").getOrElse("")
+          s"${event.getFormattedMessage}$cause"
+        }
+        (result, lines)
+      }
+    } { case (root, appender) => IO { root.detachAppender(appender); appender.stop() } }
   }
 }

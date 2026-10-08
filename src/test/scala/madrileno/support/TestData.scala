@@ -7,7 +7,7 @@ import io.circe.Json
 import madrileno.auction.domain.*
 import madrileno.auth.domain.{AuthContext, *}
 import madrileno.user.domain.*
-import madrileno.utils.crypto.UuidV7
+import madrileno.utils.crypto.{RandomSecret, UuidV7}
 import madrileno.utils.featureflag.domain.*
 import madrileno.utils.imaging.{Height, ImageFormat, Width}
 import madrileno.utils.storage.StorageKey
@@ -15,19 +15,22 @@ import org.http4s.MediaType
 import org.http4s.headers.`Content-Type`
 
 import java.net.URI
-import java.time.Instant
+import java.time.{Duration, Instant}
 import java.util.{Currency, UUID}
 
 object TestData {
   // Mint via the same time-ordered UUIDv7 path as production (IdGenerator), so fixtures mirror real ids — never raw v4.
   def randomUuid(): UUID = UuidV7.generate.unsafeRunSync()
 
-  def randomUserId(): UserId                 = UserId(randomUuid())
-  def randomRefreshTokenId(): RefreshTokenId = RefreshTokenId(randomUuid())
-  def randomUserAuthId(): UserAuthId         = UserAuthId(randomUuid())
-  def randomFlagId(): FlagId                 = FlagId(randomUuid())
-  def randomRuleId(): RuleId                 = RuleId(randomUuid())
-  def randomSegmentId(): SegmentId           = SegmentId(randomUuid())
+  def randomUserId(): UserId                             = UserId(randomUuid())
+  def randomRefreshTokenId(): RefreshTokenId             = RefreshTokenId(randomUuid())
+  def randomRefreshTokenFamilyId(): RefreshTokenFamilyId = RefreshTokenFamilyId(randomUuid())
+  def refreshTokenSecret(): RefreshTokenSecret           =
+    RandomSecret.generate(RefreshTokenSecret.byteLength)(using TestGivens.secureRandom).map(RefreshTokenSecret.apply).unsafeRunSync()
+  def randomUserAuthId(): UserAuthId = UserAuthId(randomUuid())
+  def randomFlagId(): FlagId         = FlagId(randomUuid())
+  def randomRuleId(): RuleId         = RuleId(randomUuid())
+  def randomSegmentId(): SegmentId   = SegmentId(randomUuid())
   // scripts:scaffold-id-factories (scaffold-module.scala inserts random<Aggregate>Id() factories above this line)
   // scripts:auction-block-start
   def randomAuctionId(): AuctionId                         = AuctionId(randomUuid())
@@ -49,14 +52,40 @@ object TestData {
 
   def refreshToken(
     id: RefreshTokenId = randomRefreshTokenId(),
+    familyId: RefreshTokenFamilyId = randomRefreshTokenFamilyId(),
+    familyCreatedAt: Instant = Instant.now(),
+    secretHash: RefreshTokenSecretHash = refreshTokenSecret().hash,
     userId: UserId = randomUserId(),
     userAgent: UserAgent = UserAgent("test-agent"),
     ipAddress: IpAddress = IpAddress.fromString("127.0.0.1").get,
     createdAt: Instant = Instant.now(),
     usedAt: Option[Instant] = None,
     deletedAt: Option[Instant] = None,
-    expiresAt: Option[Instant] = None
-  ): RefreshToken = RefreshToken(id, userId, userAgent, ipAddress, createdAt, usedAt, deletedAt, expiresAt)
+    expiresAt: Instant = Instant.now().plus(Duration.ofDays(90))
+  ): RefreshToken = RefreshToken(id, familyId, familyCreatedAt, secretHash, userId, userAgent, ipAddress, createdAt, usedAt, deletedAt, expiresAt)
+
+  def issuedRefreshToken(
+    userId: UserId = randomUserId(),
+    familyId: RefreshTokenFamilyId = randomRefreshTokenFamilyId(),
+    familyCreatedAt: Instant = Instant.now(),
+    userAgent: UserAgent = UserAgent("test-agent"),
+    createdAt: Instant = Instant.now(),
+    usedAt: Option[Instant] = None
+  ): IssuedRefreshToken = {
+    val secret = refreshTokenSecret()
+    IssuedRefreshToken(
+      refreshToken(
+        familyId = familyId,
+        familyCreatedAt = familyCreatedAt,
+        secretHash = secret.hash,
+        userId = userId,
+        userAgent = userAgent,
+        createdAt = createdAt,
+        usedAt = usedAt
+      ),
+      secret
+    )
+  }
 
   def verifiedExternalToken(
     provider: Provider = Provider.Firebase,

@@ -10,7 +10,7 @@ class RefreshTokenSpec extends AnyWordSpec with Matchers {
   private val now = Instant.now()
 
   "RefreshToken.isValid" should {
-    "be valid when freshly minted with no expiry" in {
+    "be valid when freshly minted" in {
       val token = TestData.refreshToken()
       token.isValid(now) shouldBe true
     }
@@ -31,51 +31,97 @@ class RefreshTokenSpec extends AnyWordSpec with Matchers {
     }
 
     "be valid before expiresAt" in {
-      val token = TestData.refreshToken(expiresAt = Some(now.plusSeconds(60)))
+      val token = TestData.refreshToken(expiresAt = now.plusSeconds(60))
       token.isValid(now) shouldBe true
     }
 
     "be invalid at expiresAt" in {
-      val token = TestData.refreshToken(expiresAt = Some(now))
+      val token = TestData.refreshToken(expiresAt = now)
       token.isValid(now) shouldBe false
     }
 
     "be invalid after expiresAt" in {
-      val token = TestData.refreshToken(expiresAt = Some(now.minusSeconds(1)))
+      val token = TestData.refreshToken(expiresAt = now.minusSeconds(1))
       token.isValid(now) shouldBe false
     }
   }
 
+  "RefreshToken.isUsed" should {
+    "be false for a fresh token and true once used" in {
+      val token = TestData.refreshToken()
+      token.isUsed shouldBe false
+      token.usedAt(now).isUsed shouldBe true
+    }
+  }
+
+  "RefreshToken.wasUsedWithin" should {
+    val grace = Duration.ofSeconds(60)
+
+    "be false for an unused token" in {
+      TestData.refreshToken().wasUsedWithin(grace, now) shouldBe false
+    }
+
+    "be true until the grace window has elapsed" in {
+      val token = TestData.refreshToken().usedAt(now)
+      token.wasUsedWithin(grace, now) shouldBe true
+      token.wasUsedWithin(grace, now.plusSeconds(59)) shouldBe true
+      token.wasUsedWithin(grace, now.plusSeconds(60)) shouldBe false
+    }
+  }
+
   "RefreshToken.mint" should {
-    "create a valid token with no expiry when validFor is None" in {
+    "create a valid token expiring at now + validFor" in {
       val id        = TestData.randomRefreshTokenId()
+      val familyId  = TestData.randomRefreshTokenFamilyId()
+      val secret    = TestData.refreshTokenSecret()
       val userId    = TestData.randomUserId()
       val userAgent = UserAgent("test-browser")
       val ip        = TestData.defaultIpAddress
 
-      val token = RefreshToken.mint(id, now, userId, userAgent, ip, validFor = None)
+      val family = RefreshTokenFamily(familyId, now.minusSeconds(3600))
+
+      val token = RefreshToken.mint(id, family, secret.hash, now, userId, userAgent, ip, validFor = Duration.ofDays(30))
 
       token.id shouldBe id
+      token.familyId shouldBe familyId
+      token.familyCreatedAt shouldBe family.createdAt
+      token.family shouldBe family
+      token.secretHash shouldBe secret.hash
       token.userId shouldBe userId
       token.userAgent shouldBe userAgent
       token.ipAddress shouldBe ip
       token.createdAt shouldBe now
-      token.expiresAt shouldBe None
-      token.isValid(now) shouldBe true
-    }
-
-    "set expiresAt = now + validFor when provided" in {
-      val token = RefreshToken.mint(
-        TestData.randomRefreshTokenId(),
-        now,
-        TestData.randomUserId(),
-        UserAgent("test"),
-        TestData.defaultIpAddress,
-        validFor = Some(Duration.ofDays(30))
-      )
-      token.expiresAt shouldBe Some(now.plus(Duration.ofDays(30)))
+      token.expiresAt shouldBe now.plus(Duration.ofDays(30))
       token.isValid(now) shouldBe true
       token.isValid(now.plus(Duration.ofDays(31))) shouldBe false
+    }
+  }
+
+  "RefreshTokenFamily.olderThan" should {
+    val maxAge = Duration.ofDays(365)
+    val family = RefreshTokenFamily(TestData.randomRefreshTokenFamilyId(), now)
+
+    "be false until the maximum age is reached and true from then on" in {
+      family.olderThan(maxAge, now) shouldBe false
+      family.olderThan(maxAge, now.plus(maxAge).minusSeconds(1)) shouldBe false
+      family.olderThan(maxAge, now.plus(maxAge)) shouldBe true
+    }
+  }
+
+  "RefreshTokenSecret" should {
+    "generate distinct, url-safe secrets of 256 bits" in {
+      val a = TestData.refreshTokenSecret()
+      val b = TestData.refreshTokenSecret()
+      a should not be b
+      a.unwrap should have length 43
+      a.unwrap should fullyMatch regex "[A-Za-z0-9_-]+"
+    }
+
+    "hash deterministically and never equal the secret itself" in {
+      val secret = TestData.refreshTokenSecret()
+      secret.hash shouldBe secret.hash
+      secret.hash.toString should not be secret.unwrap
+      TestData.refreshTokenSecret().hash should not be secret.hash
     }
   }
 

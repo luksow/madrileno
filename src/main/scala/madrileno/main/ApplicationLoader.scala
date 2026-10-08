@@ -1,6 +1,6 @@
 package madrileno.main
 
-import cats.effect.std.Supervisor
+import cats.effect.std.{SecureRandom, Supervisor}
 import cats.effect.unsafe.IORuntime
 import cats.effect.{Clock, IO}
 import com.comcast.ip4s.{Ipv4Address, Port}
@@ -83,7 +83,8 @@ class ApplicationLoader(
   val ioRuntime: IORuntime
 )(using
   TelemetryContext,
-  Supervisor[IO])
+  Supervisor[IO],
+  SecureRandom[IO])
     extends ApplicationRouteProvider
     with ApplicationTaskProvider
     with LifecycleProvider
@@ -102,6 +103,7 @@ class ApplicationLoader(
   override lazy val outboxConfig: OutboxConfig = config.at("outbox").loadOrThrow[OutboxConfig]
   lazy val telemetryContext: TelemetryContext  = summon[TelemetryContext]
   lazy val supervisor: Supervisor[IO]          = summon[Supervisor[IO]]
+  lazy val secureRandom: SecureRandom[IO]      = summon[SecureRandom[IO]]
   lazy val mailContext: MailContext            = MailContext(httpConfig.baseUrl)
   val objectStore: ObjectStore                 = objectStoreRuntime.objectStore
 

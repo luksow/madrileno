@@ -29,7 +29,7 @@ client → POST /v1/auth/firebase {firebaseJwtToken}
                           └──────────────────────────┘
                                        │
                                        ▼
-client ◄─── 200 {jwt, refreshTokenId}
+client ◄─── 200 {jwt, refreshToken}
 
 later requests:
 client → Authorization: Bearer <internal jwt>
@@ -59,10 +59,10 @@ External identity is verified once; from then on the app trusts its own short-li
 | `DevAuthVerifier`                 | Treats an email-shaped token as a verified identity; reached via `POST /v1/auth/dev`. Registered only when `dev-auth.enabled = true` (`DEV_AUTH_ENABLED`); the route is always wired but returns 404 `unknown-provider` when the verifier isn't registered. |
 | `JwtService`                      | Encodes / decodes the app's own JWT (`InternalJwt`). HS256 (`com.auth0:java-jwt`). Signs an `AuthContext`.    |
 | `AuthenticationService`           | `authenticateWithProvider(provider, cmd)`: verify external → upsert `User` + `UserAuth` → mint internal JWT + refresh token. |
-| `AuthRouter`                      | `POST /v1/auth/firebase`, `POST /v1/auth/oidc/{provider}`, `POST /v1/auth/dev` (dev only), `POST /v1/auth/refresh-token`, `GET/DELETE /v1/auth/sessions`. |
+| `AuthRouter`                      | `POST /v1/auth/firebase`, `POST /v1/auth/oidc/{provider}`, `POST /v1/auth/dev` (dev only), `POST /v1/auth/refresh-token` (all answer with `Cache-Control: no-store`), `GET/DELETE /v1/auth/sessions`. |
 | `UserAuthenticator`               | The function passed to `authenticateOrRejectWithChallenge`. Decodes the internal JWT, returns `AuthContext`.  |
-| `RefreshTokenRepository`          | Persists refresh tokens; supports listing by user, revocation by id or user-agent.                            |
-| `cleanupExpiredRefreshTokensTask` | Recurring task that deletes used/revoked rows older than 60 days (tombstone GC).                              |
+| `RefreshTokenRepository`          | Persists refresh tokens (secret hash only, never the secret); lookup by secret hash under the family lock, live-token listing by user, user agent, or family, family revocation. |
+| `cleanupExpiredRefreshTokensTask` | Recurring task that deletes rows 60 days after their `expires_at` (tombstone GC); used rows stay as replay evidence until then. |
 
 ## `AuthContext`
 
@@ -105,17 +105,25 @@ def authedRoutes(authContext: AuthContext): Route = {
 
 4. **Server upserts the User and UserAuth.** `User` is the application's user record; `UserAuth` records the link to a Firebase identity. First-time logins create both; returning users update them with whatever Firebase reported (e.g. updated avatar).
 
-5. **Server mints the internal JWT and a refresh token.** The JWT signs an `AuthContext` with `jwt.secret`, valid for `jwt.valid-for` (default 5 minutes). The refresh token is a row in `refresh_token` keyed by a UUID; the client gets back the row's UUID, the server keeps the rest (user-agent, IP, created-at, used-at).
+5. **Server mints the internal JWT and a refresh token.** The JWT signs an `AuthContext` with `jwt.secret`, valid for `jwt.valid-for` (default 5 minutes). The refresh token is a 256-bit random secret (base64url, 43 chars) that the client receives exactly once; the server stores only its SHA-256 in `refresh_token.secret_hash`, alongside a row `id`, a `family_id` and `family_created_at` shared by every rotation of the same login, user-agent, IP, created-at, used-at, and `expires_at` (`refresh-token.valid-for`, default 90 days, `REFRESH_TOKEN_VALID_FOR`). A **session** is a family: `GET /v1/auth/sessions` lists one entry per family with a live token, keyed by the family id, and `DELETE /v1/auth/sessions/{id}` revokes that family. Neither the family id nor the row id is a credential, so holding a JWT never yields a refresh token. Token-bearing responses carry `Cache-Control: no-store` (RFC 6749 §5.1).
 
 6. **Result:** `200 { jwt, refreshToken, userCreated }`. `userCreated` is `true` when this call provisioned a new `User` account (first-time login), `false` for a returning user — clients use it to branch their UX (show onboarding vs. just log in). The status code is `200` either way; the "was a user created" signal lives in the body so a typed client (oRPC, OpenAPI codegen) sees one response shape, not two keyed on status. Subsequent requests carry `Authorization: Bearer <jwt>`.
 
 ## Refreshing
 
-The internal JWT is short-lived. When it expires, the client `POST /v1/auth/refresh-token` with the refresh-token UUID. `AuthenticationService.authenticateWithRefreshToken` looks up the row, verifies it hasn't been used or revoked, marks it `used`, and issues a fresh JWT + a fresh refresh token.
+The internal JWT is short-lived. When it expires, the client `POST /v1/auth/refresh-token` with the refresh-token secret. `AuthenticationService.authenticateWithRefreshToken` hashes it, looks up the row by hash, verifies it hasn't been used, revoked, or expired, marks it `used`, and issues a fresh JWT + a fresh refresh token in the same family. The shape of the value is not validated: anything that matches no stored hash, an old UUID or garbage included, is answered 401 `invalid-token`, so clients have a single signal to re-login on and 400 is reserved for malformed JSON.
 
-Refresh tokens are one-time-use — using one invalidates it. This means a stolen refresh token is only useful until the legitimate client refreshes again, at which point the legitimate client's refresh fails and the user has to log in. Time-based expiry is optional. Set `REFRESH_TOKEN_VALID_FOR` (an ISO-8601 duration such as `P30D`) and every token issued from then on carries an `expires_at` that `RefreshToken.isValid` checks; the client gets a 401 and has to log in again. Unset (the default), a refresh token lives until it's used or revoked.
+Refresh tokens are one-time-use and every rotation inherits the family of the token it replaced. Replaying a token that was already used is treated as evidence of theft: the whole family is revoked (OAuth 2.0 Security BCP "refresh token rotation with reuse detection"), so whichever of the attacker or the legitimate client refreshes second kills the chain for both, and the user logs in again. Other devices' families are untouched. A token that is merely expired or already revoked is rejected without side effects.
 
-`cleanupExpiredRefreshTokensTask` runs daily at 1 AM to delete rows that have been used or revoked for more than 60 days (tombstone garbage collection — it also sweeps tokens whose `expires_at` passed more than 60 days ago; it never expires a live token).
+`refresh-token.reuse-grace` (`REFRESH_TOKEN_REUSE_GRACE`) can soften this: a replay within that window of the original use is rejected with 401 without revoking the family. It defaults to zero, i.e. off. The window only helps clients that race refreshes across tabs without single-flight; a client retrying after a lost response never received the successor, so it has to log in again either way. And it costs real detection: if an attacker rotates a stolen token first and the victim's client replays inside the window, the victim re-logs in while the attacker's family lives on undetected. Both reference clients refresh single-flight, so leave it at zero unless you know your client does not.
+
+Rotation and replay detection on the same family are serialized with a transaction-scoped Postgres advisory lock keyed by `family_id`, taken before any row lock (`RefreshTokenRepository.findAndLockFamilyBySecretHash`: look the token up without a lock, lock its family, then re-select it `FOR UPDATE`). Row locks alone are not enough: a replay's revoking `UPDATE` would wait for an in-flight rotation to commit but, under read-committed snapshots, never see the successor that rotation inserted — the successor would survive the revocation. Taking the family lock first also fixes the lock order, so a replay holding the family lock can never wait on a row the rotation holds while the rotation waits on the family lock.
+
+Each token also expires `refresh-token.valid-for` after it was minted (default 90 days). Because rotation mints a fresh token with a fresh window, this behaves as an inactivity timeout. On top of it, `refresh-token.max-family-age` (default 365 days, `REFRESH_TOKEN_MAX_FAMILY_AGE`) is the absolute lifetime: once a family is that old, the next refresh revokes it and answers 401 regardless of activity, so a session cannot live forever on refreshes alone.
+
+Revocation is family-wide and takes the same lock. `DELETE /v1/auth/sessions/{id}` locks the family, checks it belongs to the caller, and soft-deletes every token in it; `DELETE /v1/auth/sessions?user-agent=…` does the same for every family whose live token carries that user agent, locking the families in a fixed order. Revoking only the listed row would race a concurrent rotation the same way replay detection did: the row re-reads as used, nothing happens, and the freshly minted successor keeps the device logged in.
+
+`cleanupExpiredRefreshTokensTask` runs daily at 1 AM to delete rows whose `expires_at` is more than 60 days in the past, whether they were used, revoked, or never presented. Used rows are deliberately kept for their whole validity window: they are the evidence that lets a victim's late replay reveal a hijacked family. Deleting them sooner would turn that replay into "not found" and leave the thief's chain running. Retention is bounded by `valid-for` + 60 days per token rather than by family lifetime, so a long-lived device does not accumulate history forever.
 
 ## OIDC providers
 
@@ -204,6 +212,10 @@ Industry-standard companions that are deliberately **not** pre-built, in the spi
 - **Recent-auth ("sudo mode").** Big providers require a fresh re-authentication before destructive account actions; here any valid JWT suffices. The hook point is the `DELETE /users/me` route — gate it on a recently-issued token (`iat` claim) or a re-verified provider token.
 - **Grace period / undo.** Common practice is a 14–30 day window where the account is deactivated but recoverable. Here deletion is immediate and final; a grace period means deferring the anonymize+event behind a scheduled task that a re-login cancels.
 - **Pre-deletion data export.** GDPR-adjacent flows usually offer "download your data" first; there's no export endpoint.
+
+## Credentials in logs
+
+The service and the bearer authenticator never write a credential to a log line. Where a line needs to say *which* token it is about, it carries a `Fingerprint` instead: `fp:` plus the first 32 bits of an HMAC-SHA256 of the value under `logging.fingerprint-secret` (`FINGERPRINT_SECRET`). The same token yields the same fingerprint everywhere in a deployment, so an unknown-token warning, a replay warning and the issue line can be joined on it, while the fingerprint itself is useless without the key: being keyed, it is safe even for low-entropy inputs such as a dev-login email or a malformed value a client sent by mistake. Refresh-token row ids and family ids appear raw; they are handles, not credentials.
 
 ## What you can't do
 

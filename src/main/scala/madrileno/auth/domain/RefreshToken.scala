@@ -2,6 +2,7 @@ package madrileno.auth.domain
 
 import com.comcast.ip4s.IpAddress
 import madrileno.user.domain.UserId
+import madrileno.utils.crypto.Sha256
 import pl.iterators.kebs.opaque.Opaque
 
 import java.time.{Duration, Instant}
@@ -9,6 +10,25 @@ import java.util.UUID
 
 opaque type RefreshTokenId = UUID
 object RefreshTokenId extends Opaque[RefreshTokenId, UUID]
+
+opaque type RefreshTokenFamilyId = UUID
+object RefreshTokenFamilyId extends Opaque[RefreshTokenFamilyId, UUID]
+
+final case class RefreshTokenFamily(id: RefreshTokenFamilyId, createdAt: Instant) {
+  def olderThan(maxAge: Duration, now: Instant): Boolean = !now.isBefore(createdAt.plus(maxAge))
+}
+
+opaque type RefreshTokenSecret = String
+object RefreshTokenSecret extends Opaque[RefreshTokenSecret, String] {
+  val byteLength: Int = 32
+
+  extension (secret: RefreshTokenSecret) {
+    def hash: RefreshTokenSecretHash = RefreshTokenSecretHash(Sha256.base64Url(secret))
+  }
+}
+
+opaque type RefreshTokenSecretHash = String
+object RefreshTokenSecretHash extends Opaque[RefreshTokenSecretHash, String]
 
 opaque type UserAgent = String
 object UserAgent extends Opaque[UserAgent, String] {
@@ -20,15 +40,28 @@ object UserAgent extends Opaque[UserAgent, String] {
 
 final case class RefreshToken(
   id: RefreshTokenId,
+  familyId: RefreshTokenFamilyId,
+  familyCreatedAt: Instant,
+  secretHash: RefreshTokenSecretHash,
   userId: UserId,
   userAgent: UserAgent,
   ipAddress: IpAddress,
   createdAt: Instant,
   usedAt: Option[Instant],
   deletedAt: Option[Instant],
-  expiresAt: Option[Instant]) {
+  expiresAt: Instant) {
+  def family: RefreshTokenFamily = RefreshTokenFamily(familyId, familyCreatedAt)
+
   def isValid(now: Instant): Boolean = {
-    deletedAt.isEmpty && usedAt.isEmpty && expiresAt.forall(now.isBefore)
+    deletedAt.isEmpty && usedAt.isEmpty && now.isBefore(expiresAt)
+  }
+
+  def isUsed: Boolean = usedAt.isDefined
+
+  def isRevoked: Boolean = deletedAt.isDefined
+
+  def wasUsedWithin(grace: Duration, now: Instant): Boolean = {
+    usedAt.exists(used => now.isBefore(used.plus(grace)))
   }
 
   def usedAt(instant: Instant): RefreshToken = {
@@ -43,20 +76,27 @@ final case class RefreshToken(
 object RefreshToken {
   def mint(
     id: RefreshTokenId,
+    family: RefreshTokenFamily,
+    secretHash: RefreshTokenSecretHash,
     now: Instant,
     userId: UserId,
     userAgent: UserAgent,
     ipAddress: IpAddress,
-    validFor: Option[Duration]
+    validFor: Duration
   ): RefreshToken =
     RefreshToken(
       id = id,
+      familyId = family.id,
+      familyCreatedAt = family.createdAt,
+      secretHash = secretHash,
       userId = userId,
       userAgent = userAgent,
       ipAddress = ipAddress,
       createdAt = now,
       usedAt = None,
       deletedAt = None,
-      expiresAt = validFor.map(now.plus)
+      expiresAt = now.plus(validFor)
     )
 }
+
+final case class IssuedRefreshToken(token: RefreshToken, secret: RefreshTokenSecret)

@@ -152,17 +152,17 @@ onRequest(body = AuthWithFirebaseRequest(FirebaseJwt("test-token")))
 **Seeding DB state** — when `ctx.performRequest` needs data to already exist (and the request inputs depend on it), use `withSetup`. The setup block runs at test-execution time, and its return value flows into both `.request { ... }` (to construct request inputs from seeded data) and `.assert { (ctx, s) => ... }`:
 ```scala
 withSetup {
-  val user         = TestData.user()
-  val refreshToken = TestData.refreshToken(userId = user.id)
+  val user   = TestData.user()
+  val issued = TestData.issuedRefreshToken(userId = user.id)
   val _ = application.transactor
     .inTransaction {
       application.userRepository.create(user, Instant.now()) *>
-        new RefreshTokenRepository().save(refreshToken)
+        new RefreshTokenRepository().save(issued.token)
     }
     .unsafeRunSync()
-  refreshToken.id
-}.request { (tokenId: RefreshTokenId) =>
-  onRequest(body = AuthWithRefreshTokenRequest(tokenId), headers = "127.0.0.1")
+  issued.secret
+}.request { (secret: RefreshTokenSecret) =>
+  onRequest(body = AuthWithRefreshTokenRequest(secret), headers = "127.0.0.1")
 }.respondsWith[AuthenticatedResponse](Ok, description = "Authenticated with refresh token")
   .assert { case (ctx, _) =>
     val response = ctx.performRequest(allRoutes)
@@ -222,7 +222,7 @@ withSetup {
 Baklava deserializes response bodies and serializes request bodies. DTOs used in `respondsWith[T]` need a circe `Decoder`. DTOs used in `onRequest(body = ...)` need an `Encoder`. Add `derives Decoder` or `derives Encoder.AsObject` alongside the existing derivations:
 
 ```scala
-final case class AuthenticatedResponse(jwt: InternalJwt, refreshToken: RefreshTokenId, userCreated: Boolean) derives Encoder.AsObject, Decoder
+final case class AuthenticatedResponse(jwt: InternalJwt, refreshToken: RefreshTokenSecret, userCreated: Boolean) derives Encoder.AsObject, Decoder
 final case class AuthWithFirebaseRequest(firebaseJwtToken: FirebaseJwt) derives Decoder, Encoder.AsObject
 ```
 

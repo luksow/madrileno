@@ -117,7 +117,7 @@ class ConfigAdminRouterSpec extends BaseRouteSpec with TestApplicationLoader {
           at(body, "jwt", "valid-for").flatMap(_.asString) shouldBe Some("PT5M")
           at(body, "admin", "user").flatMap(_.asString) shouldBe Some("admin")
           // Sub-objects under a "token-ish" key are walked, not redacted wholesale
-          at(body, "refresh-token").flatMap(_.asObject).map(_.isEmpty) shouldBe Some(true) // valid-for unset by default
+          at(body, "refresh-token", "valid-for").flatMap(_.asString) shouldBe Some("P90D")
         },
       onRequest()
         .respondsWith[Error[Unit]](Unauthorized, description = "Missing credentials")
