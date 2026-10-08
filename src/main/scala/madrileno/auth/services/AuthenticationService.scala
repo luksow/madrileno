@@ -103,7 +103,7 @@ class AuthenticationService(
       case Left(_) =>
         logger.warn(s"Malformed refresh token ${fingerprinter(command.refreshToken)} from $client").as(AuthenticationResult.InvalidToken)
       case Right(secret) =>
-        val presented = fingerprinter(secret.value)
+        val presented = fingerprinter(secret.unwrap)
         transactor.inTransaction {
           Clock[IO].realTimeInstant.flatMap { now =>
             refreshTokenRepository
@@ -231,7 +231,7 @@ class AuthenticationService(
       _ <-
         logger
           .debug(
-            s"Issued JWT ${fingerprinter(jwt.unwrap)} and refresh token ${refreshToken.id} (${fingerprinter(secret.value)}) in family ${family.id} for user: $userId"
+            s"Issued JWT ${fingerprinter(jwt.unwrap)} and refresh token ${refreshToken.id} (${fingerprinter(secret.unwrap)}) in family ${family.id} for user: $userId"
           )
           .seal
     } yield {

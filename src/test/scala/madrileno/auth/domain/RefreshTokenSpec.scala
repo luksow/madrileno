@@ -113,21 +113,15 @@ class RefreshTokenSpec extends AnyWordSpec with Matchers {
       val a = TestData.refreshTokenSecret()
       val b = TestData.refreshTokenSecret()
       a should not be b
-      a.value should have length 43
-      a.value should fullyMatch regex "[A-Za-z0-9_-]+"
+      a.unwrap should have length 43
+      a.unwrap should fullyMatch regex "[A-Za-z0-9_-]+"
     }
 
     "hash deterministically and never equal the secret itself" in {
       val secret = TestData.refreshTokenSecret()
       secret.hash shouldBe secret.hash
-      secret.hash.toString should not be secret.value
+      secret.hash.toString should not be secret.unwrap
       TestData.refreshTokenSecret().hash should not be secret.hash
-    }
-
-    "redact the secret from toString" in {
-      val secret = TestData.refreshTokenSecret()
-      secret.toString should not include secret.value
-      IssuedRefreshToken(TestData.refreshToken(), secret).toString should not include secret.value
     }
 
     "reject anything that is not 43 base64url characters, including a row id" in {

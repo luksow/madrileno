@@ -78,7 +78,7 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
           new RefreshTokenRepository().save(issued.token)
       }
       .unsafeRunSync()
-    issued.secret.value
+    issued.secret.unwrap
   }
 
   path("/v1/auth/firebase")(
@@ -93,7 +93,7 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
         .assert { ctx =>
           val response = ctx.performRequest(allRoutes)
           response.body.jwt.toString should not be empty
-          response.body.refreshToken.value should have length 43
+          response.body.refreshToken.unwrap should have length 43
           response.body.userCreated shouldBe true
         },
       withSetup {
@@ -103,7 +103,7 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
         .assert { case (ctx, _) =>
           val response = ctx.performRequest(allRoutes)
           response.body.jwt.toString should not be empty
-          response.body.refreshToken.value should have length 43
+          response.body.refreshToken.unwrap should have length 43
           response.body.userCreated shouldBe false
         },
       withSetup {
@@ -143,11 +143,11 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
         .assert { case (ctx, _) =>
           val response = ctx.performRequest(allRoutes)
           response.body.jwt.toString should not be empty
-          response.body.refreshToken.value should have length 43
+          response.body.refreshToken.unwrap should have length 43
           response.body.userCreated shouldBe false
           response.headers.find(_.name.equalsIgnoreCase("Cache-Control")).map(_.value) shouldBe Some("no-store")
         },
-      onRequest(body = AuthWithRefreshTokenRequest(TestData.refreshTokenSecret().value))
+      onRequest(body = AuthWithRefreshTokenRequest(TestData.refreshTokenSecret().unwrap))
         .respondsWith[Error[Unit]](Unauthorized, description = "Unknown, used, revoked, expired, or malformed refresh token")
         .assert { ctx =>
           val response = ctx.performRequest(allRoutes)
@@ -178,7 +178,7 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
         .assert { ctx =>
           val response = ctx.performRequest(allRoutes)
           response.body.jwt.toString should not be empty
-          response.body.refreshToken.value should have length 43
+          response.body.refreshToken.unwrap should have length 43
           response.body.userCreated shouldBe true
         },
       withSetup {
@@ -213,7 +213,7 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
         .assert { ctx =>
           val response = ctx.performRequest(allRoutes)
           response.body.jwt.toString should not be empty
-          response.body.refreshToken.value should have length 43
+          response.body.refreshToken.unwrap should have length 43
           response.body.userCreated shouldBe true
         },
       onRequest(pathParameters = "unknown-provider", body = AuthWithOidcRequest("any-token"))

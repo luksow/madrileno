@@ -148,12 +148,7 @@ class RefreshTokenRepository {
   }
 
   private def lockFamilyKey(key: Int): DBInTransaction[Unit] = {
-    val session = summon[Session[IO]]
-    session
-      .unique(sql"SELECT 1 FROM (SELECT pg_advisory_xact_lock($int4, $int4)) AS family_lock".query(int4))(
-        (RefreshTokenRepository.FamilyLockClass, key)
-      )
-      .void
+    AdvisoryLock.transactionScoped(RefreshTokenRepository.FamilyLockName, key)
   }
 
   private def familyLockKey(familyId: RefreshTokenFamilyId): Int = familyId.unwrap.hashCode
@@ -190,5 +185,5 @@ class RefreshTokenRepository {
 }
 
 object RefreshTokenRepository {
-  private val FamilyLockClass: Int = 0x52544b46
+  private val FamilyLockName: String = "refresh-token-family"
 }

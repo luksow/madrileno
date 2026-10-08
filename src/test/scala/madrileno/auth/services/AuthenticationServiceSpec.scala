@@ -149,7 +149,7 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
   private def refreshWithRaw(secret: String, userAgent: String = "test-agent") =
     AuthenticateWithRefreshTokenCommand(secret, UserAgent(userAgent), TestData.defaultIpAddress)
 
-  private def refreshWith(secret: RefreshTokenSecret) = refreshWithRaw(secret.value)
+  private def refreshWith(secret: RefreshTokenSecret) = refreshWithRaw(secret.unwrap)
 
   "authenticateWithRefreshToken" should {
     "authenticate with a valid refresh token and rotate within the same family" in {
@@ -351,7 +351,7 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
           _ <- service.authenticateWithRefreshToken(refreshWith(first.secret))
           _ <- service.authenticateWithRefreshToken(refreshWithRaw("garbage-token"))
           _ <- service.authenticateWithProvider(Provider.Firebase, command.copy(token = ExternalAuthToken("invalid-token")))
-        } yield (List(first.secret.value, second.secret.value, jwtOf(login), jwtOf(rotated), "garbage-token", "invalid-token"), first.secret.value)
+        } yield (List(first.secret.unwrap, second.secret.unwrap, jwtOf(login), jwtOf(rotated), "garbage-token", "invalid-token"), first.secret.unwrap)
       }.map { case ((secrets, replayed), logged) =>
         logged should not be empty
         secrets.foreach { secret =>

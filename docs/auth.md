@@ -215,7 +215,7 @@ Industry-standard companions that are deliberately **not** pre-built, in the spi
 
 ## Credentials in logs
 
-The service and the bearer authenticator never write a credential to a log line. Where a line needs to say *which* token it is about, it carries a `Fingerprint` instead: `fp:` plus the first 32 bits of an HMAC-SHA256 of the value under `logging.fingerprint-secret` (`FINGERPRINT_SECRET`). The same token yields the same fingerprint everywhere in a deployment, so an unknown-token warning, a replay warning and the issue line can be joined on it, while the fingerprint itself is useless without the key: being keyed, it is safe even for low-entropy inputs such as a dev-login email or a malformed value a client sent by mistake. Refresh-token row ids and family ids appear raw; they are handles, not credentials. The HTTP request/response debug logger still logs bodies verbatim, so login and refresh bodies are the remaining place credentials reach the log; redacting those fields is a separate change.
+The service and the bearer authenticator never write a credential to a log line. Where a line needs to say *which* token it is about, it carries a `Fingerprint` instead: `fp:` plus the first 32 bits of an HMAC-SHA256 of the value under `logging.fingerprint-secret` (`FINGERPRINT_SECRET`). The same token yields the same fingerprint everywhere in a deployment, so an unknown-token warning, a replay warning and the issue line can be joined on it, while the fingerprint itself is useless without the key: being keyed, it is safe even for low-entropy inputs such as a dev-login email or a malformed value a client sent by mistake. Refresh-token row ids and family ids appear raw; they are handles, not credentials.
 
 ## What you can't do
 

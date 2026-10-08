@@ -160,7 +160,7 @@ withSetup {
         new RefreshTokenRepository().save(issued.token)
     }
     .unsafeRunSync()
-  issued.secret.value
+  issued.secret.unwrap
 }.request { (secret: String) =>
   onRequest(body = AuthWithRefreshTokenRequest(secret), headers = "127.0.0.1")
 }.respondsWith[AuthenticatedResponse](Ok, description = "Authenticated with refresh token")

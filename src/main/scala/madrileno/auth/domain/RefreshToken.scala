@@ -3,7 +3,6 @@ package madrileno.auth.domain
 import com.comcast.ip4s.IpAddress
 import madrileno.user.domain.UserId
 import madrileno.utils.crypto.Sha256
-import pl.iterators.kebs.core.macros.ValueClassLike
 import pl.iterators.kebs.opaque.Opaque
 
 import java.time.{Duration, Instant}
@@ -19,27 +18,20 @@ final case class RefreshTokenFamily(id: RefreshTokenFamilyId, createdAt: Instant
   def olderThan(maxAge: Duration, now: Instant): Boolean = !now.isBefore(createdAt.plus(maxAge))
 }
 
-final case class RefreshTokenSecret private (value: String) {
-  def hash: RefreshTokenSecretHash = RefreshTokenSecretHash(Sha256.base64Url(value))
-
-  override def toString: String = "RefreshTokenSecret(redacted)"
-}
-
-object RefreshTokenSecret {
+opaque type RefreshTokenSecret = String
+object RefreshTokenSecret extends Opaque[RefreshTokenSecret, String] {
   val byteLength: Int = 32
 
   private val encodedPattern = "[A-Za-z0-9_-]{43}".r
 
-  def from(value: String): Either[String, RefreshTokenSecret] = {
-    if (encodedPattern.matches(value)) Right(new RefreshTokenSecret(value))
+  override def validate(value: String): Either[String, RefreshTokenSecret] = {
+    if (encodedPattern.matches(value)) Right(value)
     else Left("Invalid refresh token")
   }
 
-  def apply(value: String): RefreshTokenSecret = {
-    from(value).fold(reason => throw new IllegalArgumentException(reason), identity)
+  extension (secret: RefreshTokenSecret) {
+    def hash: RefreshTokenSecretHash = RefreshTokenSecretHash(Sha256.base64Url(secret))
   }
-
-  given ValueClassLike[RefreshTokenSecret, String] = ValueClassLike(apply, _.value)
 }
 
 opaque type RefreshTokenSecretHash = String
