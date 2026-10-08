@@ -1,5 +1,6 @@
 package madrileno.utils.observability
 
+import pl.iterators.kebs.core.macros.ValueClassLike
 import pureconfig.ConfigReader
 
 import java.nio.charset.StandardCharsets.UTF_8
@@ -18,6 +19,8 @@ object Fingerprint {
 
 class Fingerprinter(config: Fingerprinter.Config) {
   private val key = new SecretKeySpec(config.fingerprintSecret.getBytes(UTF_8), Fingerprinter.Algorithm)
+
+  def apply[T](secret: T)(using valueClassLike: ValueClassLike[T, String]): Fingerprint = apply(valueClassLike.unapply(secret))
 
   def apply(secret: String): Fingerprint = {
     val mac = Mac.getInstance(Fingerprinter.Algorithm)

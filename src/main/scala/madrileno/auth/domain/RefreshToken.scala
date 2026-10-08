@@ -22,13 +22,6 @@ opaque type RefreshTokenSecret = String
 object RefreshTokenSecret extends Opaque[RefreshTokenSecret, String] {
   val byteLength: Int = 32
 
-  private val encodedPattern = "[A-Za-z0-9_-]{43}".r
-
-  override def validate(value: String): Either[String, RefreshTokenSecret] = {
-    if (encodedPattern.matches(value)) Right(value)
-    else Left("Invalid refresh token")
-  }
-
   extension (secret: RefreshTokenSecret) {
     def hash: RefreshTokenSecretHash = RefreshTokenSecretHash(Sha256.base64Url(secret))
   }

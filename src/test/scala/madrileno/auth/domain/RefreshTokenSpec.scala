@@ -123,18 +123,6 @@ class RefreshTokenSpec extends AnyWordSpec with Matchers {
       secret.hash.toString should not be secret.unwrap
       TestData.refreshTokenSecret().hash should not be secret.hash
     }
-
-    "reject anything that is not 43 base64url characters, including a row id" in {
-      RefreshTokenSecret.from("") shouldBe a[Left[?, ?]]
-      RefreshTokenSecret.from(TestData.randomRefreshTokenId().toString) shouldBe a[Left[?, ?]]
-      RefreshTokenSecret.from("a" * 42) shouldBe a[Left[?, ?]]
-      RefreshTokenSecret.from("a" * 44) shouldBe a[Left[?, ?]]
-      RefreshTokenSecret.from("a" * 42 + "=") shouldBe a[Left[?, ?]]
-      RefreshTokenSecret.from("a" * 43) shouldBe a[Right[?, ?]]
-      assertThrows[IllegalArgumentException] {
-        RefreshTokenSecret("")
-      }
-    }
   }
 
   "UserAgent" should {

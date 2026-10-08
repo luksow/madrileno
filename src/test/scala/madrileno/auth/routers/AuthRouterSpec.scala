@@ -1,7 +1,7 @@
 package madrileno.auth.routers
 
 import cats.effect.IO
-import madrileno.auth.domain.{AuthContext, Credential, FirebaseJwt, Provider, ProviderUserId, UserAgent, UserAuth}
+import madrileno.auth.domain.{AuthContext, Credential, FirebaseJwt, Provider, ProviderUserId, RefreshTokenSecret, UserAgent, UserAuth}
 import madrileno.auth.repositories.{RefreshTokenRepository, UserAuthRepository}
 import madrileno.auth.routers.dto.{
   AuthWithEmailRequest,
@@ -69,7 +69,7 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
     email
   }
 
-  private def seedRefreshToken(): String = {
+  private def seedRefreshToken(): RefreshTokenSecret = {
     val user   = TestData.user()
     val issued = TestData.issuedRefreshToken(userId = user.id)
     val _      = application.transactor
@@ -78,7 +78,7 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
           new RefreshTokenRepository().save(issued.token)
       }
       .unsafeRunSync()
-    issued.secret.unwrap
+    issued.secret
   }
 
   path("/v1/auth/firebase")(
@@ -147,16 +147,16 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
           response.body.userCreated shouldBe false
           response.headers.find(_.name.equalsIgnoreCase("Cache-Control")).map(_.value) shouldBe Some("no-store")
         },
-      onRequest(body = AuthWithRefreshTokenRequest(TestData.refreshTokenSecret().unwrap))
-        .respondsWith[Error[Unit]](Unauthorized, description = "Unknown, used, revoked, expired, or malformed refresh token")
+      onRequest(body = AuthWithRefreshTokenRequest(TestData.refreshTokenSecret()))
+        .respondsWith[Error[Unit]](Unauthorized, description = "Unknown, used, revoked, or expired refresh token")
         .assert { ctx =>
           val response = ctx.performRequest(allRoutes)
           response.body.title shouldBe Some("Invalid refresh token")
         },
-      onRequest(body = AuthWithRefreshTokenRequest(TestData.randomUuid().toString))
+      onRequest(body = AuthWithRefreshTokenRequest(RefreshTokenSecret(TestData.randomUuid().toString)))
         .respondsWith[Error[Unit]](
           Unauthorized,
-          description = "A pre-rotation UUID or any other malformed value is treated as an invalid token, not a bad request"
+          description = "The token shape is not validated: a pre-rotation UUID or any other string is simply an unknown token, not a bad request"
         )
         .assert { ctx =>
           val response = ctx.performRequest(allRoutes)

@@ -111,7 +111,7 @@ def authedRoutes(authContext: AuthContext): Route = {
 
 ## Refreshing
 
-The internal JWT is short-lived. When it expires, the client `POST /v1/auth/refresh-token` with the refresh-token secret. `AuthenticationService.authenticateWithRefreshToken` hashes it, looks up the row by hash, verifies it hasn't been used, revoked, or expired, marks it `used`, and issues a fresh JWT + a fresh refresh token in the same family. A value that is not even shaped like a secret (an old UUID, garbage) is answered with the same 401 `invalid-token` as an unknown one, so clients have a single signal to re-login on; 400 is reserved for malformed JSON.
+The internal JWT is short-lived. When it expires, the client `POST /v1/auth/refresh-token` with the refresh-token secret. `AuthenticationService.authenticateWithRefreshToken` hashes it, looks up the row by hash, verifies it hasn't been used, revoked, or expired, marks it `used`, and issues a fresh JWT + a fresh refresh token in the same family. The shape of the value is not validated: anything that matches no stored hash, an old UUID or garbage included, is answered 401 `invalid-token`, so clients have a single signal to re-login on and 400 is reserved for malformed JSON.
 
 Refresh tokens are one-time-use and every rotation inherits the family of the token it replaced. Replaying a token that was already used is treated as evidence of theft: the whole family is revoked (OAuth 2.0 Security BCP "refresh token rotation with reuse detection"), so whichever of the attacker or the legitimate client refreshes second kills the chain for both, and the user logs in again. Other devices' families are untouched. A token that is merely expired or already revoked is rejected without side effects.
 

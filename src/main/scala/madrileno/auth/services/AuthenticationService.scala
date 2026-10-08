@@ -98,54 +98,50 @@ class AuthenticationService(
   }
 
   def authenticateWithRefreshToken(command: AuthenticateWithRefreshTokenCommand): IO[AuthenticationResult] = {
-    val client = s"${command.ipAddress} (${command.userAgent})"
-    RefreshTokenSecret.from(command.refreshToken) match {
-      case Left(_) =>
-        logger.warn(s"Malformed refresh token ${fingerprinter(command.refreshToken)} from $client").as(AuthenticationResult.InvalidToken)
-      case Right(secret) =>
-        val presented = fingerprinter(secret.unwrap)
-        transactor.inTransaction {
-          Clock[IO].realTimeInstant.flatMap { now =>
-            refreshTokenRepository
-              .findAndLockFamilyBySecretHash(secret.hash)
-              .flatMap {
-                case Some(refreshToken) if refreshToken.isValid(now) && refreshToken.family.olderThan(config.maxFamilyAge, now) =>
-                  refreshTokenRepository.revokeFamily(refreshToken.familyId, now) *>
-                    logger
-                      .info(s"Refresh token family ${refreshToken.familyId} for user ${refreshToken.userId} reached its maximum age; revoked")
-                      .as(AuthenticationResult.InvalidToken)
-                case Some(refreshToken) if refreshToken.isValid(now) =>
-                  refreshTokenRepository.update(refreshToken.usedAt(now)) *>
-                    generateTokens(
-                      refreshToken.userId,
-                      refreshToken.family,
-                      command.userAgent,
-                      command.ipAddress,
-                      now,
-                      AuthenticationResult.Authenticated.apply
-                    )
-                case Some(refreshToken) if refreshToken.isUsed && !refreshToken.isRevoked && refreshToken.wasUsedWithin(config.reuseGrace, now) =>
-                  logger
-                    .warn(
-                      s"Refresh token ${refreshToken.id} ($presented) was replayed within the reuse grace window from $client; family ${refreshToken.familyId} kept"
-                    )
-                    .as(AuthenticationResult.InvalidToken)
-                case Some(refreshToken) if refreshToken.isUsed && !refreshToken.isRevoked =>
-                  refreshTokenRepository.revokeFamily(refreshToken.familyId, now) *>
-                    logger
-                      .warn(
-                        s"Refresh token ${refreshToken.id} ($presented) was replayed from $client; revoked family ${refreshToken.familyId} for user ${refreshToken.userId}"
-                      )
-                      .as(AuthenticationResult.InvalidToken)
-                case Some(refreshToken) =>
-                  logger
-                    .warn(s"Refresh token ${refreshToken.id} ($presented) presented from $client is revoked or expired")
-                    .as(AuthenticationResult.InvalidToken)
-                case None =>
-                  logger.warn(s"Unknown refresh token $presented presented from $client").as(AuthenticationResult.InvalidToken)
-              }
+    val client    = s"${command.ipAddress} (${command.userAgent})"
+    val secret    = command.refreshToken
+    val presented = fingerprinter(secret)
+    transactor.inTransaction {
+      Clock[IO].realTimeInstant.flatMap { now =>
+        refreshTokenRepository
+          .findAndLockFamilyBySecretHash(secret.hash)
+          .flatMap {
+            case Some(refreshToken) if refreshToken.isValid(now) && refreshToken.family.olderThan(config.maxFamilyAge, now) =>
+              refreshTokenRepository.revokeFamily(refreshToken.familyId, now) *>
+                logger
+                  .info(s"Refresh token family ${refreshToken.familyId} for user ${refreshToken.userId} reached its maximum age; revoked")
+                  .as(AuthenticationResult.InvalidToken)
+            case Some(refreshToken) if refreshToken.isValid(now) =>
+              refreshTokenRepository.update(refreshToken.usedAt(now)) *>
+                generateTokens(
+                  refreshToken.userId,
+                  refreshToken.family,
+                  command.userAgent,
+                  command.ipAddress,
+                  now,
+                  AuthenticationResult.Authenticated.apply
+                )
+            case Some(refreshToken) if refreshToken.isUsed && !refreshToken.isRevoked && refreshToken.wasUsedWithin(config.reuseGrace, now) =>
+              logger
+                .warn(
+                  s"Refresh token ${refreshToken.id} ($presented) was replayed within the reuse grace window from $client; family ${refreshToken.familyId} kept"
+                )
+                .as(AuthenticationResult.InvalidToken)
+            case Some(refreshToken) if refreshToken.isUsed && !refreshToken.isRevoked =>
+              refreshTokenRepository.revokeFamily(refreshToken.familyId, now) *>
+                logger
+                  .warn(
+                    s"Refresh token ${refreshToken.id} ($presented) was replayed from $client; revoked family ${refreshToken.familyId} for user ${refreshToken.userId}"
+                  )
+                  .as(AuthenticationResult.InvalidToken)
+            case Some(refreshToken) =>
+              logger
+                .warn(s"Refresh token ${refreshToken.id} ($presented) presented from $client is revoked or expired")
+                .as(AuthenticationResult.InvalidToken)
+            case None =>
+              logger.warn(s"Unknown refresh token $presented presented from $client").as(AuthenticationResult.InvalidToken)
           }
-        }
+      }
     }
   }
 
@@ -231,7 +227,7 @@ class AuthenticationService(
       _ <-
         logger
           .debug(
-            s"Issued JWT ${fingerprinter(jwt.unwrap)} and refresh token ${refreshToken.id} (${fingerprinter(secret.unwrap)}) in family ${family.id} for user: $userId"
+            s"Issued JWT ${fingerprinter(jwt)} and refresh token ${refreshToken.id} (${fingerprinter(secret)}) in family ${family.id} for user: $userId"
           )
           .seal
     } yield {
@@ -246,7 +242,7 @@ final case class AuthenticateWithExternalTokenCommand(
   ipAddress: IpAddress)
 
 final case class AuthenticateWithRefreshTokenCommand(
-  refreshToken: String,
+  refreshToken: RefreshTokenSecret,
   userAgent: UserAgent,
   ipAddress: IpAddress)
 

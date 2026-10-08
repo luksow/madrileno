@@ -146,10 +146,8 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
     case other                                         => fail(s"Expected tokens, got $other")
   }
 
-  private def refreshWithRaw(secret: String, userAgent: String = "test-agent") =
-    AuthenticateWithRefreshTokenCommand(secret, UserAgent(userAgent), TestData.defaultIpAddress)
-
-  private def refreshWith(secret: RefreshTokenSecret) = refreshWithRaw(secret.unwrap)
+  private def refreshWith(secret: RefreshTokenSecret) =
+    AuthenticateWithRefreshTokenCommand(secret, UserAgent("test-agent"), TestData.defaultIpAddress)
 
   "authenticateWithRefreshToken" should {
     "authenticate with a valid refresh token and rotate within the same family" in {
@@ -166,14 +164,18 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
       }
     }
 
-    "reject a malformed refresh token, including a row id, as invalid without touching the database" in {
+    "treat a row id or any other string that matches no stored secret as an unknown token" in {
       val (service, _) = serviceWithFreshAuth()
       for {
-        malformed <- service.authenticateWithRefreshToken(refreshWithRaw("not-a-token"))
-        rowId     <- service.authenticateWithRefreshToken(refreshWithRaw(TestData.randomRefreshTokenId().toString))
+        created <- service.authenticateWithProvider(Provider.Firebase, command)
+        issued = issuedOf(created)
+        garbage <- service.authenticateWithRefreshToken(refreshWith(RefreshTokenSecret("not-a-token")))
+        rowId   <- service.authenticateWithRefreshToken(refreshWith(RefreshTokenSecret(issued.token.id.toString)))
+        still   <- service.authenticateWithRefreshToken(refreshWith(issued.secret))
       } yield {
-        malformed shouldBe AuthenticationResult.InvalidToken
+        garbage shouldBe AuthenticationResult.InvalidToken
         rowId shouldBe AuthenticationResult.InvalidToken
+        still shouldBe a[AuthenticationResult.Authenticated]
       }
     }
 
@@ -349,7 +351,7 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
           rotated <- service.authenticateWithRefreshToken(refreshWith(first.secret))
           second = issuedOf(rotated)
           _ <- service.authenticateWithRefreshToken(refreshWith(first.secret))
-          _ <- service.authenticateWithRefreshToken(refreshWithRaw("garbage-token"))
+          _ <- service.authenticateWithRefreshToken(refreshWith(RefreshTokenSecret("garbage-token")))
           _ <- service.authenticateWithProvider(Provider.Firebase, command.copy(token = ExternalAuthToken("invalid-token")))
         } yield (List(first.secret.unwrap, second.secret.unwrap, jwtOf(login), jwtOf(rotated), "garbage-token", "invalid-token"), first.secret.unwrap)
       }.map { case ((secrets, replayed), logged) =>
@@ -360,6 +362,7 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
           }
         }
         logged.count(_.contains(TestGivens.fingerprinter(replayed).value)) should be >= 1
+        logged.count(_.contains(TestGivens.fingerprinter(RefreshTokenSecret(replayed)).value)) should be >= 1
         logged.exists(_.contains(TestGivens.fingerprinter("garbage-token").value)) shouldBe true
         logged.exists(_.contains(TestGivens.fingerprinter("invalid-token").value)) shouldBe true
       }
