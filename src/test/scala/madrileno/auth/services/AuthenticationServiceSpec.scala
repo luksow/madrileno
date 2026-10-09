@@ -104,7 +104,7 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
 
     "return InvalidToken for failed Firebase verification" in {
       val (service, _)        = serviceWithFreshAuth()
-      val invalidTokenCommand = command.copy(token = ExternalAuthToken("invalid-token"))
+      val invalidTokenCommand = command.copy(token = ExternalAuthToken("rejected-external-token"))
       service.authenticateWithProvider(Provider.Firebase, invalidTokenCommand).map { result =>
         result shouldBe AuthenticationResult.InvalidToken
       }
@@ -393,8 +393,11 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
           second = issuedOf(rotated)
           _ <- service.authenticateWithRefreshToken(refreshWith(first.secret))
           _ <- service.authenticateWithRefreshToken(refreshWith(RefreshTokenSecret("garbage-token")))
-          _ <- service.authenticateWithProvider(Provider.Firebase, command.copy(token = ExternalAuthToken("invalid-token")))
-        } yield (List(first.secret.unwrap, second.secret.unwrap, jwtOf(login), jwtOf(rotated), "garbage-token", "invalid-token"), first.secret.unwrap)
+          _ <- service.authenticateWithProvider(Provider.Firebase, command.copy(token = ExternalAuthToken("rejected-external-token")))
+        } yield (
+          List(first.secret.unwrap, second.secret.unwrap, jwtOf(login), jwtOf(rotated), "garbage-token", "rejected-external-token"),
+          first.secret.unwrap
+        )
       }.map { case ((secrets, replayed), logged) =>
         logged should not be empty
         secrets.foreach { secret =>
@@ -405,7 +408,7 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
         logged.count(_.contains(TestGivens.fingerprinter(replayed).value)) should be >= 1
         logged.count(_.contains(TestGivens.fingerprinter(RefreshTokenSecret(replayed)).value)) should be >= 1
         logged.exists(_.contains(TestGivens.fingerprinter("garbage-token").value)) shouldBe true
-        logged.exists(_.contains(TestGivens.fingerprinter("invalid-token").value)) shouldBe true
+        logged.exists(_.contains(TestGivens.fingerprinter("rejected-external-token").value)) shouldBe true
       }
     }
   }
