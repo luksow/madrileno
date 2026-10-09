@@ -81,6 +81,8 @@ final case class RefreshToken(
     usedAt.exists(used => now.isBefore(used.plus(grace)))
   }
 
+  def canRedeliverWithin(grace: Duration, now: Instant): Boolean = isUsed && !isRevoked && wasUsedWithin(grace, now)
+
   def usedAt(instant: Instant): RefreshToken = {
     this.copy(usedAt = Some(instant))
   }

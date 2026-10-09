@@ -106,7 +106,9 @@ class AuthenticationService(
         refreshTokenRepository
           .findAndLockFamilyBySecretHash(secret.hash)
           .flatMap {
-            case Some(refreshToken) if refreshToken.isValid(now) && refreshToken.family.olderThan(config.maxFamilyAge, now) =>
+            case Some(refreshToken)
+                if (refreshToken.isValid(now) || refreshToken.canRedeliverWithin(config.reuseGrace, now)) &&
+                  refreshToken.family.olderThan(config.maxFamilyAge, now) =>
               refreshTokenRepository.revokeFamily(refreshToken.familyId, now) *>
                 logger
                   .info(s"Refresh token family ${refreshToken.familyId} for user ${refreshToken.userId} reached its maximum age; revoked")
@@ -126,7 +128,7 @@ class AuthenticationService(
                 }
                 consumed.flatMap(refreshTokenRepository.update).as(result)
               }
-            case Some(refreshToken) if refreshToken.isUsed && !refreshToken.isRevoked && refreshToken.wasUsedWithin(config.reuseGrace, now) =>
+            case Some(refreshToken) if refreshToken.canRedeliverWithin(config.reuseGrace, now) =>
               redeliverSuccessor(refreshToken, secret, client, presented, now)
             case Some(refreshToken) if refreshToken.isUsed && !refreshToken.isRevoked =>
               refreshTokenRepository.revokeFamily(refreshToken.familyId, now) *>

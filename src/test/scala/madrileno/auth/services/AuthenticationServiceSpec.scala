@@ -208,6 +208,25 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
       }
     }
 
+    "revoke a family that reaches its maximum age between a rotation and its in-window replay" in {
+      val (service, _) = serviceWithFreshAuth(validFor = Duration.ofDays(3650), maxFamilyAge = Duration.ofDays(1))
+      for {
+        login <- service.authenticateWithProvider(Provider.Firebase, command)
+        first = issuedOf(login)
+        _     = testClock.advance(Duration.ofDays(1).minus(reuseGrace.dividedBy(2)).toMillis)
+        rotated <- service.authenticateWithRefreshToken(refreshWith(first.secret))
+        _ = testClock.advance(reuseGrace.dividedBy(2).plusSeconds(1).toMillis)
+        replay    <- service.authenticateWithRefreshToken(refreshWith(first.secret))
+        successor <- service.authenticateWithRefreshToken(refreshWith(issuedOf(rotated).secret))
+        sessions  <- service.listSessions(ListSessionsCommand(first.token.userId))
+      } yield {
+        rotated shouldBe a[AuthenticationResult.Authenticated]
+        replay shouldBe AuthenticationResult.InvalidToken
+        successor shouldBe AuthenticationResult.InvalidToken
+        sessions.map(_.familyId) should not contain first.token.familyId
+      }
+    }
+
     "redeliver the successor when a replay lands within the reuse grace window" in {
       val (service, _) = serviceWithFreshAuth()
       for {
