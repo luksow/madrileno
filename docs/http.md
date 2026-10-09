@@ -133,7 +133,8 @@ baklava generates the OpenAPI spec by observing stir routes during the test suit
 
 - `target/baklava/openapi/openapi.yml` — the OpenAPI spec
 - `target/baklava/swagger-ui/` — a static Swagger UI bundle pointing at the spec
-- `target/baklava/orpc/` — a TypeScript [oRPC](https://orpc.dev) contract package (consumed by the [reference frontend](frontend.md) and [mobile app](mobile.md))
+- `target/baklava/orpc/` — a TypeScript [oRPC](https://orpc.dev) contract package
+- `target/baklava/views/client/` — the same three outputs without the `/admin/*` routes; its `orpc/` is what the [reference frontend](frontend.md) and [mobile app](mobile.md) vendor, so the admin API's shape stays out of every shipped client bundle. The view is one entry in `baklavaGenerateConfigs` (`"views"` in `build.sbt`); add more views there if a public subset of the API needs its own document.
 
 In dev (`app.environment = "dev"` in config), the app serves the same artifacts at:
 

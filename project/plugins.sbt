@@ -14,4 +14,4 @@ addSbtPlugin("com.timushev.sbt" % "sbt-rewarn" % "0.2.0")
 
 addSbtPlugin("com.timushev.sbt" % "sbt-updates" % "0.7.0")
 
-addSbtPlugin("pl.iterators" % "baklava-sbt-plugin" % "2.1.0")
+addSbtPlugin("pl.iterators" % "baklava-sbt-plugin" % "2.2.0")
