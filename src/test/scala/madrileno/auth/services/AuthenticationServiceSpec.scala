@@ -208,7 +208,7 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
       }
     }
 
-    "reject a replay within the reuse grace window without revoking the family" in {
+    "redeliver the successor when a replay lands within the reuse grace window" in {
       val (service, _) = serviceWithFreshAuth()
       for {
         login <- service.authenticateWithProvider(Provider.Firebase, command)
@@ -216,11 +216,50 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
         rotated <- service.authenticateWithRefreshToken(refreshWith(first.secret))
         second = issuedOf(rotated)
         _      = testClock.advance(reuseGrace.minusSeconds(1).toMillis)
-        replay    <- service.authenticateWithRefreshToken(refreshWith(first.secret))
+        replay <- service.authenticateWithRefreshToken(refreshWith(first.secret))
+        redelivered = issuedOf(replay)
         afterward <- service.authenticateWithRefreshToken(refreshWith(second.secret))
       } yield {
-        replay shouldBe AuthenticationResult.InvalidToken
+        replay shouldBe a[AuthenticationResult.Authenticated]
+        redelivered.secret shouldBe second.secret
+        redelivered.token.id shouldBe second.token.id
         afterward shouldBe a[AuthenticationResult.Authenticated]
+      }
+    }
+
+    "redeliver the same successor to every retry within the window" in {
+      val (service, _) = serviceWithFreshAuth()
+      for {
+        login <- service.authenticateWithProvider(Provider.Firebase, command)
+        first = issuedOf(login)
+        rotated <- service.authenticateWithRefreshToken(refreshWith(first.secret))
+        second = issuedOf(rotated)
+        retry1 <- service.authenticateWithRefreshToken(refreshWith(first.secret))
+        retry2 <- service.authenticateWithRefreshToken(refreshWith(first.secret))
+        moved  <- service.authenticateWithRefreshToken(refreshWith(second.secret))
+        again  <- service.authenticateWithRefreshToken(refreshWith(second.secret))
+      } yield {
+        issuedOf(retry1).secret shouldBe second.secret
+        issuedOf(retry2).secret shouldBe second.secret
+        moved shouldBe a[AuthenticationResult.Authenticated]
+        issuedOf(again).secret shouldBe issuedOf(moved).secret
+      }
+    }
+
+    "treat a replay within the grace window as theft once the successor was used" in {
+      val (service, _) = serviceWithFreshAuth()
+      for {
+        login <- service.authenticateWithProvider(Provider.Firebase, command)
+        first = issuedOf(login)
+        rotated <- service.authenticateWithRefreshToken(refreshWith(first.secret))
+        second = issuedOf(rotated)
+        moved <- service.authenticateWithRefreshToken(refreshWith(second.secret))
+        third = issuedOf(moved)
+        replay    <- service.authenticateWithRefreshToken(refreshWith(first.secret))
+        afterward <- service.authenticateWithRefreshToken(refreshWith(third.secret))
+      } yield {
+        replay shouldBe AuthenticationResult.InvalidToken
+        afterward shouldBe AuthenticationResult.InvalidToken
       }
     }
 
