@@ -151,8 +151,29 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
           response.body.userCreated shouldBe false
           response.headers.find(_.name.equalsIgnoreCase("Cache-Control")).map(_.value) shouldBe Some("no-store")
         },
+      withSetup {
+        val secret  = seedRefreshToken()
+        val rotated = allRoutes.orNotFound
+          .run(Request[IO](POST, uri"/v1/auth/refresh-token").withEntity(AuthWithRefreshTokenRequest(secret)))
+          .unsafeRunSync()
+        val successor = rotated.as[AuthenticatedResponse].unsafeRunSync().refreshToken
+        (secret, successor)
+      }.request { case (secret, _) => onRequest(body = AuthWithRefreshTokenRequest(secret)) }
+        .respondsWith[AuthenticatedResponse](
+          Ok,
+          description =
+            "Replay within the reuse grace window, i.e. a retry after a lost rotation response: the same successor is delivered again with a fresh JWT"
+        )
+        .assert { case (ctx, (_, successor)) =>
+          val response = ctx.performRequest(allRoutes)
+          response.body.refreshToken shouldBe successor
+          response.body.jwt.toString should not be empty
+        },
       onRequest(body = AuthWithRefreshTokenRequest(TestData.refreshTokenSecret()))
-        .respondsWith[Error[Unit]](Unauthorized, description = "Unknown, used, revoked, or expired refresh token")
+        .respondsWith[Error[Unit]](
+          Unauthorized,
+          description = "Unknown, revoked, or expired refresh token, or a replay outside the reuse grace window"
+        )
         .assert { ctx =>
           val response = ctx.performRequest(allRoutes)
           response.body.title shouldBe Some("Invalid refresh token")

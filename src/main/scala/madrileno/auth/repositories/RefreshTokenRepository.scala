@@ -23,6 +23,7 @@ private[repositories] final case class RefreshTokenRow(
   ipAddress: IpAddress,
   createdAt: Instant,
   usedAt: Option[Instant],
+  successor: Option[SealedRefreshTokenSecret],
   deletedAt: Option[Instant],
   expiresAt: Instant) {
   def toRefreshToken: RefreshToken = {
@@ -55,15 +56,16 @@ private[repositories] object RefreshTokenRowTable
     "ip_address",
     text.imap(IpAddress.fromString.andThen(_.getOrElse(throw new IllegalStateException("Invalid IP address format"))))(_.toString)
   )
-  val createdAt: Column[Instant]                  = column("created_at", timestamptz.asInstant)
-  val usedAt: Column[Option[Instant]]             = column("used_at", timestamptz.asInstant.opt)
-  override val deletedAt: Column[Option[Instant]] = column("deleted_at", timestamptz.asInstant.opt)
-  val expiresAt: Column[Instant]                  = column("expires_at", timestamptz.asInstant)
+  val createdAt: Column[Instant]                          = column("created_at", timestamptz.asInstant)
+  val usedAt: Column[Option[Instant]]                     = column("used_at", timestamptz.asInstant.opt)
+  val successor: Column[Option[SealedRefreshTokenSecret]] = column("successor_secret", text.as[SealedRefreshTokenSecret].opt)
+  override val deletedAt: Column[Option[Instant]]         = column("deleted_at", timestamptz.asInstant.opt)
+  val expiresAt: Column[Instant]                          = column("expires_at", timestamptz.asInstant)
 
   override val foreignId: Column[UserId] = userId
 
   override def mapping: (List[Column[?]], Codec[RefreshTokenRow]) =
-    (id, familyId, familyCreatedAt, secretHash, userId, userAgent, ipAddress, createdAt, usedAt, deletedAt, expiresAt)
+    (id, familyId, familyCreatedAt, secretHash, userId, userAgent, ipAddress, createdAt, usedAt, successor, deletedAt, expiresAt)
 }
 
 private[repositories] final case class RefreshTokenRowFilter(

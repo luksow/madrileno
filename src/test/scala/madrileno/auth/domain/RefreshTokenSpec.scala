@@ -1,6 +1,7 @@
 package madrileno.auth.domain
 
-import madrileno.support.TestData
+import cats.effect.unsafe.implicits.global
+import madrileno.support.{TestData, TestGivens}
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
 
@@ -122,6 +123,28 @@ class RefreshTokenSpec extends AnyWordSpec with Matchers {
       secret.hash shouldBe secret.hash
       secret.hash.toString should not be secret.unwrap
       TestData.refreshTokenSecret().hash should not be secret.hash
+    }
+
+    "seal a successor so that only the presented secret opens it" in {
+      val presented = TestData.refreshTokenSecret()
+      val successor = TestData.refreshTokenSecret()
+      val other     = TestData.refreshTokenSecret()
+      val box       = presented.sealSuccessor(successor)(using TestGivens.secureRandom).unsafeRunSync()
+
+      presented.openSuccessor(box) shouldBe Some(successor)
+      other.openSuccessor(box) shouldBe None
+      box.unwrap should not include successor.unwrap
+      presented.openSuccessor(SealedRefreshTokenSecret("not-a-box")) shouldBe None
+    }
+
+    "seal the same successor differently each time" in {
+      val presented = TestData.refreshTokenSecret()
+      val successor = TestData.refreshTokenSecret()
+      val first     = presented.sealSuccessor(successor)(using TestGivens.secureRandom).unsafeRunSync()
+      val second    = presented.sealSuccessor(successor)(using TestGivens.secureRandom).unsafeRunSync()
+
+      first should not be second
+      presented.openSuccessor(second) shouldBe Some(successor)
     }
   }
 

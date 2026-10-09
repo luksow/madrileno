@@ -12,7 +12,7 @@ import madrileno.user.repositories.*
 import madrileno.utils.crypto.{IdGenerator, RandomSecret}
 import madrileno.utils.db.transactor.*
 import madrileno.utils.mailer.{Language, Mailer}
-import madrileno.utils.observability.{Fingerprinter, LoggingSupport, TelemetryContext}
+import madrileno.utils.observability.{Fingerprint, Fingerprinter, LoggingSupport, TelemetryContext}
 import madrileno.utils.task.{CronExpression, Schedule, Task}
 import pl.iterators.sealedmonad.syntax.*
 import pureconfig.*
@@ -106,27 +106,30 @@ class AuthenticationService(
         refreshTokenRepository
           .findAndLockFamilyBySecretHash(secret.hash)
           .flatMap {
-            case Some(refreshToken) if refreshToken.isValid(now) && refreshToken.family.olderThan(config.maxFamilyAge, now) =>
+            case Some(refreshToken)
+                if (refreshToken.isValid(now) || refreshToken.canRedeliverWithin(config.reuseGrace, now)) &&
+                  refreshToken.family.olderThan(config.maxFamilyAge, now) =>
               refreshTokenRepository.revokeFamily(refreshToken.familyId, now) *>
                 logger
                   .info(s"Refresh token family ${refreshToken.familyId} for user ${refreshToken.userId} reached its maximum age; revoked")
                   .as(AuthenticationResult.InvalidToken)
             case Some(refreshToken) if refreshToken.isValid(now) =>
-              refreshTokenRepository.update(refreshToken.usedAt(now)) *>
-                generateTokens(
-                  refreshToken.userId,
-                  refreshToken.family,
-                  command.userAgent,
-                  command.ipAddress,
-                  now,
-                  AuthenticationResult.Authenticated.apply
-                )
-            case Some(refreshToken) if refreshToken.isUsed && !refreshToken.isRevoked && refreshToken.wasUsedWithin(config.reuseGrace, now) =>
-              logger
-                .warn(
-                  s"Refresh token ${refreshToken.id} ($presented) was replayed within the reuse grace window from $client; family ${refreshToken.familyId} kept"
-                )
-                .as(AuthenticationResult.InvalidToken)
+              generateTokens(
+                refreshToken.userId,
+                refreshToken.family,
+                command.userAgent,
+                command.ipAddress,
+                now,
+                AuthenticationResult.Authenticated.apply
+              ).flatMap { result =>
+                val consumed = result match {
+                  case AuthenticationResult.Authenticated(_, issued) => secret.sealSuccessor(issued.secret).map(refreshToken.rotatedTo(_, now))
+                  case _                                             => IO.pure(refreshToken.usedAt(now))
+                }
+                consumed.flatMap(refreshTokenRepository.update).as(result)
+              }
+            case Some(refreshToken) if refreshToken.canRedeliverWithin(config.reuseGrace, now) =>
+              redeliverSuccessor(refreshToken, secret, client, presented, now)
             case Some(refreshToken) if refreshToken.isUsed && !refreshToken.isRevoked =>
               refreshTokenRepository.revokeFamily(refreshToken.familyId, now) *>
                 logger
@@ -219,6 +222,40 @@ class AuthenticationService(
         }
       }
     }
+
+  private def redeliverSuccessor(
+    used: RefreshToken,
+    presented: RefreshTokenSecret,
+    client: String,
+    fingerprint: Fingerprint,
+    now: Instant
+  ): DB[AuthenticationResult] = {
+    def revokeAsReplay(reason: String): DB[AuthenticationResult] =
+      refreshTokenRepository.revokeFamily(used.familyId, now) *>
+        logger
+          .warn(
+            s"Refresh token ${used.id} ($fingerprint) was replayed within the reuse grace window from $client but $reason; revoked family ${used.familyId} for user ${used.userId}"
+          )
+          .as(AuthenticationResult.InvalidToken)
+
+    (for {
+      successorSecret <-
+        IO.pure(used.successor.flatMap(presented.openSuccessor)).valueOrF[AuthenticationResult](revokeAsReplay("carries no successor to redeliver"))
+      successor <- refreshTokenRepository
+                     .findBySecretHash(successorSecret.hash)
+                     .valueOrF(revokeAsReplay("its successor is gone"))
+                     .ensureF(_.isValid(now), revokeAsReplay("its successor was already used"))
+      user <- userRepository
+                .get(successor.userId)
+                .ensure(_.isActive, AuthenticationResult.UserBlocked)
+      _ <-
+        logger
+          .info(
+            s"Refresh token ${used.id} ($fingerprint) was replayed within the reuse grace window from $client; redelivered its successor ${successor.id}"
+          )
+          .seal
+    } yield AuthenticationResult.Authenticated(jwtService.encode(AuthContext(user), now), IssuedRefreshToken(successor, successorSecret))).run
+  }
 
   private def generateTokensInNewFamily(
     userId: UserId,

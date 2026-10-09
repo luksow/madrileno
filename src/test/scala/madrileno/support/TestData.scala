@@ -60,9 +60,11 @@ object TestData {
     ipAddress: IpAddress = IpAddress.fromString("127.0.0.1").get,
     createdAt: Instant = Instant.now(),
     usedAt: Option[Instant] = None,
+    successor: Option[SealedRefreshTokenSecret] = None,
     deletedAt: Option[Instant] = None,
     expiresAt: Instant = Instant.now().plus(Duration.ofDays(90))
-  ): RefreshToken = RefreshToken(id, familyId, familyCreatedAt, secretHash, userId, userAgent, ipAddress, createdAt, usedAt, deletedAt, expiresAt)
+  ): RefreshToken =
+    RefreshToken(id, familyId, familyCreatedAt, secretHash, userId, userAgent, ipAddress, createdAt, usedAt, successor, deletedAt, expiresAt)
 
   def issuedRefreshToken(
     userId: UserId = randomUserId(),
