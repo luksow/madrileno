@@ -80,6 +80,12 @@ class AuthRouter(authenticationService: AuthenticationService, override protecte
               )
           }
       } ~
+      (post & path("auth" / "logout") & rateLimited("auth.logout", to = 30, within = 1.minute) & entity(as[LogoutRequest]) & pathEndOrSingleSlash) {
+        request =>
+          complete {
+            authenticationService.logout(LogoutCommand(request.refreshToken)).map[ToResponseMarshallable](_ => NoContent)
+          }
+      } ~
       (post & path("auth" / "oidc" / Segment.as[Provider]) & rateLimited("auth.oidc", to = 10, within = 1.minute) & entity(
         as[AuthWithOidcRequest]
       ) & pathEndOrSingleSlash & optionalHeaderValueByName("User-Agent") & extractClientIP) {

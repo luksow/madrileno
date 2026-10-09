@@ -145,6 +145,25 @@ class AuthenticationService(
     }
   }
 
+  def logout(command: LogoutCommand): IO[Unit] = {
+    val presented = fingerprinter(command.refreshToken)
+    transactor.inTransaction {
+      Clock[IO].realTimeInstant.flatMap { now =>
+        refreshTokenRepository.findAndLockFamilyBySecretHash(command.refreshToken.hash).flatMap {
+          case Some(refreshToken) if !refreshToken.isRevoked =>
+            refreshTokenRepository.revokeFamily(refreshToken.familyId, now) *>
+              logger.info(
+                s"Logout with refresh token ${refreshToken.id} ($presented): revoked family ${refreshToken.familyId} for user ${refreshToken.userId}"
+              )
+          case Some(refreshToken) =>
+            logger.debug(s"Logout with already revoked refresh token ${refreshToken.id} ($presented); family ${refreshToken.familyId} untouched")
+          case None =>
+            logger.info(s"Logout with unknown refresh token $presented")
+        }
+      }
+    }
+  }
+
   def listSessions(command: ListSessionsCommand): IO[List[RefreshToken]] = {
     Clock[IO].realTimeInstant.flatMap { now =>
       transactor.inSession {
@@ -253,6 +272,8 @@ enum AuthenticationResult {
   case InvalidToken
   case ProviderUnavailable
 }
+
+final case class LogoutCommand(refreshToken: RefreshTokenSecret)
 
 final case class ListSessionsCommand(userId: UserId)
 

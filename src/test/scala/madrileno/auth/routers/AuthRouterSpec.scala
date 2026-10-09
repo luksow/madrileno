@@ -9,6 +9,7 @@ import madrileno.auth.routers.dto.{
   AuthWithOidcRequest,
   AuthWithRefreshTokenRequest,
   AuthenticatedResponse,
+  LogoutRequest,
   SessionDto
 }
 import madrileno.support.{BaseRouteSpec, TestApplicationLoader, TestData}
@@ -16,7 +17,10 @@ import madrileno.user.domain.{EmailAddress, User, UserId}
 import madrileno.utils.http.Error
 import madrileno.utils.json.JsonProtocol.*
 import org.http4s.Method.*
+import org.http4s.Request
 import org.http4s.Status.*
+import org.http4s.circe.CirceEntityCodec.*
+import org.http4s.implicits.*
 import pl.iterators.baklava.EmptyBody
 import pl.iterators.stir.server.Route
 
@@ -162,6 +166,30 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
           val response = ctx.performRequest(allRoutes)
           response.body.title shouldBe Some("Invalid refresh token")
         }
+    )
+  )
+
+  path("/v1/auth/logout")(
+    supports(
+      POST,
+      description =
+        "Log out: revokes the session (refresh-token family) the given refresh token belongs to, including any successor a concurrent rotation minted. The refresh token is the credential, so this works after the JWT expired. Unknown, used, expired and already revoked tokens answer 204 as well, so clients can call it fire-and-forget and clear local state either way.",
+      summary = "Revoke the session behind a refresh token",
+      tags = Seq("Auth")
+    )(
+      withSetup(seedRefreshToken())
+        .request(secret => onRequest(body = LogoutRequest(secret)))
+        .respondsWith[EmptyBody](NoContent, description = "Session revoked; the token no longer refreshes")
+        .assert { case (ctx, secret) =>
+          val _       = ctx.performRequest(allRoutes)
+          val refresh = allRoutes.orNotFound
+            .run(Request[IO](POST, uri"/v1/auth/refresh-token").withEntity(AuthWithRefreshTokenRequest(secret)))
+            .unsafeRunSync()
+          refresh.status shouldBe Unauthorized
+        },
+      onRequest(body = LogoutRequest(TestData.refreshTokenSecret()))
+        .respondsWith[EmptyBody](NoContent, description = "Unknown token; nothing to revoke")
+        .assert(_.performRequest(allRoutes))
     )
   )
 

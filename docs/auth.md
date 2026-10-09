@@ -59,7 +59,7 @@ External identity is verified once; from then on the app trusts its own short-li
 | `DevAuthVerifier`                 | Treats an email-shaped token as a verified identity; reached via `POST /v1/auth/dev`. Registered only when `dev-auth.enabled = true` (`DEV_AUTH_ENABLED`); the route is always wired but returns 404 `unknown-provider` when the verifier isn't registered. |
 | `JwtService`                      | Encodes / decodes the app's own JWT (`InternalJwt`). HS256 (`com.auth0:java-jwt`). Signs an `AuthContext`.    |
 | `AuthenticationService`           | `authenticateWithProvider(provider, cmd)`: verify external → upsert `User` + `UserAuth` → mint internal JWT + refresh token. |
-| `AuthRouter`                      | `POST /v1/auth/firebase`, `POST /v1/auth/oidc/{provider}`, `POST /v1/auth/dev` (dev only), `POST /v1/auth/refresh-token` (all answer with `Cache-Control: no-store`), `GET/DELETE /v1/auth/sessions`. |
+| `AuthRouter`                      | `POST /v1/auth/firebase`, `POST /v1/auth/oidc/{provider}`, `POST /v1/auth/dev` (dev only), `POST /v1/auth/refresh-token`, `POST /v1/auth/logout` (all answer with `Cache-Control: no-store`), `GET/DELETE /v1/auth/sessions`. |
 | `UserAuthenticator`               | The function passed to `authenticateOrRejectWithChallenge`. Decodes the internal JWT, returns `AuthContext`.  |
 | `RefreshTokenRepository`          | Persists refresh tokens (secret hash only, never the secret); lookup by secret hash under the family lock, live-token listing by user, user agent, or family, family revocation. |
 | `cleanupExpiredRefreshTokensTask` | Recurring task that deletes rows 60 days after their `expires_at` (tombstone GC); used rows stay as replay evidence until then. |
@@ -124,6 +124,10 @@ Each token also expires `refresh-token.valid-for` after it was minted (default 9
 Revocation is family-wide and takes the same lock. `DELETE /v1/auth/sessions/{id}` locks the family, checks it belongs to the caller, and soft-deletes every token in it; `DELETE /v1/auth/sessions?user-agent=…` does the same for every family whose live token carries that user agent, locking the families in a fixed order. Revoking only the listed row would race a concurrent rotation the same way replay detection did: the row re-reads as used, nothing happens, and the freshly minted successor keeps the device logged in.
 
 `cleanupExpiredRefreshTokensTask` runs daily at 1 AM to delete rows whose `expires_at` is more than 60 days in the past, whether they were used, revoked, or never presented. Used rows are deliberately kept for their whole validity window: they are the evidence that lets a victim's late replay reveal a hijacked family. Deleting them sooner would turn that replay into "not found" and leave the thief's chain running. Retention is bounded by `valid-for` + 60 days per token rather than by family lifetime, so a long-lived device does not accumulate history forever.
+
+## Logging out
+
+`POST /v1/auth/logout { refreshToken }` revokes the session the token belongs to: the whole family, under the same advisory lock as rotation, so a refresh racing the logout cannot leave a freshly minted successor alive. The refresh token is the credential here, not the JWT, so a client can log out after its JWT expired without refreshing first. Unknown, used, expired and already revoked tokens answer 204 as well; clients call it fire-and-forget and clear local state either way. Clearing local tokens alone never ended the session on the server: the refresh token stayed valid until it expired, 90 days by default, and the session kept showing in `GET /v1/auth/sessions`.
 
 ## OIDC providers
 

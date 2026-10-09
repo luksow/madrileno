@@ -43,6 +43,12 @@ class AuthRateLimitSpec extends BaseRouteSpec with TestApplicationLoader {
       postOidc().status shouldBe Status.TooManyRequests
     }
 
+    it("returns 429 once the per-client limit for POST /auth/logout (30/min) is exceeded") {
+      def postLogout() = post("/v1/auth/logout", "{}")
+      (1 to 30).foreach(_ => postLogout().status should not be Status.TooManyRequests)
+      postLogout().status shouldBe Status.TooManyRequests
+    }
+
     it("returns 429 once the per-client limit for POST /auth/refresh-token (30/min) is exceeded") {
       def postRefresh() = post("/v1/auth/refresh-token", "{}")
       (1 to 30).foreach(_ => postRefresh().status should not be Status.TooManyRequests)

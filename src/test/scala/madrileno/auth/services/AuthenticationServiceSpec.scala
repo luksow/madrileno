@@ -272,6 +272,47 @@ class AuthenticationServiceSpec extends AsyncWordSpec with AsyncIOSpec with Matc
     }
   }
 
+  "logout" should {
+    "revoke the whole family behind the presented refresh token" in {
+      val (service, _) = serviceWithFreshAuth()
+      for {
+        login <- service.authenticateWithProvider(Provider.Firebase, command)
+        first = issuedOf(login)
+        rotated <- service.authenticateWithRefreshToken(refreshWith(first.secret))
+        second = issuedOf(rotated)
+        _         <- service.logout(LogoutCommand(first.secret))
+        afterward <- service.authenticateWithRefreshToken(refreshWith(second.secret))
+        sessions  <- service.listSessions(ListSessionsCommand(second.token.userId))
+      } yield {
+        afterward shouldBe AuthenticationResult.InvalidToken
+        sessions.map(_.familyId) should not contain second.token.familyId
+      }
+    }
+
+    "leave other sessions of the user alone" in {
+      val (service, _) = serviceWithFreshAuth()
+      for {
+        loginA <- service.authenticateWithProvider(Provider.Firebase, command)
+        loginB <- service.authenticateWithProvider(Provider.Firebase, command)
+        issuedA = issuedOf(loginA)
+        issuedB = issuedOf(loginB)
+        _      <- service.logout(LogoutCommand(issuedA.secret))
+        bAfter <- service.authenticateWithRefreshToken(refreshWith(issuedB.secret))
+      } yield bAfter shouldBe a[AuthenticationResult.Authenticated]
+    }
+
+    "succeed for an unknown or already revoked refresh token" in {
+      val (service, _) = serviceWithFreshAuth()
+      for {
+        login <- service.authenticateWithProvider(Provider.Firebase, command)
+        issued = issuedOf(login)
+        _ <- service.logout(LogoutCommand(issued.secret))
+        _ <- service.logout(LogoutCommand(issued.secret))
+        _ <- service.logout(LogoutCommand(TestData.refreshTokenSecret()))
+      } yield succeed
+    }
+  }
+
   "sessions" should {
     "list one live entry per family and keep the family id stable across rotations" in {
       val (service, _) = serviceWithFreshAuth()
