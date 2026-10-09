@@ -76,7 +76,7 @@ The build defines `verifyAll` as a CI proxy:
 > verifyAll
 ```
 
-This runs `scalafmtSbtCheck` + `scalafmtCheckAll` + `compile` + `test` in sequence — the same gates CI runs. If `verifyAll` passes locally, your push will pass CI (modulo flaky tests).
+This runs `scalafmtSbtCheck` + `scalafmtCheckAll` + `compile` + `testFull` + `Test/verifyErrorCodes` in sequence — the same gates CI runs. If `verifyAll` passes locally, your push will pass CI (modulo flaky tests).
 
 ## Compiler strictness
 

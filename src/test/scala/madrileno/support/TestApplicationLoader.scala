@@ -50,6 +50,11 @@ trait TestApplicationLoader extends TestContainersForAll with TestMailpit { self
 
   protected def rateLimiterRuntime: RateLimiterRuntime = TestRateLimiterRuntime.unbounded
 
+  protected def testAuthVerifiers: AuthVerifiers =
+    AuthVerifiers(
+      Map(Provider.Firebase -> FakeAuthVerifier(firebaseToken), Provider("test-oidc") -> FakeAuthVerifier(oidcToken), Provider.Dev -> DevAuthVerifier)
+    )
+
   lazy val application: ApplicationLoader = withContainers { container =>
     val pgConfig = PgConfig(
       host = container.host,
@@ -80,14 +85,7 @@ trait TestApplicationLoader extends TestContainersForAll with TestMailpit { self
       IORuntime.global
     ) {
       override lazy val outboxConfig: OutboxConfig                     = OutboxConfig()
-      override protected lazy val externalAuthVerifiers: AuthVerifiers =
-        AuthVerifiers(
-          Map(
-            Provider.Firebase     -> FakeAuthVerifier(firebaseToken),
-            Provider("test-oidc") -> FakeAuthVerifier(oidcToken),
-            Provider.Dev          -> DevAuthVerifier
-          )
-        )
+      override protected lazy val externalAuthVerifiers: AuthVerifiers = testAuthVerifiers
       // scripts:auction-block-start
       override protected lazy val vivinoGateway: VivinoGateway = (_, _) => IO.pure(None)
       // scripts:auction-block-end

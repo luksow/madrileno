@@ -315,6 +315,13 @@ class AuctionRouterSpec extends BaseRouteSpec with TestApplicationLoader {
         .assert { case (ctx, _) =>
           val response = ctx.performRequest(allRoutes)
           response.body.title shouldBe Some("Auction is not open")
+        },
+      withSetup(setupAuction(startsAt = Instant.now().minusSeconds(7200), endsAt = Instant.now().minusSeconds(60)))
+        .request(cancelRequest(sellerAuth))
+        .respondsWith[Error[Unit]](Conflict, description = "Auction has already ended")
+        .assert { case (ctx, _) =>
+          val response = ctx.performRequest(allRoutes)
+          response.body.title shouldBe Some("Auction has already ended")
         }
     )
   )
@@ -396,6 +403,13 @@ class AuctionRouterSpec extends BaseRouteSpec with TestApplicationLoader {
         .assert { case (ctx, _) =>
           val response = ctx.performRequest(allRoutes)
           response.body.title shouldBe Some("Auction has not started yet")
+        },
+      withSetup(setupAuction(startsAt = Instant.now().minusSeconds(7200), endsAt = Instant.now().minusSeconds(60), alsoSeedBidder = true))
+        .request(placeBidRequest(150, bidderAuth))
+        .respondsWith[Error[Unit]](Conflict, description = "Auction has already ended")
+        .assert { case (ctx, _) =>
+          val response = ctx.performRequest(allRoutes)
+          response.body.title shouldBe Some("Auction has already ended")
         },
       withSetup(setupAuction())
         .request(placeBidRequest(150, sellerAuth))

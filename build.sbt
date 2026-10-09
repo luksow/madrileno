@@ -182,7 +182,25 @@ Compile / compile := Def.uncached {
 semanticdbEnabled := true
 semanticdbVersion := scalafixSemanticdb.revision
 
+lazy val verifyErrorCodes =
+  taskKey[Unit]("Fails when a router can answer with an error code that no route spec exercises, so the generated contract stays complete.")
+Test / verifyErrorCodes := Def.uncached {
+  val openApi = baseDirectory.value / "target" / "baklava" / "openapi" / "openapi.yml"
+  if (!openApi.exists()) sys.error(s"$openApi is missing; run testFull first so baklava regenerates it")
+  val emitted = (Compile / unmanagedSourceDirectories).value
+    .flatMap(dir => (dir ** "*.scala").get())
+    .flatMap(file => """error\(\s*[A-Za-z]+\s*,\s*"([a-z-]+)"""".r.findAllMatchIn(IO.read(file)).map(_.group(1)))
+    .toSet
+  val documented           = """result:([a-z-]+)""".r.findAllMatchIn(IO.read(openApi)).map(_.group(1)).toSet
+  val unreachableUnderTest = Set("heapdump-not-supported")
+  val missing              = emitted -- documented -- unreachableUnderTest
+  if (missing.nonEmpty) {
+    sys.error(s"Routers can answer with error codes that no route spec exercises: ${missing.toList.sorted.mkString(", ")}")
+  }
+  streams.value.log.info(s"All ${emitted.size} router error codes appear in the generated contract")
+}
+
 lazy val verifyAll = taskKey[Unit]("Performs all verifications to assure that the build will pass CI checks.")
 Test / verifyAll := Def.uncached {
-  Def.sequential(Compile / scalafmtSbtCheck, Compile / scalafmtCheckAll, Compile / compile, Test / testFull).value
+  Def.sequential(Compile / scalafmtSbtCheck, Compile / scalafmtCheckAll, Compile / compile, Test / testFull, Test / verifyErrorCodes).value
 }
