@@ -11,7 +11,7 @@ Take `placeBid`. It can short-circuit five ways:
 - The auction doesn't exist → `AuctionNotFound`.
 - The bidder is the seller → `CannotBidOnOwnAuction`.
 - The auction isn't open / hasn't started / has ended → corresponding cases.
-- The bid isn't higher than the current top → `BidTooLow(currentHighest)`.
+- The bid isn't higher than the current top → `BidTooLow(minAmount)`.
 - And on the happy path: persist a `Bid`, notify the previous bidder, return `BidPlaced`.
 
 Without sealed-monad, you'd write nested pattern matches or chains of `flatMap` that bottom out in `IO[PlaceBidResult]`, with each result-producing branch repeating the wrap. Or you'd reach for `EitherT[IO, PlaceBidResult, A]`, where success and "everything else that's also a valid response" sit on opposite sides of an asymmetry that doesn't match the domain.
@@ -110,7 +110,7 @@ The `[Unit]` says "this comprehension yields `Unit`"; the warning logs the miss;
 | `.ensure(pred, r)`                                            | Continue if `pred(a)`; otherwise short-circuit with `r`.                                                   |
 | `.ensureF(pred, io: IO[R])`                                   | Same, with effectful fallback (logs, runs side effects, then yields `R`).                                  |
 | `.ensureNot(pred, r)` / `.ensureNotF(pred, io)`                | Inverse predicate: short-circuit when `pred(a)` *holds*. Reads better when guarding negative conditions.   |
-| `.ensureOr(pred, a => r)` / `.ensureOrF(pred, a => io)`        | Short-circuit with a result *derived from* `a`. Use when the rejection carries data (`BidTooLow(highest)`). |
+| `.ensureOr(pred, a => r)` / `.ensureOrF(pred, a => io)`        | Short-circuit with a result *derived from* `a`. Use when the rejection carries data (`BidTooLow(minAmount)`). |
 | `.ensureNotOr(pred, a => r)` / `.ensureNotOrF(pred, a => io)`  | Inverted `ensureOr`.                                                                                       |
 
 `ensureOr` is what to reach for when the rejection case carries information: `.ensureOr(_.amount > floor, a => PlaceBidResult.BidTooLow(a.previousFloor))`. Compare with the bare `ensure(pred, R)` form, which suits flag-style rejections (`NotOwner`, `MismatchedIds`).
@@ -167,7 +167,7 @@ Skip it when:
 
 ## How it differs from `EitherT`
 
-`EitherT[IO, Error, A]` works fine when there's a clear success/error split. The asymmetry it bakes in — `Right` is "real," `Left` is "exceptional" — doesn't fit a result ADT where every case is a legitimate domain answer. `BidTooLow(currentHighest)` isn't an error; it's information the API has to return.
+`EitherT[IO, Error, A]` works fine when there's a clear success/error split. The asymmetry it bakes in — `Right` is "real," `Left` is "exceptional" — doesn't fit a result ADT where every case is a legitimate domain answer. `BidTooLow(minAmount)` isn't an error; it's information the API has to return.
 
 Sealed-monad puts every case on equal footing. Short-circuiting just means "we already have the answer; don't do more work." That's also why the type parameter is called `R` (result), not `E` (error). The vocabulary matters — once you start thinking of `BidTooLow` as an "error," you'll feel pressure to log it, alert on it, treat it differently from success. It's not. It's a reply.
 
@@ -227,7 +227,7 @@ enum PlaceBidResult {
   case AuctionEnded
   case CannotBidOnOwnAuction
   case AlreadyHighestBidder
-  case BidTooLow(currentHighest: Price)
+  case BidTooLow(minAmount: Price)
 }
 ```
 

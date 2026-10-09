@@ -94,7 +94,7 @@ enum BidRejection {
   case AuctionEnded
   case CannotBidOnOwnAuction
   case AlreadyHighestBidder
-  case BidTooLow(currentHighest: Price)
+  case BidTooLow(minAmount: Price)
 }
 
 enum CancellationRejection {
