@@ -149,17 +149,23 @@ class AuthenticationService(
     val presented = fingerprinter(command.refreshToken)
     transactor.inTransaction {
       Clock[IO].realTimeInstant.flatMap { now =>
-        refreshTokenRepository.findAndLockFamilyBySecretHash(command.refreshToken.hash).flatMap {
-          case Some(refreshToken) if !refreshToken.isRevoked =>
-            refreshTokenRepository.revokeFamily(refreshToken.familyId, now) *>
-              logger.info(
+        (for {
+          refreshToken <-
+            refreshTokenRepository
+              .findAndLockFamilyBySecretHash(command.refreshToken.hash)
+              .valueOrF[Unit](logger.info(s"Logout with unknown refresh token $presented"))
+              .ensureNotOrF(
+                _.isRevoked,
+                token => logger.debug(s"Logout with already revoked refresh token ${token.id} ($presented); family ${token.familyId} untouched")
+              )
+          _ <- refreshTokenRepository.revokeFamily(refreshToken.familyId, now).seal
+          _ <-
+            logger
+              .info(
                 s"Logout with refresh token ${refreshToken.id} ($presented): revoked family ${refreshToken.familyId} for user ${refreshToken.userId}"
               )
-          case Some(refreshToken) =>
-            logger.debug(s"Logout with already revoked refresh token ${refreshToken.id} ($presented); family ${refreshToken.familyId} untouched")
-          case None =>
-            logger.info(s"Logout with unknown refresh token $presented")
-        }
+              .seal
+        } yield ()).run
       }
     }
   }
