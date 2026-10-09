@@ -30,17 +30,19 @@ class SecretsStayOutOfLogsSpec extends AnyFunSpec with Matchers with TestApplica
 
   describe("auth routes") {
     it("keep every credential out of the logs while leaving fingerprints to correlate by") {
-      val ((login, refreshed), logged) = capturingLogs {
+      val ((login, refreshed, moved), logged) = capturingLogs {
         val login     = decode[AuthenticatedResponse](post("/v1/auth/firebase", AuthWithFirebaseRequest(FirebaseJwt(externalToken))))
         val refreshed = decode[AuthenticatedResponse](post("/v1/auth/refresh-token", AuthWithRefreshTokenRequest(login.refreshToken)))
+        val moved     = decode[AuthenticatedResponse](post("/v1/auth/refresh-token", AuthWithRefreshTokenRequest(refreshed.refreshToken)))
         val replayed  = drain(post("/v1/auth/refresh-token", AuthWithRefreshTokenRequest(login.refreshToken)))
         val rejected  = drain(get("/v1/auth/sessions", bearer = bogusBearer))
         replayed.status shouldBe Status.Unauthorized
         rejected.status shouldBe Status.Unauthorized
-        (login, refreshed)
+        (login, refreshed, moved)
       }
 
-      val secrets = List(externalToken, bogusBearer, login.jwt.unwrap, login.refreshToken.unwrap, refreshed.jwt.unwrap, refreshed.refreshToken.unwrap)
+      val secrets =
+        List(login, refreshed, moved).flatMap(issued => List(issued.jwt.unwrap, issued.refreshToken.unwrap)) ++ List(externalToken, bogusBearer)
       logged should not be empty
       secrets.foreach(assertAbsent(logged, _))
 
