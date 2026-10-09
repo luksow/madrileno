@@ -141,7 +141,7 @@ enum BidRejection {
   case AuctionEnded
   case CannotBidOnOwnAuction
   case AlreadyHighestBidder
-  case BidTooLow(currentHighest: Price)
+  case BidTooLow(minAmount: Price)
 }
 ```
 
@@ -150,10 +150,10 @@ Each `Either[BidRejection, Bid]` return type maps one-to-one onto the cases. The
 ```scala
 case PlaceBidResult.BidPlaced(bid, _)     => Created -> BidDto(bid)
 case PlaceBidResult.AlreadyHighestBidder  => error(Conflict, "already-highest-bidder", …)
-case PlaceBidResult.BidTooLow(highest)    => error(Conflict, "bid-too-low", "Bid is below the current minimum", extension = Map("minAmount" -> highest))
+case PlaceBidResult.BidTooLow(minAmount)  => error(Conflict, "bid-too-low", "Bid is below the current minimum", extension = BidTooLowExtension(minAmount))
 ```
 
-Compiler warns when a new case is added and a router forgets to handle it. The case-with-payload (`BidTooLow(currentHighest: Price)`) carries the data the API needs — surfaced in the error envelope's `extension`, not baked into the human title. See [error-handling.md](error-handling.md) for the pattern.
+Compiler warns when a new case is added and a router forgets to handle it. The case-with-payload (`BidTooLow(minAmount: Price)`) carries the data the API needs — surfaced in the error envelope's `extension`, not baked into the human title. See [error-handling.md](error-handling.md) for the pattern.
 
 ## Smart constructors
 

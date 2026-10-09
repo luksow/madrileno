@@ -158,7 +158,7 @@ class AuctionService(
                              case BidRejection.AuctionEnded          => PlaceBidResult.AuctionEnded
                              case BidRejection.CannotBidOnOwnAuction => PlaceBidResult.CannotBidOnOwnAuction
                              case BidRejection.AlreadyHighestBidder  => PlaceBidResult.AlreadyHighestBidder
-                             case BidRejection.BidTooLow(highest)    => PlaceBidResult.BidTooLow(highest)
+                             case BidRejection.BidTooLow(minAmount)  => PlaceBidResult.BidTooLow(minAmount)
                            }
                            .rethrow[IO]
                   saved <- bidRepository.save(bid).seal
@@ -328,7 +328,7 @@ enum PlaceBidResult {
   case AuctionEnded
   case CannotBidOnOwnAuction
   case AlreadyHighestBidder
-  case BidTooLow(currentHighest: Price)
+  case BidTooLow(minAmount: Price)
 }
 
 enum CreateAuctionResult {

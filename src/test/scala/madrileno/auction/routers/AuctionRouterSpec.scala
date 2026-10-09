@@ -420,10 +420,11 @@ class AuctionRouterSpec extends BaseRouteSpec with TestApplicationLoader {
         },
       withSetup(setupAuction(alsoSeedBidder = true))
         .request(placeBidRequest(50, bidderAuth))
-        .respondsWith[Error[Unit]](Conflict, description = "Bid below minimum")
+        .respondsWith[Error[BidTooLowExtension]](Conflict, description = "Bid below minimum; minAmount carries the lowest acceptable bid")
         .assert { case (ctx, _) =>
           val response = ctx.performRequest(allRoutes)
           response.body.title shouldBe Some("Bid is below the current minimum")
+          response.body.extension.minAmount shouldBe Price(BigDecimal(100))
         },
       withSetup(setupAuctionWithExistingBid(Price(BigDecimal(200))))
         .request(placeBidRequest(250, bidderAuth))

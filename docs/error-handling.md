@@ -20,7 +20,7 @@ enum PlaceBidResult {
   case AuctionEnded
   case CannotBidOnOwnAuction
   case AlreadyHighestBidder
-  case BidTooLow(currentHighest: Price)
+  case BidTooLow(minAmount: Price)
 }
 ```
 
@@ -35,8 +35,8 @@ auctionService.placeBid(command).map[ToResponseMarshallable] {
   case PlaceBidResult.AuctionEnded              => error(Conflict, "auction-ended", "Auction has already ended")
   case PlaceBidResult.CannotBidOnOwnAuction     => error(Forbidden, "cannot-bid-on-own-auction", "Cannot bid on your own auction")
   case PlaceBidResult.AlreadyHighestBidder      => error(Conflict, "already-highest-bidder", "You already have the highest bid")
-  case PlaceBidResult.BidTooLow(currentHighest) =>
-    error(Conflict, "bid-too-low", "Bid is below the current minimum", extension = Map("minAmount" -> currentHighest))
+  case PlaceBidResult.BidTooLow(minAmount) =>
+    error(Conflict, "bid-too-low", "Bid is below the current minimum", extension = BidTooLowExtension(minAmount))
 }
 ```
 
@@ -71,7 +71,7 @@ The shape on the wire:
   "status":    409,
   "title":     "Bid is below the current minimum",
   "instance":  "trace-id:9f0c…",
-  "extension": { "minAmount": 350.00 }
+  "minAmount": 350.00
 }
 ```
 
@@ -82,7 +82,7 @@ The shape on the wire:
 | `title`     | Human-readable summary. Localizable; not stable.                                                       |
 | `detail`    | Optional longer explanation. Renderable to the user.                                                   |
 | `instance`  | The active trace-id, encoded as `trace-id:<hex>`. Paste into OpenObserve to see the trace.            |
-| `extension` | Per-error structured data. Empty `()` if nothing to add; otherwise a JSON object with case-specific fields. |
+| `extension` | Per-error structured data, merged into the envelope as top-level members (RFC 9457 §3.2). `()` when there is nothing to add; otherwise a small case class whose fields appear beside the five above. |
 
 `type` follows a small naming convention:
 
@@ -109,11 +109,13 @@ def error[E: Encoder](
 Use it from any router. The trace-id is filled in automatically; you supply the status, the type tag, and the human-facing title. **Keep the title generic and put any data the client needs in `extension`** — never make a client parse the human `title`. This is the canonical pattern for rejections that carry a value:
 
 ```scala
-case PlaceBidResult.BidTooLow(currentHighest) =>
-  error(Conflict, "bid-too-low", "Bid is below the current minimum", extension = Map("minAmount" -> currentHighest))
+final case class BidTooLowExtension(minAmount: Price) derives Encoder.AsObject, Decoder
+
+case PlaceBidResult.BidTooLow(minAmount) =>
+  error(Conflict, "bid-too-low", "Bid is below the current minimum", extension = BidTooLowExtension(minAmount))
 ```
 
-The `Map[String, Price]` encodes into the `extension` field as a JSON object (`{"minAmount": 350.00}`). The frontend reads `extension.minAmount` and renders/localizes the message itself. Use a small case class instead of a `Map` when the extension has several fields and you want it to show up in the OpenAPI/oRPC schema (a `Map` serializes fine but doesn't carry field names into the generated types).
+The case class encodes into top-level members of the envelope (`"minAmount": 350.00` beside `type`, `status`, …), and the frontend reads `minAmount` from the problem and renders/localizes the message itself. Always use a case class, not a `Map`: a `Map` serializes the same way but carries no field names into the schema, so the generated clients never see the field. In the route spec, declare the response as `Error[BidTooLowExtension]`; `BaseRouteSpec` derives the schema for `Error[E]` from `E`'s own schema, named `<E>Error` (`BidTooLowExtensionError` in the OpenAPI components), and the extension fields show up typed in the generated oRPC contract.
 
 ## Framework rejections
 

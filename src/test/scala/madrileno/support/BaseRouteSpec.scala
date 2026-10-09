@@ -50,8 +50,12 @@ trait BaseRouteSpec
   given [A: Decoder]: Decoder[Cursor[A]] = Decoder.derived
 
   // RFC 9457 error schema
-  given Schema[Error[Unit]] = new Schema[Error[Unit]] {
-    val className                          = "Error"
+  given Schema[Error[Unit]] = errorSchema("Error", Map.empty)
+
+  given [E](using extension: Schema[E]): Schema[Error[E]] = errorSchema(s"${extension.className}Error", extension.properties)
+
+  private def errorSchema[E](name: String, extensionProperties: Map[String, Schema[?]]): Schema[Error[E]] = new Schema[Error[E]] {
+    val className                          = name
     val `type`                             = SchemaType.ObjectType
     val format                             = None
     val properties: Map[String, Schema[?]] = Map(
@@ -60,7 +64,7 @@ trait BaseRouteSpec
       "title"    -> Schema.stringSchema.withDescription("Short human-readable summary"),
       "detail"   -> Schema.optionSchema(using Schema.stringSchema).withDescription("Human-readable explanation"),
       "instance" -> Schema.optionSchema(using Schema.stringSchema).withDescription("URI reference identifying the specific occurrence")
-    )
+    ) ++ extensionProperties
     val items                       = None
     val `enum`                      = None
     val required                    = true

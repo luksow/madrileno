@@ -48,8 +48,12 @@ object Error {
       case None    => Right(None)
     }
 
-  given Decoder[Error[Unit]] = new Decoder[Error[Unit]] {
-    def apply(c: HCursor): Decoder.Result[Error[Unit]] = {
+  given Decoder[Error[Unit]] = decoder(_ => Right(()))
+
+  given [T: Encoder: Decoder]: Decoder[Error[T]] = decoder(_.as[T])
+
+  private def decoder[T: Encoder](extension: HCursor => Decoder.Result[T]): Decoder[Error[T]] = new Decoder[Error[T]] {
+    def apply(c: HCursor): Decoder.Result[Error[T]] = {
       for {
         tpe      <- c.downField("type").as[Option[String]]
         tpeUri   <- traverseOpt(tpe)(decodeURI(_, "type"))
@@ -59,7 +63,8 @@ object Error {
         detail   <- c.downField("detail").as[Option[String]]
         instance <- c.downField("instance").as[Option[String]]
         instUri  <- traverseOpt(instance)(decodeURI(_, "instance"))
-      } yield Error[Unit](`type` = tpeUri, status = statusV, title = title, detail = detail, instance = instUri)
+        ext      <- extension(c)
+      } yield Error[T](`type` = tpeUri, status = statusV, title = title, detail = detail, instance = instUri, extension = ext)
     }
   }
 }
