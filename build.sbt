@@ -34,7 +34,7 @@ libraryDependencies ++= {
   val scalatagsV         = "0.13.1"
   val scaffeineV         = "5.3.0"
   val testcontainersV    = "0.44.1"
-  val baklavaV           = "2.1.0"
+  val baklavaV           = "2.2.0"
   val swaggerUiV         = "5.32.14"
   val flywayV            = "13.5.0"
   val awsSdkV            = "2.54.13"
@@ -149,6 +149,7 @@ inConfig(Test)(
           |  ]
           |}
           |""".stripMargin,
+      "views" -> """[{ "name": "client", "filter": "path-excludes:^/admin/" }]""",
       "orpc-package-contract-json" ->
         s"""
           |{

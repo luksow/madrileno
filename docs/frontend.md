@@ -9,7 +9,7 @@ It is deliberately a **sibling repo, not a subdirectory**, and the backend stays
 Baklava turns the router specs — the same test-driven specs that produce the OpenAPI surface (see [`http.md`](http.md)) — into a typed TypeScript client package on `sbt testFull`. The frontend vendors that output and builds its API layer on top:
 
 ```
-router specs ──sbt testFull──▶ target/baklava/orpc/src/*.ts  (oRPC contract + zod schemas + client)
+router specs ──sbt testFull──▶ target/baklava/views/client/orpc/src/*.ts  (oRPC contract + zod schemas + client, admin routes left out)
                                     │  the frontend's `sync-contracts` copies them in
                                     ▼
                     madrileno-frontend/src/contracts/        (committed, so the app builds standalone)
@@ -61,7 +61,7 @@ Theming is a three-way light / dark / system toggle, SSR-safe: a pre-paint inlin
 
 ## Using it
 
-Clone it next to this repo, point its `sync-contracts` at `../madrileno/target/baklava/orpc/src`, and follow its README. The backend needs no changes:
+Clone it next to this repo, point its `sync-contracts` at `../madrileno/target/baklava/views/client/orpc/src` (the client view, without the `/admin/*` routes; see [`http.md`](http.md#openapi-and-swagger-ui)), and follow its README. The backend needs no changes:
 
 - **In dev**, the frontend's Vite proxy makes the API same-origin, so there is no CORS to configure and nothing to change here.
 - **In production**, if the frontend is served from a different origin, set this backend's `CORS_ALLOWED_ORIGINS` (see [`configuration.md`](configuration.md)) — its existing env contract, not a new frontend coupling.
