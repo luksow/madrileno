@@ -121,7 +121,7 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
             }
             .unsafeRunSync()
         },
-      onRequest(body = AuthWithFirebaseRequest(FirebaseJwt("invalid-token")))
+      onRequest(body = AuthWithFirebaseRequest(FirebaseJwt("rejected-external-token")))
         .respondsWith[Error[Unit]](Unauthorized, description = "Invalid Firebase token")
         .assert { ctx =>
           val response = ctx.performRequest(allRoutes)
@@ -222,7 +222,7 @@ class AuthRouterSpec extends BaseRouteSpec with TestApplicationLoader {
           val response = ctx.performRequest(allRoutes)
           response.body.title shouldBe Some("No auth provider 'unknown-provider'")
         },
-      onRequest(pathParameters = "test-oidc", body = AuthWithOidcRequest("invalid-token"))
+      onRequest(pathParameters = "test-oidc", body = AuthWithOidcRequest("rejected-external-token"))
         .respondsWith[Error[Unit]](Unauthorized, description = "Invalid ID token")
         .assert { ctx =>
           val response = ctx.performRequest(allRoutes)

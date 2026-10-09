@@ -144,6 +144,10 @@ override def classify(request: RequestPrelude): Option[String] =
 
 The pattern is naive but fits the project's path conventions. If you start using slug-like identifiers (`/users/foo-bar-baz`) extend the matcher; otherwise every slug ends up its own span name.
 
+## Request and response log lines
+
+`logRequest` / `logResult` in `ApplicationLoader.routes` write one line per request and one per response at `logging.loglevel-request-response` (default `DEBUG`), bodies included. http4s-stir 0.6.0 redacts them before they reach the logger, with its default policy (`LogRedaction.default`): header, query, JSON and form values under conventional names (`jwt`, `*Token`, `*Secret`, `password`, `authorization`, …) render as `REDACTED`, multipart and binary bodies render as their size, and a JSON body cut at the log limit is closed at the last well-formed point so what is logged is still JSON, with the masking applied before the cut. The names cover everything this template sends: `firebaseJwtToken`, `idToken`, `refreshToken`, the `jwt` + `refreshToken` response, and `Authorization`. `SecretsStayOutOfLogsSpec` runs the real route tree at debug level and fails if an issued or presented credential shows up in any line, including when the cut lands in the middle of one. Add names with `LogRedaction.default.addNames(...)` if a new route carries a secret under a name the default list does not match.
+
 ## Header and query redaction
 
 `ServerMiddleware` by default doesn't capture request/response headers or query strings. The build opts in:
