@@ -143,6 +143,8 @@ In dev (`app.environment = "dev"` in config), the app serves the same artifacts 
 
 If the dev URLs return empty, run `sbt testFull` once to regenerate; the artifacts are checked into `target/`, not committed. (Use `testFull`, not `test` — under sbt 2 the cached incremental `test` can regenerate an empty spec; see [dev-workflow.md](dev-workflow.md).)
 
+The contract is only as complete as the specs: an error code that a router can answer with but no spec case produces never reaches the OpenAPI spec or the generated clients, which switch exhaustively on the declared codes. `sbt Test/verifyErrorCodes` (part of `verifyAll` and CI, run after `testFull`) compares every `error(<status>, "<code>", …)` call in `src/main` with the `result:<code>` types in the generated spec and fails on any code the specs never exercise. When you add an `error(...)` branch, add a spec case that reaches it.
+
 ## Admin endpoints
 
 Everything under `/admin` is gated by HTTP Basic auth using credentials from the `admin.user` / `admin.password` config (set via env vars in production). Out of the box:
